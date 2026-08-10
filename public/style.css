@@ -61,25 +61,14 @@ main {
   flex-direction: column;
   gap: 14px;
   padding-right: 4px;
-  scrollbar-width: none;
+  /* Reserve the scrollbar gutter permanently and only toggle the thumb
+     color, so showing/hiding it never re-wraps the messages. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
 #chat.scrolling {
-  scrollbar-width: thin;
   scrollbar-color: #3b4261 transparent;
-}
-
-#chat::-webkit-scrollbar {
-  width: 6px;
-}
-
-#chat::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-}
-
-#chat.scrolling::-webkit-scrollbar-thumb {
-  background: #3b4261;
 }
 
 .message {

@@ -140,8 +140,10 @@
       maxRows = Math.max(maxRows, Math.floor(seat / GRID_COLUMNS) + 1);
     }
     const lastRowY = FIRST_ROW_Y + (maxRows - 1) * ROW_SPACING;
-    const breakTop = lastRowY + 90;
-    const height = Math.max(640, breakTop + 200);
+    // Anchor the break area (and the entrance beside it) to the bottom
+    // edge of the room instead of floating below the last desk row.
+    const height = Math.max(640, lastRowY + 280);
+    const breakTop = height - 150;
     return { breakTop, height };
   }
 
@@ -152,15 +154,24 @@
     };
   }
 
+  // Spots are anchored to the break-area furniture: café tables and a sofa.
   function breakSpot(index, layout) {
-    return {
-      x: 300 + (index % 7) * 62,
-      y: layout.breakTop + 70 + Math.floor(index / 7) * 42,
-    };
+    const top = layout.breakTop;
+    const spots = [
+      { x: 268, y: top + 92 },
+      { x: 334, y: top + 92 },
+      { x: 448, y: top + 92 },
+      { x: 514, y: top + 92 },
+      { x: 668, y: top + 96 },
+      { x: 732, y: top + 96 },
+    ];
+    if (index < spots.length) return spots[index];
+    return { x: 180 + ((index - spots.length) % 8) * 56, y: top + 40 };
   }
 
+  // The entrance sits on the same horizontal band as the break area.
   function doorPosition(layout) {
-    return { x: 46, y: layout.height - 76 };
+    return { x: 46, y: layout.breakTop + 92 };
   }
 
   function actorFor(key, spawnAt, time) {
@@ -221,35 +232,22 @@
         px(tx, ty, 48, 48, even ? '#8a7a6b' : '#93826f');
       }
     }
-    // break-area rug
-    const rugTop = layout.breakTop;
-    roundRect(230, rugTop, 520, 140, 16, '#6b4f4f');
-    roundRect(242, rugTop + 10, 496, 120, 12, '#7d5a5a');
-    // couch
-    px(250, rugTop + 16, 14, 46, '#b8574f');
-    px(250, rugTop + 16, 40, 14, '#b8574f');
-    // coffee machine on a stand
-    px(760, rugTop + 4, 54, 20, '#5d4037');
-    px(768, rugTop - 34, 38, 40, '#37474f');
-    px(776, rugTop - 26, 22, 12, '#80cbc4');
-    ctx.fillStyle = '#d7ccc8';
-    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('☕ BREAK ROOM', 250, rugTop - 8);
+    drawBreakArea(layout);
     // plants
     drawPlant(30, 180);
     drawPlant(930, 180);
     drawPlant(930, height - 30);
-    // entrance door (bottom-left)
+    // entrance door, spanning the same y band as the break area
     const door = doorPosition(layout);
-    px(0, door.y - 60, 18, 96, '#3a3547');
-    px(4, door.y - 54, 10, 84, '#26232e');
+    const doorTop = layout.breakTop + 10;
+    px(0, doorTop, 18, 112, '#3a3547');
+    px(4, doorTop + 6, 10, 100, '#26232e');
     roundRect(door.x - 20, door.y + 4, 52, 12, 4, '#5d4037');
-    roundRect(door.x - 16, door.y - 96, 56, 18, 4, '#204d32');
+    roundRect(door.x - 16, layout.breakTop - 22, 56, 18, 4, '#204d32');
     ctx.fillStyle = '#8fe3a5';
     ctx.font = 'bold 11px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('EXIT', door.x + 12, door.y - 83);
+    ctx.fillText('EXIT', door.x + 12, layout.breakTop - 9);
 
     // wall clock (real time)
     ctx.save();
@@ -271,6 +269,72 @@
     ctx.lineTo(480 + Math.cos(minuteAngle) * 16, 48 + Math.sin(minuteAngle) * 16);
     ctx.stroke();
     ctx.restore();
+  }
+
+  // An office break corner: wooden floor, coffee counter, café tables,
+  // a sofa and a plant. Aligned with the entrance at the bottom band.
+  function drawBreakArea(layout) {
+    const top = layout.breakTop;
+    // wooden floor with plank lines
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(140, top, 690, 132, 12);
+    ctx.clip();
+    ctx.fillStyle = '#a08055';
+    ctx.fillRect(140, top, 690, 132);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    for (let plankY = top + 12; plankY < top + 132; plankY += 12) {
+      ctx.fillRect(140, plankY, 690, 2);
+    }
+    ctx.restore();
+    ctx.lineWidth = 3;
+    roundRect(140, top, 690, 132, 12, null, '#7a5c3e');
+
+    // coffee counter along the inside top-right
+    px(640, top + 10, 172, 28, '#5d4037');
+    px(640, top + 10, 172, 6, '#8d6e63');
+    // coffee machine on the counter
+    px(700, top - 16, 34, 30, '#37474f');
+    px(707, top - 9, 20, 10, '#80cbc4');
+    px(712, top + 6, 10, 6, '#263238');
+    // cups
+    px(756, top + 2, 8, 8, '#f5f0e8');
+    px(770, top + 2, 8, 8, '#f5f0e8');
+
+    // round café tables
+    for (const tableX of [301, 481]) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.beginPath();
+      ctx.ellipse(tableX, top + 100, 18, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#6d4c41';
+      ctx.beginPath();
+      ctx.arc(tableX, top + 84, 17, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#a1887f';
+      ctx.beginPath();
+      ctx.arc(tableX, top + 84, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.beginPath();
+      ctx.arc(tableX - 4, top + 80, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // sofa (avatars settle in front, looking like they sat down)
+    px(654, top + 46, 8, 36, '#55796b');
+    px(742, top + 46, 8, 36, '#55796b');
+    px(660, top + 46, 84, 14, '#55796b');
+    px(662, top + 58, 80, 24, '#6f9779');
+
+    // plant in the corner of the area
+    drawPlant(812, top + 124);
+
+    // sign
+    ctx.fillStyle = '#d7ccc8';
+    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('☕ BREAK ROOM', 152, top - 8);
   }
 
   function drawPlant(x, y) {

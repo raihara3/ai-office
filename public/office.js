@@ -1,6 +1,6 @@
 // Canvas rendering for the pixel-art office.
-// One CLI session = one avatar. Desks are grouped into per-vendor islands
-// that grow with the number of sessions. An HR avatar by the entrance
+// One CLI session = one avatar. All vendors share a single desk grid that
+// fills from the top-left as sessions appear. An HR avatar by the entrance
 // retires sessions whose CLI process has exited (logs go to the Trash).
 // app.js pushes state via OFFICE.setState(); this file owns the draw loop.
 
@@ -12,34 +12,26 @@
   const CANVAS_WIDTH = 960;
   const WALK_SPEED = 1.6;
   const LEAVE_SPEED = 2.6;
-  const FIRST_ROW_Y = 280;
-  const ROW_SPACING = 210;
-  const SEAT_COLUMN_OFFSET = 62;
+  const FIRST_ROW_Y = 260;
+  const ROW_SPACING = 190;
+  const GRID_COLUMNS = 5;
+  const FIRST_COLUMN_X = 120;
+  const COLUMN_SPACING = 180;
 
-  const ISLANDS = [
-    {
-      cli: 'claude',
-      label: 'Claude Code',
-      x: 170,
+  const CLI_SPECS = {
+    claude: {
       colors: { body: '#d97757', accent: '#f5e6d3', head: '#b85c3e', eye: '#ffe9c9' },
       emblem: 'asterisk',
     },
-    {
-      cli: 'codex',
-      label: 'Codex',
-      x: 480,
+    codex: {
       colors: { body: '#e8e8e8', accent: '#111111', head: '#222222', eye: '#8be9fd' },
       emblem: 'knot',
     },
-    {
-      cli: 'gemini',
-      label: 'Gemini',
-      x: 790,
+    gemini: {
       colors: { body: '#4285f4', accent: '#d8c7ff', head: '#3367d6', eye: '#ffffff' },
       emblem: 'sparkle',
     },
-  ];
-  const ISLAND_BY_CLI = Object.fromEntries(ISLANDS.map((island) => [island.cli, island]));
+  };
 
   const HR_SPEC = {
     colors: { body: '#8a93a6', accent: '#f5d76e', head: '#5b6270', eye: '#ffffff' },
@@ -52,7 +44,7 @@
   const presence = new Map();
   const actors = new Map();
   const seatByKey = new Map();
-  const usedSeats = { claude: new Set(), codex: new Set(), gemini: new Set() };
+  const usedSeats = new Set();
   let hrBubble = null;
   let hrBox = null;
   let cleanupInFlight = false;
@@ -65,11 +57,10 @@
         seen.add(employee.key);
         presence.set(employee.key, { employee, leaving: false });
         if (!seatByKey.has(employee.key)) {
-          const seats = usedSeats[employee.cli];
-          if (!seats) continue;
+          // Fill the grid from the top-left: take the lowest free seat.
           let seat = 0;
-          while (seats.has(seat)) seat += 1;
-          seats.add(seat);
+          while (usedSeats.has(seat)) seat += 1;
+          usedSeats.add(seat);
           seatByKey.set(employee.key, seat);
         }
       }
@@ -78,7 +69,7 @@
           entry.leaving = true;
           const seat = seatByKey.get(key);
           if (seat !== undefined) {
-            usedSeats[entry.employee.cli]?.delete(seat);
+            usedSeats.delete(seat);
             seatByKey.delete(key);
           }
         }
@@ -90,15 +81,8 @@
 
   function computeLayout() {
     let maxRows = 1;
-    const counts = { claude: 0, codex: 0, gemini: 0 };
-    for (const entry of presence.values()) {
-      if (!entry.leaving) counts[entry.employee.cli] += 1;
-    }
-    for (const seats of Object.values(usedSeats)) {
-      for (const seat of seats) maxRows = Math.max(maxRows, Math.floor(seat / 2) + 1);
-    }
-    for (const count of Object.values(counts)) {
-      maxRows = Math.max(maxRows, Math.ceil(count / 2));
+    for (const seat of usedSeats) {
+      maxRows = Math.max(maxRows, Math.floor(seat / GRID_COLUMNS) + 1);
     }
     const lastRowY = FIRST_ROW_Y + (maxRows - 1) * ROW_SPACING;
     const breakTop = lastRowY + 90;
@@ -106,13 +90,10 @@
     return { breakTop, height };
   }
 
-  function deskPosition(cli, seat) {
-    const island = ISLAND_BY_CLI[cli];
-    const column = seat % 2;
-    const row = Math.floor(seat / 2);
+  function deskPosition(seat) {
     return {
-      x: island.x + (column === 0 ? -SEAT_COLUMN_OFFSET : SEAT_COLUMN_OFFSET),
-      y: FIRST_ROW_Y + row * ROW_SPACING,
+      x: FIRST_COLUMN_X + (seat % GRID_COLUMNS) * COLUMN_SPACING,
+      y: FIRST_ROW_Y + Math.floor(seat / GRID_COLUMNS) * ROW_SPACING,
     };
   }
 
@@ -127,10 +108,17 @@
     return { x: 46, y: layout.height - 76 };
   }
 
-  function actorFor(key, spawnAt) {
+  function actorFor(key, spawnAt, time) {
     let actor = actors.get(key);
     if (!actor) {
-      actor = { x: spawnAt.x, y: spawnAt.y, walking: false, subagentPop: new Map() };
+      actor = {
+        x: spawnAt.x,
+        y: spawnAt.y,
+        walking: false,
+        subagentPop: new Map(),
+        // Morning greeting shown right after entering the office.
+        greetUntil: time + 3500,
+      };
       actors.set(key, actor);
     }
     return actor;
@@ -177,13 +165,6 @@
         const even = ((tx + ty) / 48) % 2 === 0;
         px(tx, ty, 48, 48, even ? '#8a7a6b' : '#93826f');
       }
-    }
-    // island labels
-    ctx.font = 'bold 14px "Hiragino Sans", sans-serif';
-    ctx.textAlign = 'center';
-    for (const island of ISLANDS) {
-      ctx.fillStyle = island.colors.body;
-      ctx.fillText(island.label, island.x, 116);
     }
     // break-area rug
     const rugTop = layout.breakTop;
@@ -247,24 +228,15 @@
     ctx.fill();
   }
 
-  function drawDesk(deskLabel, x, y, working, mcpCall, time, employeeKey) {
-    // nameplate: repository / work name
+  function drawDesk(deskLabel, x, y, mcpCall, time, employeeKey, spec, working) {
+    // nameplate: repository / work name, tinted with the vendor color
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    ctx.fillStyle = '#f5f0e8';
-    ctx.fillText(deskLabel, x, y - 140);
-    // status pill
-    const label = working ? '作業中' : '休憩中';
-    ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
-    const pillWidth = ctx.measureText(label).width + 22;
-    roundRect(x - pillWidth / 2, y - 134, pillWidth, 16, 8, '#1f2030');
-    ctx.fillStyle = working ? '#9ece6a' : '#e0af68';
-    ctx.beginPath();
-    ctx.arc(x - pillWidth / 2 + 9, y - 126, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#e6e6ef';
-    ctx.fillText(label, x + 5, y - 122);
-    // MCP badge between the pill and the monitor
+    ctx.fillStyle = '#2b2640';
+    ctx.fillText(deskLabel, x + 1, y - 123);
+    ctx.fillStyle = spec.colors.body;
+    ctx.fillText(deskLabel, x, y - 124);
+    // MCP badge between the nameplate and the monitor
     if (mcpCall) {
       ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
       const text = `🔌 ${mcpCall.server}`;
@@ -443,6 +415,28 @@
     });
   }
 
+  // Japanese beginner's mark (若葉マーク): yellow left half, green right half.
+  function drawWakabaMark(x, y, size) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(size / 10, size / 10);
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.quadraticCurveTo(-7, -6, -5, 0);
+    ctx.quadraticCurveTo(-4, 5, 0, 7);
+    ctx.closePath();
+    ctx.fillStyle = '#f7d417';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.quadraticCurveTo(7, -6, 5, 0);
+    ctx.quadraticCurveTo(4, 5, 0, 7);
+    ctx.closePath();
+    ctx.fillStyle = '#31a24c';
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawSubagents(employee, spec, actor, deskX, deskY, time) {
     const shown = employee.subagents.slice(0, 2);
     shown.forEach((subagent, index) => {
@@ -456,6 +450,7 @@
       const x = deskX - 34 + index * 34;
       const y = deskY + 52;
       drawAvatar(spec, x, y, { scale, typing: true, time: time + index * 400 });
+      drawWakabaMark(x + 10 * scale, y - 46 * scale, 12 * scale);
       ctx.font = '9px "Hiragino Sans", sans-serif';
       ctx.fillStyle = '#f5f0e8';
       ctx.textAlign = 'center';
@@ -546,21 +541,6 @@
     }
   }
 
-  // Desk labels: repository name, with #n suffixes when duplicated.
-  function deskLabels() {
-    const labels = new Map();
-    const counts = new Map();
-    for (const entry of presence.values()) {
-      if (entry.leaving) continue;
-      const employee = entry.employee;
-      const base = employee.project ?? employee.name;
-      const seen = counts.get(`${employee.cli}:${base}`) ?? 0;
-      counts.set(`${employee.cli}:${base}`, seen + 1);
-      labels.set(employee.key, seen === 0 ? base : `${base} #${seen + 1}`);
-    }
-    return labels;
-  }
-
   function frame(time) {
     const layout = computeLayout();
     if (canvas.height !== layout.height) {
@@ -570,24 +550,21 @@
     drawRoom(time, layout);
     drawHr(layout, time);
 
-    const labels = deskLabels();
     const door = doorPosition(layout);
     let breakIndex = 0;
 
-    // Stable draw order: island order, then seat.
-    const entries = [...presence.entries()].sort((a, b) => {
-      const seatA = seatByKey.get(a[0]) ?? 99;
-      const seatB = seatByKey.get(b[0]) ?? 99;
-      return a[1].employee.cli.localeCompare(b[1].employee.cli) || seatA - seatB;
-    });
+    // Stable draw order by seat.
+    const entries = [...presence.entries()].sort(
+      (a, b) => (seatByKey.get(a[0]) ?? 999) - (seatByKey.get(b[0]) ?? 999)
+    );
 
     for (const [key, entry] of entries) {
       const employee = entry.employee;
-      const spec = ISLAND_BY_CLI[employee.cli];
+      const spec = CLI_SPECS[employee.cli];
       if (!spec) continue;
 
       if (entry.leaving) {
-        const actor = actorFor(key, door);
+        const actor = actorFor(key, door, time);
         moveActor(actor, door, LEAVE_SPEED);
         if (!actor.walking) {
           presence.delete(key);
@@ -595,37 +572,49 @@
           continue;
         }
         drawAvatar(spec, actor.x, actor.y, { time, walking: true });
+        if (employee.isSubagent) drawWakabaMark(actor.x + 12, actor.y - 50, 11);
+        drawBubble(actor.x, actor.y - 58, 'お疲れさまでした');
         continue;
       }
 
       const seat = seatByKey.get(key);
       if (seat === undefined) continue;
-      const desk = deskPosition(employee.cli, seat);
+      const desk = deskPosition(seat);
       const working = employee.status === 'working';
+      const waiting = employee.status === 'waiting';
+      const atDeskStatus = working || waiting;
       const mcpCall = employee.mcpCalls[employee.mcpCalls.length - 1];
-      drawDesk(labels.get(key) ?? '', desk.x, desk.y, working, mcpCall, time, key);
+      drawDesk(employee.project ?? employee.name, desk.x, desk.y, mcpCall, time, key, spec, atDeskStatus);
 
-      const actor = actorFor(key, door);
+      const actor = actorFor(key, door, time);
       // Sit in front of the desk, facing the monitor, while working.
       const chairSpot = { x: desk.x, y: desk.y + 18 };
       const restSpot = breakSpot(breakIndex, layout);
-      if (!working) breakIndex += 1;
-      moveActor(actor, working ? chairSpot : restSpot, WALK_SPEED);
+      if (!atDeskStatus) breakIndex += 1;
+      moveActor(actor, atDeskStatus ? chairSpot : restSpot, WALK_SPEED);
 
-      const atDesk = working && !actor.walking;
+      const seated = working && !actor.walking;
+      // Waiting for the user: stand in front of the desk, facing the room.
+      const standing = waiting && !actor.walking;
       drawAvatar(spec, actor.x, actor.y, {
         time,
         walking: actor.walking,
-        typing: atDesk,
-        facingAway: atDesk,
-        coffee: !working && !actor.walking,
+        typing: seated,
+        facingAway: seated,
+        coffee: !atDeskStatus && !actor.walking,
       });
+      if (employee.isSubagent) drawWakabaMark(actor.x + 12, actor.y - 50, 11);
 
-      if (atDesk) {
+      if (time < actor.greetUntil) {
+        if (seated) drawSubagents(employee, spec, actor, desk.x, desk.y, time);
+        drawBubble(actor.x, actor.y - 58, 'おはようございます');
+      } else if (seated) {
         drawSubagents(employee, spec, actor, desk.x, desk.y, time);
-        const bubbleText = employee.activity ?? employee.task;
-        if (bubbleText) drawBubble(actor.x, actor.y - 58, bubbleText);
-      } else if (!working && !actor.walking) {
+        const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
+        drawBubble(actor.x, actor.y - 58, MOOD_LABELS[employee.activityKind] ?? '作業中');
+      } else if (standing) {
+        drawBubble(actor.x, actor.y - 58, '🖐️');
+      } else if (!atDeskStatus && !actor.walking) {
         drawBubble(actor.x, actor.y - 56, '☕');
       }
     }

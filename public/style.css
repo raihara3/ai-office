@@ -90,6 +90,7 @@ main {
 
 .dot.working { background: #9ece6a; box-shadow: 0 0 6px #9ece6a; }
 .dot.break { background: #e0af68; }
+.dot.waiting { background: #7aa2f7; box-shadow: 0 0 6px #7aa2f7; }
 
 .card .name {
   font-weight: 600;

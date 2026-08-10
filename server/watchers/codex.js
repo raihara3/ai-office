@@ -65,9 +65,11 @@ function handleLine(entry, { filePath }) {
       case 'user_message':
         observation.task = truncate(payload.message, 100);
         observation.activity = null;
+        observation.activityKind = 'think';
         break;
       case 'task_started':
         observation.activity = 'Thinking';
+        observation.activityKind = 'think';
         break;
       case 'task_complete':
         observation.turnComplete = true;
@@ -76,6 +78,11 @@ function handleLine(entry, { filePath }) {
         // Codex produced its answer text; the turn is wrapping up.
         break;
       default:
+        // Approval prompts and input requests block on the user.
+        if (/approval_request|user_input|elicitation/.test(payload.type ?? '')) {
+          observation.waitingForUser = true;
+          break;
+        }
         return;
     }
     reportEvent('codex', filePath, observation);
@@ -88,6 +95,7 @@ function handleLine(entry, { filePath }) {
       reportEvent('codex', filePath, {
         ...observation,
         activity: 'Subagent working',
+        activityKind: 'work',
         subagentStarted: { key: payload.call_id ?? String(timestamp), label: 'agent' },
       });
     } else if (!NATIVE_TOOL_NAMES.has(name) && /__|\./.test(name)) {
@@ -99,12 +107,14 @@ function handleLine(entry, { filePath }) {
       reportEvent('codex', filePath, {
         ...observation,
         activity: `MCP: ${server} / ${tool}`,
+        activityKind: 'work',
         mcpCall: { server, tool },
       });
     } else {
       reportEvent('codex', filePath, {
         ...observation,
         activity: describeFunctionCall(name, payload.arguments),
+        activityKind: name === 'web_search' || name === 'read_file' ? 'inspect' : 'work',
       });
     }
   }

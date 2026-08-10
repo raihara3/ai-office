@@ -14,6 +14,11 @@ const NATIVE_TOOL_NAMES = new Set([
   'web_fetch', 'save_memory',
 ]);
 
+const INSPECT_TOOL_NAMES = new Set([
+  'read_file', 'read_many_files', 'glob', 'search_file_content',
+  'list_directory', 'google_web_search', 'web_fetch',
+]);
+
 function truncate(text, max = 80) {
   if (!text) return null;
   const single = String(text).replace(/\s+/g, ' ').trim();
@@ -26,7 +31,10 @@ function collectMessages(value, found) {
     return;
   }
   if (value === null || typeof value !== 'object') return;
-  if ((value.type === 'user' || value.type === 'gemini') && value.content !== undefined) {
+  if (
+    (value.type === 'user' || value.type === 'gemini' || value.type === 'choice') &&
+    value.content !== undefined
+  ) {
     found.push(value);
     return;
   }
@@ -76,11 +84,18 @@ function handleLine(entry, { filePath }) {
     const observation = { timestamp, project };
     const text = extractText(message.content);
 
+    if (message.type === 'choice') {
+      // Gemini is showing the user a choice prompt and blocks on the answer.
+      reportEvent('gemini', filePath, { ...observation, waitingForUser: true });
+      continue;
+    }
+
     if (message.type === 'user') {
       // Skip injected context blocks; real prompts are plain text.
       if (text && !text.startsWith('<')) {
         observation.task = truncate(text, 100);
         observation.activity = null;
+        observation.activityKind = 'think';
       }
       reportEvent('gemini', filePath, observation);
       continue;
@@ -96,10 +111,15 @@ function handleLine(entry, { filePath }) {
           reportEvent('gemini', filePath, {
             ...observation,
             activity: `MCP: ${server} / ${toolParts.join('__')}`,
+            activityKind: 'work',
             mcpCall: { server, tool: toolParts.join('__') },
           });
         } else {
-          reportEvent('gemini', filePath, { ...observation, activity: call.name });
+          reportEvent('gemini', filePath, {
+            ...observation,
+            activity: call.name,
+            activityKind: INSPECT_TOOL_NAMES.has(call.name) ? 'inspect' : 'work',
+          });
         }
       }
     } else if (text) {

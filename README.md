@@ -3,8 +3,8 @@
 A Gather-like virtual office that visualizes your local AI coding agents —
 Claude Code, Codex CLI and Gemini CLI — as pixel-art coworkers.
 
-Each session (one log file) gets its own avatar and desk, grouped into
-per-vendor islands that grow as sessions appear. When an agent is actively
+Each session (one log file) gets its own avatar and desk on a shared grid
+that fills from the top-left as sessions appear. When an agent is actively
 working, its avatar sits at
 the desk and a speech bubble shows what it is doing right now (current tool
 action or the user's request). When idle, the avatar walks to the break room
@@ -44,15 +44,21 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 - **Working**: an event was observed within the last 90 seconds and the turn
   has not completed.
 - **Break**: the turn completed (15-second grace period) or no recent events.
+- **Waiting**: the agent asked the user a question or requested approval
+  (e.g. `AskUserQuestion`, plan approval, Codex approval requests). No idle
+  timeout applies; the avatar stands in front of its desk with a 🖐️ bubble.
 - Sessions with no events for 24 hours expire from the office (their log
   files are no longer tailed).
 
 ### Visualization
 
-- Speech bubble: current tool action, falling back to the user's request
-- Desk nameplate: the repository (project) name, with `#n` suffixes when
-  several sessions share the same repository
-- Mini avatars beside the desk: running subagents (label = agent type)
+- Speech bubble: 確認中 (inspecting) / 考え中 (thinking) / 作業中 (working)
+  while at the desk, ☕ on break, plus おはようございます on arrival and
+  お疲れさまでした when walking out
+- Desk nameplate: the repository (project) name, in the vendor's color
+- Mini avatars beside the desk: running subagents (label = agent type);
+  background subagent sessions get their own desk. Both wear a green-and-
+  yellow beginner's mark (若葉マーク)
 - `🔌 server` badge: an MCP tool call within the last 60 seconds
 - Side panel: project, request, activity, subagents, MCP calls, last activity
 

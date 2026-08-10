@@ -58,11 +58,14 @@ export function reportEvent(cli, filePath, observation) {
       cwd: null,
       task: null,
       activity: null,
+      activityKind: null,
       subagents: [],
       mcpCalls: [],
       firstSeenAt: eventAt,
       lastEventAt: null,
       turnCompletedAt: null,
+      waitingForUser: false,
+      isSubagent: false,
     };
     sessions.set(key, session);
   }
@@ -76,12 +79,16 @@ export function reportEvent(cli, filePath, observation) {
   if (observation.cwd !== undefined) session.cwd = observation.cwd;
   if (observation.task !== undefined) session.task = observation.task;
   if (observation.activity !== undefined) session.activity = observation.activity;
+  if (observation.activityKind !== undefined) session.activityKind = observation.activityKind;
 
   if (observation.turnComplete) {
     session.turnCompletedAt = eventAt;
   } else {
     session.turnCompletedAt = null;
   }
+  // Any later event (e.g. the tool_result carrying the answer) clears it.
+  session.waitingForUser = observation.waitingForUser === true;
+  if (observation.isSubagent) session.isSubagent = true;
 
   if (observation.subagentStarted) {
     session.subagents.push({
@@ -113,6 +120,8 @@ export function reportEvent(cli, filePath, observation) {
 
 function deriveStatus(session, now) {
   if (session.lastEventAt === null) return 'break';
+  // Waiting for the user has no idle timeout — the human may take a while.
+  if (session.waitingForUser) return 'waiting';
   if (now - session.lastEventAt > WORKING_IDLE_TIMEOUT_MS) return 'break';
   if (
     session.turnCompletedAt !== null &&
@@ -163,9 +172,11 @@ export function snapshot() {
       vendor: CLI_INFO[session.cli].vendor,
       status,
       project: session.project,
-      task: status === 'working' ? session.task : null,
-      activity: status === 'working' ? session.activity : null,
+      task: status !== 'break' ? session.task : null,
+      activity: status !== 'break' ? session.activity : null,
+      activityKind: status !== 'break' ? session.activityKind : null,
       subagents: status === 'working' ? session.subagents : [],
+      isSubagent: session.isSubagent,
       mcpCalls: session.mcpCalls.filter((c) => now - c.at < MCP_BADGE_EXPIRE_MS),
       firstSeenAt: session.firstSeenAt,
       lastEventAt: session.lastEventAt,

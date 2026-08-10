@@ -9,6 +9,12 @@ import { reportEvent } from '../state.js';
 
 const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent']);
 
+// Read-only tools show as "確認中" in the bubble; everything else "作業中".
+const INSPECT_TOOL_NAMES = new Set([
+  'Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch', 'NotebookRead',
+  'TodoRead', 'BashOutput', 'TaskList', 'TaskGet',
+]);
+
 function truncate(text, max = 80) {
   if (!text) return null;
   const single = String(text).replace(/\s+/g, ' ').trim();
@@ -54,6 +60,11 @@ function handleLine(entry, filePath) {
   if (entry.type !== 'user' && entry.type !== 'assistant') return;
   const timestamp = entry.timestamp ? Date.parse(entry.timestamp) : Date.now();
   const observation = { timestamp };
+  // Background subagents get their own transcript under
+  // <parent-session-id>/subagents/agent-*.jsonl.
+  if (filePath.includes(`${path.sep}subagents${path.sep}`)) {
+    observation.isSubagent = true;
+  }
   if (entry.cwd) {
     observation.cwd = entry.cwd;
     observation.project = path.basename(entry.cwd);
@@ -68,7 +79,7 @@ function handleLine(entry, filePath) {
       report();
       return;
     }
-    report({ task: truncate(text, 100), activity: null });
+    report({ task: truncate(text, 100), activity: null, activityKind: 'think' });
     return;
   }
 
@@ -87,10 +98,16 @@ function handleLine(entry, filePath) {
       continue;
     }
 
-    if (SUBAGENT_TOOL_NAMES.has(block.name)) {
+    if (block.name === 'AskUserQuestion' || block.name === 'ExitPlanMode') {
+      report({
+        activity: block.name === 'ExitPlanMode' ? 'プラン確認待ち' : '質問への回答待ち',
+        waitingForUser: true,
+      });
+    } else if (SUBAGENT_TOOL_NAMES.has(block.name)) {
       const input = block.input ?? {};
       report({
         activity: `Subagent: ${truncate(input.description ?? input.subagent_type, 50)}`,
+        activityKind: 'work',
         subagentStarted: {
           key: block.id,
           label: input.subagent_type ?? input.description ?? 'agent',
@@ -100,10 +117,14 @@ function handleLine(entry, filePath) {
       const [, server, ...toolParts] = block.name.split('__');
       report({
         activity: `MCP: ${server} / ${toolParts.join('__')}`,
+        activityKind: 'work',
         mcpCall: { server, tool: toolParts.join('__') },
       });
     } else {
-      report({ activity: describeToolUse(block) });
+      report({
+        activity: describeToolUse(block),
+        activityKind: INSPECT_TOOL_NAMES.has(block.name) ? 'inspect' : 'work',
+      });
     }
   }
 

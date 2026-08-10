@@ -4,7 +4,7 @@
   const cardsElement = document.getElementById('cards');
   const connectionElement = document.getElementById('connection');
 
-  const STATUS_LABELS = { working: '作業中', break: '休憩中' };
+  const STATUS_LABELS = { working: '作業中', break: '休憩中', waiting: '応答待ち' };
 
   function escapeHtml(text) {
     return String(text)

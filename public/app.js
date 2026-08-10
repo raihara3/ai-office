@@ -7,7 +7,7 @@
   const connectionElement = document.getElementById('connection');
 
   const CLI_COLORS = { claude: '#d97757', codex: '#e8e8e8', gemini: '#7aa2f7' };
-  const AUTHOR_COLORS = { user: '#e0af68', hr: '#8a93a6' };
+  const AUTHOR_COLORS = { user: '#a9b1d6', hr: '#8a93a6' };
 
   function escapeHtml(text) {
     return String(text)
@@ -17,10 +17,12 @@
   }
 
   // Highlight @社長 / @here / @Claude (repo) style mentions.
+  // Mentions of the user (@社長) get Slack's "you were mentioned" amber.
   function highlightMentions(escapedText) {
     return escapedText.replace(
       /@(?:社長|here|(?:Claude|Codex|Gemini)(?:\s\([^)]*\))?)/g,
-      (mention) => `<span class="mention">${mention}</span>`
+      (mention) =>
+        `<span class="mention${mention === '@社長' ? ' self' : ''}">${mention}</span>`
     );
   }
 
@@ -52,10 +54,15 @@
   }
 
   // Keep the view pinned to the newest message unless the user scrolled up.
+  // The scrollbar only shows while actually scrolling.
   let pinnedToBottom = true;
+  let scrollbarHideTimer = null;
   chatElement.addEventListener('scroll', () => {
     pinnedToBottom =
       chatElement.scrollHeight - chatElement.scrollTop - chatElement.clientHeight < 60;
+    chatElement.classList.add('scrolling');
+    clearTimeout(scrollbarHideTimer);
+    scrollbarHideTimer = setTimeout(() => chatElement.classList.remove('scrolling'), 800);
   });
 
   function renderChat(snapshot) {

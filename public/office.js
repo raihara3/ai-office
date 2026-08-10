@@ -57,8 +57,8 @@
     const face = faceCanvas.getContext('2d');
     face.imageSmoothingEnabled = false;
     if (kind === 'user') {
-      // The boss: a human silhouette.
-      face.fillStyle = '#e0af68';
+      // The boss: a human silhouette in a calm neutral tone.
+      face.fillStyle = '#a9b1d6';
       face.beginPath();
       face.arc(18, 13, 7, 0, Math.PI * 2);
       face.fill();

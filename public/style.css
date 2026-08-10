@@ -61,6 +61,25 @@ main {
   flex-direction: column;
   gap: 14px;
   padding-right: 4px;
+  scrollbar-width: none;
+}
+
+#chat.scrolling {
+  scrollbar-width: thin;
+  scrollbar-color: #3b4261 transparent;
+}
+
+#chat::-webkit-scrollbar {
+  width: 6px;
+}
+
+#chat::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+#chat.scrolling::-webkit-scrollbar-thumb {
+  background: #3b4261;
 }
 
 .message {
@@ -118,6 +137,11 @@ main {
   color: #7aa2f7;
   border-radius: 4px;
   padding: 0 3px;
+}
+
+.mention.self {
+  background: rgba(224, 175, 104, 0.28);
+  color: #f5c877;
 }
 
 .reactions {

@@ -157,8 +157,17 @@ export function reportEvent(cli, filePath, observation) {
         text: `@${displayName} ${observation.task}`,
         at: eventAt,
       });
-    }
-    if (observation.activity && session.reactionPendingMessageId) {
+    } else if (
+      session.reactionPendingMessageId &&
+      // Any sign of the agent responding counts as picking the task up:
+      // tool activity, thinking, or even a plain text answer (Codex and
+      // Gemini often reply without using a single tool).
+      (observation.activity ||
+        observation.activityKind ||
+        observation.turnComplete ||
+        observation.mcpCall ||
+        observation.subagentStarted)
+    ) {
       addReaction(session.reactionPendingMessageId, '🫡');
       session.reactionPendingMessageId = null;
     }

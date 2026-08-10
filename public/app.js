@@ -9,6 +9,81 @@
   const CLI_COLORS = { claude: '#d97757', codex: '#e8e8e8', gemini: '#7aa2f7' };
   const AUTHOR_COLORS = { user: '#a9b1d6', hr: '#8a93a6' };
 
+  // Soft, low-volume chime for when the boss (@社長) is freshly mentioned.
+  // Synthesized with WebAudio so no audio asset is needed; peak gain is kept
+  // small on purpose so the alert stays gentle.
+  let audioContext = null;
+  function resumeAudioContext() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return null;
+    if (audioContext === null) audioContext = new AudioCtor();
+    if (audioContext.state === 'suspended') audioContext.resume();
+    return audioContext;
+  }
+
+  // Browsers block WebAudio until it is created/resumed inside a user gesture.
+  // Prime it on the first interaction anywhere so a later chime can play.
+  // Safari additionally stays locked until a source actually starts inside the
+  // gesture, so we play a one-sample silent buffer to fully unlock it.
+  function unlockAudio() {
+    try {
+      const context = resumeAudioContext();
+      if (context === null) return;
+      const source = context.createBufferSource();
+      source.buffer = context.createBuffer(1, 1, context.sampleRate);
+      source.connect(context.destination);
+      source.start(0);
+    } catch {
+      // Ignore; audio simply stays unavailable.
+    }
+  }
+  for (const eventType of ['pointerdown', 'keydown']) {
+    window.addEventListener(eventType, unlockAudio, { once: true, capture: true });
+  }
+
+  function playMentionChime() {
+    try {
+      const context = resumeAudioContext();
+      if (context === null) return;
+      const startAt = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.06, startAt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.4);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + 0.42);
+    } catch {
+      // Ignore audio failures (autoplay policy, unsupported browser).
+    }
+  }
+
+  // Chime once when a snapshot introduces a message that mentions @社長.
+  // The first snapshot only seeds the baseline id so history stays silent,
+  // and the boss's own messages never trigger their own alert.
+  let lastSeenMessageId = null;
+  function alertOnBossMention(snapshot) {
+    const messages = snapshot.messages ?? [];
+    let maxId = lastSeenMessageId ?? -1;
+    let hasFreshMention = false;
+    for (const message of messages) {
+      if (
+        lastSeenMessageId !== null &&
+        message.id > lastSeenMessageId &&
+        message.authorKind !== 'user' &&
+        message.text.includes('@社長')
+      ) {
+        hasFreshMention = true;
+      }
+      if (message.id > maxId) maxId = message.id;
+    }
+    lastSeenMessageId = maxId;
+    if (hasFreshMention) playMentionChime();
+  }
+
   function escapeHtml(text) {
     return String(text)
       .replaceAll('&', '&amp;')
@@ -130,6 +205,7 @@
     source.onmessage = (event) => {
       const snapshot = JSON.parse(event.data);
       window.OFFICE.setState(snapshot);
+      alertOnBossMention(snapshot);
       renderChat(snapshot);
     };
     source.onerror = () => {

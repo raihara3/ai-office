@@ -88,6 +88,7 @@ const server = http.createServer((request, response) => {
       key: session.key,
       cli: session.cli,
       project: session.project,
+      lastEventAt: session.lastEventAt,
     }));
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify({ candidates }));

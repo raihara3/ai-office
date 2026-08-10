@@ -495,19 +495,12 @@
     cleanupInFlight = true;
     try {
       const preview = await (await fetch('/api/cleanup/preview')).json();
-      const count = preview.candidates.length;
-      if (count === 0) {
-        hrBubble = { text: '退勤対象のセッションはありません', until: Date.now() + 4000 };
+      if (preview.candidates.length === 0) {
+        hrBubble = { text: 'サボっている人はいませんでした', until: Date.now() + 4000 };
         return;
       }
-      const names = preview.candidates
-        .map((c) => `・${c.project ?? '?'} (${c.cli})`)
-        .join('\n');
-      const ok = window.confirm(
-        `${count} 件の終了済みセッションを退勤させ、ログをゴミ箱へ移動します。\n\n${names}\n\nよろしいですか?`
-      );
-      if (!ok) return;
-      // Only retire the sessions the user just confirmed.
+      // Only retire the sessions from this preview, so anything that became
+      // retirable in between is left for the next click.
       const result = await (
         await fetch('/api/cleanup', {
           method: 'POST',

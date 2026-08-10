@@ -59,11 +59,12 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 ### HR cleanup
 
 An HR avatar stands by the entrance (the EXIT door, bottom-left). Clicking it
-finds sessions whose CLI process is no longer running — a session counts as
-alive when a process of the same CLI runs with the session's working
-directory (checked via `ps` + `lsof`); sessions currently shown as working
-are never retired, and ambiguous cases err on the side of alive. After a
-browser confirm, retired avatars walk out the door and their log files are
+finds sessions whose CLI process is no longer running. Each running process
+grants one "seat" per (CLI, working directory) — checked via `ps` + `lsof` —
+and only the most recently active sessions keep a seat; the rest are
+considered exited. Sessions currently shown as working are never retired,
+and ambiguous cases err on the side of alive. Retired avatars walk out the
+door and their log files are
 moved to the macOS Trash (`~/.Trash`), not deleted. Endpoints:
 `GET /api/cleanup/preview`, `POST /api/cleanup`.
 

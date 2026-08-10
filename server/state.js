@@ -134,6 +134,7 @@ export function listSessions() {
       project: session.project,
       cwd: session.cwd,
       status: deriveStatus(session, now),
+      lastEventAt: session.lastEventAt,
     }));
 }
 

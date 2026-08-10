@@ -1,0 +1,13 @@
+{
+  "name": "ai-office",
+  "version": "0.1.0",
+  "description": "A Gather-like virtual office visualizing Claude Code, Codex CLI and Gemini CLI as coworkers",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

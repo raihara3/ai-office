@@ -1,0 +1,133 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #1a1b26;
+  color: #e6e6ef;
+  font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+  height: 100vh;
+  overflow: hidden;
+}
+
+main {
+  display: flex;
+  height: 100vh;
+}
+
+#office-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  min-width: 0;
+}
+
+#office {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+#panel {
+  width: 320px;
+  flex-shrink: 0;
+  background: #16161e;
+  border-left: 1px solid #2a2b3a;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+#panel h1 {
+  font-size: 18px;
+  letter-spacing: 2px;
+  color: #a9b1d6;
+}
+
+.group {
+  font-size: 12px;
+  letter-spacing: 1px;
+  margin-top: 8px;
+}
+
+.group span {
+  color: #565a6e;
+  font-weight: normal;
+  margin-left: 4px;
+}
+
+.vendor-claude { color: #d97757; }
+.vendor-codex { color: #e8e8e8; }
+.vendor-gemini { color: #7aa2f7; }
+
+.card {
+  background: #1f2030;
+  border: 1px solid #2a2b3a;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.card .head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.card .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dot.working { background: #9ece6a; box-shadow: 0 0 6px #9ece6a; }
+.dot.break { background: #e0af68; }
+
+.card .name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.card .status-label {
+  margin-left: auto;
+  font-size: 11px;
+  color: #787c99;
+}
+
+.card .row {
+  font-size: 12px;
+  color: #a9b1d6;
+  margin-top: 4px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.card .row .label {
+  color: #565a6e;
+  margin-right: 4px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin: 2px 4px 0 0;
+}
+
+.badge.subagent { background: #2c3a2e; color: #9ece6a; }
+.badge.mcp { background: #33283a; color: #bb9af7; }
+
+#connection {
+  margin-top: auto;
+  font-size: 11px;
+  color: #565a6e;
+}

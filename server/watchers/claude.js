@@ -61,10 +61,13 @@ function handleLine(entry, filePath) {
   const timestamp = entry.timestamp ? Date.parse(entry.timestamp) : Date.now();
   const observation = { timestamp };
   // Background subagents get their own transcript under
-  // <parent-session-id>/subagents/agent-*.jsonl.
-  if (filePath.includes(`${path.sep}subagents${path.sep}`)) {
-    observation.isSubagent = true;
-  }
+  // <parent-session-id>/subagents/agent-*.jsonl. Every line in such a file
+  // carries isSidechain, but relative to its own session they are the main
+  // conversation — only treat isSidechain as "someone else's lines" in the
+  // parent transcript, or turn completion would never be detected here.
+  const isSubagentFile = filePath.includes(`${path.sep}subagents${path.sep}`);
+  if (isSubagentFile) observation.isSubagent = true;
+  const sidechain = entry.isSidechain === true && !isSubagentFile;
   if (entry.cwd) {
     observation.cwd = entry.cwd;
     observation.project = path.basename(entry.cwd);
@@ -72,7 +75,7 @@ function handleLine(entry, filePath) {
   const report = (extra) => reportEvent('claude', filePath, { ...observation, ...extra });
 
   if (entry.type === 'user') {
-    if (entry.isSidechain) return;
+    if (sidechain) return;
     const text = extractUserText(entry.message);
     if (entry.isMeta || !text || text.startsWith('<') || text.startsWith('[Request interrupted')) {
       // Meta/tool_result/interruption lines still prove the session is alive.
@@ -93,7 +96,7 @@ function handleLine(entry, filePath) {
     if (block?.type !== 'tool_use') continue;
     sawToolUse = true;
 
-    if (entry.isSidechain) {
+    if (sidechain) {
       report({ subagentActivity: describeToolUse(block) });
       continue;
     }
@@ -128,7 +131,7 @@ function handleLine(entry, filePath) {
     }
   }
 
-  if (!sawToolUse && !entry.isSidechain && stopReason !== 'tool_use') {
+  if (!sawToolUse && !sidechain && stopReason !== 'tool_use') {
     // A plain text answer usually ends the turn.
     report({ turnComplete: true });
   }

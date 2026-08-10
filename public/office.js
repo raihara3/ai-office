@@ -47,6 +47,63 @@
   const usedSeats = new Set();
   let hrBubble = null;
 
+  // Purely cosmetic small talk between avatars resting in the break area:
+  // one speaks, a beat later another replies.
+  const SMALL_TALK_LINES = [
+    ['おつかれさま〜', 'おつかれさまです'],
+    ['そっち忙しそうだね', 'それほどでもないよ'],
+    ['最近どう?', 'ぼちぼちです'],
+    ['ここのコーヒーおいしいね', 'わかる'],
+    ['休憩は大事だね', 'ほんとそれ'],
+    ['今日は調子いいかも', 'いいですね〜'],
+  ];
+  const smallTalk = {
+    phase: 'idle',
+    nextAt: 5000,
+    phaseUntil: 0,
+    speakerKey: null,
+    replyKey: null,
+    line: null,
+  };
+  let restingKeys = [];
+
+  function updateSmallTalk(time) {
+    if (smallTalk.phase === 'idle') {
+      if (time < smallTalk.nextAt || restingKeys.length < 2) return;
+      const speakerIndex = Math.floor(Math.random() * restingKeys.length);
+      let replyIndex = Math.floor(Math.random() * (restingKeys.length - 1));
+      if (replyIndex >= speakerIndex) replyIndex += 1;
+      smallTalk.speakerKey = restingKeys[speakerIndex];
+      smallTalk.replyKey = restingKeys[replyIndex];
+      smallTalk.line = SMALL_TALK_LINES[Math.floor(Math.random() * SMALL_TALK_LINES.length)];
+      smallTalk.phase = 'speak';
+      smallTalk.phaseUntil = time + 2800;
+      return;
+    }
+    const bothResting =
+      restingKeys.includes(smallTalk.speakerKey) && restingKeys.includes(smallTalk.replyKey);
+    if (!bothResting) {
+      smallTalk.phase = 'idle';
+      smallTalk.nextAt = time + 6000;
+      return;
+    }
+    if (time >= smallTalk.phaseUntil) {
+      if (smallTalk.phase === 'speak') {
+        smallTalk.phase = 'reply';
+        smallTalk.phaseUntil = time + 2800;
+      } else {
+        smallTalk.phase = 'idle';
+        smallTalk.nextAt = time + 9000 + Math.random() * 12000;
+      }
+    }
+  }
+
+  function smallTalkBubbleFor(key) {
+    if (smallTalk.phase === 'speak' && key === smallTalk.speakerKey) return smallTalk.line[0];
+    if (smallTalk.phase === 'reply' && key === smallTalk.replyKey) return smallTalk.line[1];
+    return null;
+  }
+
   // Small face icons for the chat sidebar, rendered once and cached.
   const faceCache = new Map();
   function faceDataUrl(kind) {
@@ -628,9 +685,11 @@
     }
     drawRoom(time, layout);
     drawHr(layout, time);
+    updateSmallTalk(time);
 
     const door = doorPosition(layout);
     let breakIndex = 0;
+    const nowResting = [];
 
     // Stable draw order by seat.
     const entries = [...presence.entries()].sort(
@@ -694,9 +753,11 @@
       } else if (standing) {
         drawBubble(actor.x, actor.y - 58, '🖐️');
       } else if (!atDeskStatus && !actor.walking) {
-        drawBubble(actor.x, actor.y - 56, '☕');
+        nowResting.push(key);
+        drawBubble(actor.x, actor.y - 56, smallTalkBubbleFor(key) ?? '☕');
       }
     }
+    restingKeys = nowResting;
 
     requestAnimationFrame(frame);
   }

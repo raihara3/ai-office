@@ -9,10 +9,33 @@ const MCP_BADGE_EXPIRE_MS = 60_000;
 const SESSION_EXPIRE_MS = 24 * 60 * 60_000;
 
 export const CLI_INFO = {
-  claude: { name: 'Claude Code', vendor: 'anthropic' },
-  codex: { name: 'Codex', vendor: 'openai' },
-  gemini: { name: 'Gemini', vendor: 'google' },
+  claude: { name: 'Claude Code', vendor: 'anthropic', mention: 'Claude' },
+  codex: { name: 'Codex', vendor: 'openai', mention: 'Codex' },
+  gemini: { name: 'Gemini', vendor: 'google', mention: 'Gemini' },
 };
+
+// Slack-like #general channel log, rebuilt from the replayed events.
+const MAX_MESSAGES = 50;
+const messages = [];
+let nextMessageId = 1;
+
+export function postMessage({ authorKind, authorName, cli = null, text, at }) {
+  const id = nextMessageId;
+  nextMessageId += 1;
+  messages.push({ id, authorKind, authorName, cli, text, at, reactions: [] });
+  messages.sort((a, b) => a.at - b.at || a.id - b.id);
+  if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
+  scheduleBroadcast();
+  return id;
+}
+
+function addReaction(messageId, emoji) {
+  const message = messages.find((m) => m.id === messageId);
+  if (message && !message.reactions.includes(emoji)) {
+    message.reactions.push(emoji);
+    scheduleBroadcast();
+  }
+}
 
 const sessions = new Map();
 // Keys retired by HR cleanup. The CLI may keep writing to (or recreate) the
@@ -66,9 +89,14 @@ export function reportEvent(cli, filePath, observation) {
       turnCompletedAt: null,
       waitingForUser: false,
       isSubagent: false,
+      reactionPendingMessageId: null,
     };
     sessions.set(key, session);
   }
+
+  const previousTask = session.task;
+  const wasTurnComplete = session.turnCompletedAt !== null;
+  const wasWaiting = session.waitingForUser;
 
   if (session.lastEventAt === null || eventAt > session.lastEventAt) {
     session.lastEventAt = eventAt;
@@ -113,6 +141,45 @@ export function reportEvent(cli, filePath, observation) {
       at: eventAt,
     });
     if (session.mcpCalls.length > 10) session.mcpCalls.shift();
+  }
+
+  // #general channel: user requests, 🫡 on pickup, agent replies.
+  // Subagent sessions stay silent — their requests are internal. Old
+  // replayed conversations are welcome as history: the log keeps the
+  // newest MAX_MESSAGES entries sorted by time, dates shown in the UI.
+  if (!session.isSubagent) {
+    const displayName = `${CLI_INFO[cli].mention} (${session.project ?? '?'})`;
+    if (observation.task !== undefined && observation.task && observation.task !== previousTask) {
+      session.reactionPendingMessageId = postMessage({
+        authorKind: 'user',
+        authorName: '社長',
+        cli,
+        text: `@${displayName} ${observation.task}`,
+        at: eventAt,
+      });
+    }
+    if (observation.activity && session.reactionPendingMessageId) {
+      addReaction(session.reactionPendingMessageId, '🫡');
+      session.reactionPendingMessageId = null;
+    }
+    if (observation.turnComplete && !wasTurnComplete && session.task) {
+      postMessage({
+        authorKind: 'agent',
+        authorName: displayName,
+        cli,
+        text: '@社長 作業が完了しました',
+        at: eventAt,
+      });
+    }
+    if (session.waitingForUser && !wasWaiting && session.task) {
+      postMessage({
+        authorKind: 'agent',
+        authorName: displayName,
+        cli,
+        text: '@社長 確認をお願いします',
+        at: eventAt,
+      });
+    }
   }
 
   scheduleBroadcast();
@@ -183,7 +250,7 @@ export function snapshot() {
     });
   }
   list.sort((a, b) => a.firstSeenAt - b.firstSeenAt || (a.key < b.key ? -1 : 1));
-  return { at: now, employees: list };
+  return { at: now, employees: list, messages };
 }
 
 // Status can flip from working to break purely by time passing,

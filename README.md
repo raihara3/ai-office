@@ -60,7 +60,12 @@ Canvas 2D scene with procedurally drawn pixel avatars.
   background subagent sessions get their own desk. Both wear a green-and-
   yellow beginner's mark (若葉マーク)
 - `🔌 server` badge: an MCP tool call within the last 60 seconds
-- Side panel: project, request, activity, subagents, MCP calls, last activity
+- Sidebar: a Slack-like #general channel. User requests post as
+  `@Claude (repo) <request>` from 社長 (with a 🫡 reaction once the agent
+  starts), agents reply `@社長 作業が完了しました` / `確認をお願いします`,
+  and a composer pinned to `@here 仕事がない人は退勤してください` triggers
+  the HR cleanup (HR replies with the retiree count). The newest 50
+  messages are kept, sorted by time, with dates on non-today entries
 
 ### HR cleanup
 

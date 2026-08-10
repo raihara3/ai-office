@@ -4,7 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { onChange, snapshot } from './state.js';
+import { onChange, snapshot, postMessage } from './state.js';
 import { findRetirableSessions, retireSessions } from './cleanup.js';
 import { startClaudeWatcher } from './watchers/claude.js';
 import { startCodexWatcher } from './watchers/codex.js';
@@ -114,12 +114,18 @@ const server = http.createServer((request, response) => {
     });
     request.on('end', () => {
       let selectedKeys = null;
+      let userText = '@here 仕事がない人は退勤してください';
       try {
         const parsed = JSON.parse(body || '{}');
         if (Array.isArray(parsed.keys)) selectedKeys = parsed.keys;
+        if (typeof parsed.text === 'string' && parsed.text.length <= 200) {
+          userText = parsed.text;
+        }
       } catch {
         // An empty or malformed body falls back to all retirable sessions.
       }
+      // The user's directive shows up in #general, then HR replies.
+      postMessage({ authorKind: 'user', authorName: '社長', text: userText, at: Date.now() });
       const result = retireSessions(selectedKeys);
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify(result));

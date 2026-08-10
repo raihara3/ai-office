@@ -45,6 +45,50 @@ function describeFunctionCall(name, rawArguments) {
   }
 }
 
+function extractItemText(item) {
+  const parts = item?.content;
+  if (!Array.isArray(parts)) return null;
+  for (const part of parts) {
+    if (typeof part?.text === 'string' && part.text.trim()) return part.text;
+  }
+  return null;
+}
+
+// Newer Codex versions wrap turn contents in item_started/item_completed
+// events instead of dedicated user_message/function_call events.
+function observeItem(item, observation) {
+  switch (item.type) {
+    case 'UserMessage':
+      observation.task = truncate(extractItemText(item), 100);
+      observation.activity = null;
+      observation.activityKind = 'think';
+      break;
+    case 'CommandExecution':
+      observation.activity = truncate(item.command);
+      observation.activityKind = 'work';
+      break;
+    case 'FileChange':
+      observation.activity = 'Editing files';
+      observation.activityKind = 'work';
+      break;
+    case 'McpToolCall': {
+      const server = item.server ?? 'mcp';
+      const tool = item.tool ?? '';
+      observation.activity = `MCP: ${server} / ${tool}`;
+      observation.activityKind = 'work';
+      observation.mcpCall = { server, tool };
+      break;
+    }
+    case 'WebSearch':
+      observation.activity = truncate(item.query, 60);
+      observation.activityKind = 'inspect';
+      break;
+    default:
+      // AgentMessage, reasoning etc. still refresh the session's liveness.
+      break;
+  }
+}
+
 function handleLine(entry, { filePath }) {
   const payload = entry.payload;
   if (!payload) return;
@@ -76,6 +120,10 @@ function handleLine(entry, { filePath }) {
         break;
       case 'agent_message':
         // Codex produced its answer text; the turn is wrapping up.
+        break;
+      case 'item_started':
+      case 'item_completed':
+        observeItem(payload.item ?? {}, observation);
         break;
       default:
         // Approval prompts and input requests block on the user.

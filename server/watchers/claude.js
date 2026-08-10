@@ -74,8 +74,8 @@ function handleLine(entry, filePath) {
   if (entry.type === 'user') {
     if (entry.isSidechain) return;
     const text = extractUserText(entry.message);
-    if (entry.isMeta || !text || text.startsWith('<')) {
-      // Meta/tool_result lines still prove the session is alive.
+    if (entry.isMeta || !text || text.startsWith('<') || text.startsWith('[Request interrupted')) {
+      // Meta/tool_result/interruption lines still prove the session is alive.
       report();
       return;
     }

@@ -46,10 +46,65 @@
   const seatByKey = new Map();
   const usedSeats = new Set();
   let hrBubble = null;
-  let hrBox = null;
-  let cleanupInFlight = false;
+
+  // Small face icons for the chat sidebar, rendered once and cached.
+  const faceCache = new Map();
+  function faceDataUrl(kind) {
+    if (faceCache.has(kind)) return faceCache.get(kind);
+    const faceCanvas = document.createElement('canvas');
+    faceCanvas.width = 36;
+    faceCanvas.height = 36;
+    const face = faceCanvas.getContext('2d');
+    face.imageSmoothingEnabled = false;
+    if (kind === 'user') {
+      // The boss: a human silhouette.
+      face.fillStyle = '#e0af68';
+      face.beginPath();
+      face.arc(18, 13, 7, 0, Math.PI * 2);
+      face.fill();
+      face.beginPath();
+      face.arc(18, 34, 12, Math.PI, Math.PI * 2);
+      face.fill();
+      const url = faceCanvas.toDataURL();
+      faceCache.set(kind, url);
+      return url;
+    }
+    const spec = kind === 'hr' ? HR_SPEC : CLI_SPECS[kind];
+    if (!spec) return null;
+    // head
+    face.beginPath();
+    face.roundRect(3, 9, 30, 24, 7);
+    face.fillStyle = spec.colors.head;
+    face.fill();
+    // face screen
+    face.beginPath();
+    face.roundRect(7, 14, 22, 15, 4);
+    face.fillStyle = '#14141c';
+    face.fill();
+    // eyes
+    face.fillStyle = spec.colors.eye;
+    face.fillRect(11, 18, 5, 5);
+    face.fillRect(20, 18, 5, 5);
+    // claude's antenna
+    if (spec.emblem === 'asterisk') {
+      face.fillStyle = spec.colors.head;
+      face.fillRect(16, 3, 4, 7);
+      face.fillStyle = spec.colors.body;
+      face.beginPath();
+      face.arc(18, 4, 3.5, 0, Math.PI * 2);
+      face.fill();
+    }
+    const url = faceCanvas.toDataURL();
+    faceCache.set(kind, url);
+    return url;
+  }
 
   window.OFFICE = {
+    faceDataUrl,
+    // Shown above the HR avatar when the sidebar composer runs a cleanup.
+    hrSay(text) {
+      hrBubble = { text, until: Date.now() + 5000 };
+    },
     setState(next) {
       state = next;
       const seen = new Set();
@@ -477,52 +532,12 @@
     ctx.fillStyle = '#f5f0e8';
     ctx.textAlign = 'center';
     ctx.fillText('人事', x, y + 14);
-    hrBox = { left: x - 20, right: x + 20, top: y - 52, bottom: y + 16 };
     if (hrBubble && hrBubble.until > Date.now()) {
       drawBubble(x, y - 56, hrBubble.text);
     } else if (!hrBubble || hrBubble.until <= Date.now()) {
       hrBubble = null;
     }
   }
-
-  async function runCleanup() {
-    if (cleanupInFlight) return;
-    cleanupInFlight = true;
-    try {
-      const preview = await (await fetch('/api/cleanup/preview')).json();
-      if (preview.candidates.length === 0) {
-        hrBubble = { text: 'サボっている人はいませんでした', until: Date.now() + 4000 };
-        return;
-      }
-      // Only retire the sessions from this preview, so anything that became
-      // retirable in between is left for the next click.
-      const result = await (
-        await fetch('/api/cleanup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: preview.candidates.map((c) => c.key) }),
-        })
-      ).json();
-      hrBubble = {
-        text: `${result.retired.length} 人が退勤しました`,
-        until: Date.now() + 5000,
-      };
-    } catch {
-      hrBubble = { text: '退勤処理に失敗しました', until: Date.now() + 4000 };
-    } finally {
-      cleanupInFlight = false;
-    }
-  }
-
-  canvas.addEventListener('click', (event) => {
-    if (!hrBox) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
-    if (x >= hrBox.left && x <= hrBox.right && y >= hrBox.top && y <= hrBox.bottom) {
-      runCleanup();
-    }
-  });
 
   // --- main loop -------------------------------------------------------
 

@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { listSessions, dismissSession } from './state.js';
+import { listSessions, dismissSession, postMessage } from './state.js';
 
 const CLI_EXECUTABLE_NAMES = { claude: 'claude', codex: 'codex', gemini: 'gemini' };
 
@@ -176,5 +176,14 @@ export function retireSessions(selectedKeys) {
       failed.push({ key: session.key, error: error.message });
     }
   }
+  postMessage({
+    authorKind: 'hr',
+    authorName: '人事',
+    text:
+      retired.length > 0
+        ? `@社長 ${retired.length}人退勤しました`
+        : '@社長 サボっている人はいませんでした',
+    at: Date.now(),
+  });
   return { retired, failed };
 }

@@ -3,7 +3,7 @@
 // working/break status and broadcasts snapshots to SSE clients.
 
 const WORKING_IDLE_TIMEOUT_MS = 90_000;
-const TURN_COMPLETE_GRACE_MS = 15_000;
+const TURN_COMPLETE_GRACE_MS = 5_000;
 const SUBAGENT_EXPIRE_MS = 30 * 60_000;
 const MCP_BADGE_EXPIRE_MS = 60_000;
 const SESSION_EXPIRE_MS = 24 * 60 * 60_000;
@@ -211,6 +211,7 @@ export function listSessions() {
       cwd: session.cwd,
       status: deriveStatus(session, now),
       lastEventAt: session.lastEventAt,
+      isSubagent: session.isSubagent,
     }));
 }
 
@@ -253,6 +254,6 @@ export function snapshot() {
   return { at: now, employees: list, messages };
 }
 
-// Status can flip from working to break purely by time passing,
-// so re-evaluate periodically even without new events.
-setInterval(scheduleBroadcast, 5_000).unref();
+// Status can flip from working to break purely by time passing, so
+// re-evaluate often enough that the flip lands close to the grace period.
+setInterval(scheduleBroadcast, 2_000).unref();

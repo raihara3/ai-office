@@ -88,6 +88,19 @@ export function findRetirableSessions() {
   const groups = new Map();
 
   for (const session of listSessions()) {
+    // A session whose log file vanished can never produce events again —
+    // it is a ghost regardless of which processes are running.
+    if (!fs.existsSync(session.filePath)) {
+      if (session.status !== 'working') retirable.push(session);
+      continue;
+    }
+    // Subagents have no process of their own (they run inside the parent)
+    // and never resume once done, so they never claim a seat: retire them
+    // as soon as they go idle, independent of the parent's liveness.
+    if (session.isSubagent) {
+      if (session.status !== 'working') retirable.push(session);
+      continue;
+    }
     const seats = seatsByCli[session.cli];
     let capacity;
     let groupKey;
@@ -137,6 +150,8 @@ export function findRetirableSessions() {
 }
 
 function moveToTrash(filePath) {
+  // Already gone (ghost session): nothing to move, retirement still counts.
+  if (!fs.existsSync(filePath)) return;
   const trashDirectory = path.join(os.homedir(), '.Trash');
   let target = path.join(trashDirectory, path.basename(filePath));
   if (fs.existsSync(target)) {

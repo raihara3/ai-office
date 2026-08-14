@@ -16,18 +16,24 @@ import { listSessions, dismissSession, postMessage } from './state.js';
 
 const CLI_EXECUTABLE_NAMES = { claude: 'claude', codex: 'codex', gemini: 'gemini' };
 
-// Host processes (MCP servers, editor/app integrations) are not interactive
-// sessions and must not grant seats — e.g. "codex mcp-server" spawned by a
-// Claude session would otherwise keep idle MCP-created sessions alive.
-const NON_INTERACTIVE_ARGS = /\b(mcp-server|app-server|code-mode-host|mcp serve)\b/;
+// MCP server processes are not interactive sessions and must not grant
+// seats — e.g. "codex mcp-server" spawned by a Claude session would
+// otherwise keep idle MCP-created sessions alive.
+const NON_INTERACTIVE_ARGS = /\b(mcp-server|mcp serve)\b/;
+
+// App/editor hosts (ChatGPT app, VSCode extension) own real interactive
+// sessions but run with an unrelated cwd, so they are matched by presence
+// rather than by directory.
+const APP_HOST_ARGS = /\b(app-server|code-mode-host)\b/;
 
 function findProcessIds() {
   const processIds = { claude: [], codex: [], gemini: [] };
+  const appHostRunning = { claude: false, codex: false, gemini: false };
   let psOutput;
   try {
     psOutput = execFileSync('ps', ['-axo', 'pid=,args='], { encoding: 'utf8' });
   } catch {
-    return processIds;
+    return { processIds, appHostRunning };
   }
   for (const line of psOutput.split('\n')) {
     const match = line.match(/^\s*(\d+)\s+(.*)$/);
@@ -40,11 +46,15 @@ function findProcessIds() {
     const argv = args.split(/\s+/);
     for (const [cli, executable] of Object.entries(CLI_EXECUTABLE_NAMES)) {
       if (argv.some((token) => path.basename(token) === executable)) {
-        processIds[cli].push(pid);
+        if (APP_HOST_ARGS.test(args)) {
+          appHostRunning[cli] = true;
+        } else {
+          processIds[cli].push(pid);
+        }
       }
     }
   }
-  return processIds;
+  return { processIds, appHostRunning };
 }
 
 // Normalize symlink differences such as /tmp vs /private/tmp on macOS.
@@ -82,8 +92,18 @@ function findWorkingDirectorySeats(processIds) {
   return seats;
 }
 
+// Directory-name matching for CLIs that only record a project name (Gemini
+// derives it from the workspace, sometimes dropping leading dots), so match
+// any path segment of the cwd, ignoring leading dots.
+function cwdMatchesProject(cwd, project) {
+  return cwd
+    .split(path.sep)
+    .some((segment) => segment.replace(/^\.+/, '') === project);
+}
+
 export function findRetirableSessions() {
-  const seatsByCli = findWorkingDirectorySeats(findProcessIds());
+  const { processIds, appHostRunning } = findProcessIds();
+  const seatsByCli = findWorkingDirectorySeats(processIds);
   const retirable = [];
   const groups = new Map();
 
@@ -101,6 +121,13 @@ export function findRetirableSessions() {
       if (session.status !== 'working') retirable.push(session);
       continue;
     }
+    // App/editor-owned sessions (ChatGPT app, VSCode extension) cannot be
+    // matched by cwd — their host process runs from an unrelated directory.
+    // Any non-MCP session therefore stays while an app host of its CLI is
+    // running; only MCP one-shots skip this and retire eagerly.
+    if (session.clientKind !== 'mcp' && appHostRunning[session.cli]) {
+      continue;
+    }
     const seats = seatsByCli[session.cli];
     let capacity;
     let groupKey;
@@ -112,7 +139,7 @@ export function findRetirableSessions() {
       // Gemini logs record only the project directory name, not the full path.
       capacity = 0;
       for (const [cwd, count] of seats) {
-        if (path.basename(cwd) === session.project) capacity += count;
+        if (cwdMatchesProject(cwd, session.project)) capacity += count;
       }
       groupKey = `${session.cli}|#${session.project}`;
     } else {

@@ -89,6 +89,7 @@ export function reportEvent(cli, filePath, observation) {
       turnCompletedAt: null,
       waitingForUser: false,
       isSubagent: false,
+      clientKind: null,
       reactionPendingMessageId: null,
     };
     sessions.set(key, session);
@@ -117,6 +118,7 @@ export function reportEvent(cli, filePath, observation) {
   // Any later event (e.g. the tool_result carrying the answer) clears it.
   session.waitingForUser = observation.waitingForUser === true;
   if (observation.isSubagent) session.isSubagent = true;
+  if (observation.clientKind !== undefined) session.clientKind = observation.clientKind;
 
   if (observation.subagentStarted) {
     session.subagents.push({
@@ -221,6 +223,7 @@ export function listSessions() {
       status: deriveStatus(session, now),
       lastEventAt: session.lastEventAt,
       isSubagent: session.isSubagent,
+      clientKind: session.clientKind,
     }));
 }
 

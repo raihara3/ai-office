@@ -100,6 +100,15 @@ function handleLine(entry, { filePath }) {
       observation.cwd = payload.cwd;
       observation.project = path.basename(payload.cwd);
     }
+    // Who owns this session decides how HR judges its liveness:
+    // 'mcp' one-shots retire eagerly, 'cli' matches its process cwd,
+    // 'app' (ChatGPT app / editor extensions) lives with its host process.
+    observation.clientKind =
+      payload.source === 'mcp'
+        ? 'mcp'
+        : payload.originator === 'codex_cli_rs'
+          ? 'cli'
+          : 'app';
     reportEvent('codex', filePath, observation);
     return;
   }

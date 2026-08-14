@@ -41,34 +41,59 @@
     window.addEventListener(eventType, unlockAudio, { once: true, capture: true });
   }
 
-  function playMentionChime() {
+  // Play a sequence of gentle sine notes. Each note is {freq, at, duration}
+  // in seconds relative to now; peak is the shared linear gain.
+  function playChime(notes, peak) {
     try {
       const context = resumeAudioContext();
       if (context === null) return;
-      const startAt = context.currentTime;
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(880, startAt);
-      gain.gain.setValueAtTime(0.0001, startAt);
-      gain.gain.exponentialRampToValueAtTime(0.1, startAt + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.4);
-      oscillator.connect(gain).connect(context.destination);
-      oscillator.start(startAt);
-      oscillator.stop(startAt + 0.42);
+      const base = context.currentTime;
+      for (const note of notes) {
+        const startAt = base + note.at;
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(note.freq, startAt);
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(peak, startAt + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + note.duration);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + note.duration + 0.02);
+      }
     } catch {
       // Ignore audio failures (autoplay policy, unsupported browser).
     }
   }
 
+  // A single soft tone when a turn completes.
+  function playCompletionChime() {
+    playChime([{ freq: 880, at: 0, duration: 0.4 }], 0.3);
+  }
+
+  // A doorbell-like descending two-tone (ding-dong) so the boss's request for
+  // confirmation stands out from the single completion tone. Louder than the
+  // completion chime, with the second note held long to ring out ("pin-poon").
+  function playAttentionChime() {
+    playChime(
+      [
+        { freq: 880, at: 0, duration: 0.45 },
+        { freq: 660, at: 0.34, duration: 0.95 },
+      ],
+      0.5
+    );
+  }
+
   // Chime once when a snapshot introduces a message that mentions @社長.
   // The first snapshot only seeds the baseline id so history stays silent,
-  // and the boss's own messages never trigger their own alert.
+  // and the boss's own messages never trigger their own alert. A request for
+  // confirmation (🖐️) gets its own distinct chime.
   let lastSeenMessageId = null;
   function alertOnBossMention(snapshot) {
     const messages = snapshot.messages ?? [];
     let maxId = lastSeenMessageId ?? -1;
-    let hasFreshMention = false;
+    let freshAttention = false;
+    let freshCompletion = false;
     for (const message of messages) {
       if (
         lastSeenMessageId !== null &&
@@ -76,12 +101,14 @@
         message.authorKind !== 'user' &&
         message.text.includes('@社長')
       ) {
-        hasFreshMention = true;
+        if (message.text.includes('確認をお願いします')) freshAttention = true;
+        else freshCompletion = true;
       }
       if (message.id > maxId) maxId = message.id;
     }
     lastSeenMessageId = maxId;
-    if (hasFreshMention) playMentionChime();
+    if (freshAttention) playAttentionChime();
+    if (freshCompletion) playCompletionChime();
   }
 
   function escapeHtml(text) {

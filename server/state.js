@@ -88,6 +88,7 @@ export function reportEvent(cli, filePath, observation) {
       lastEventAt: null,
       turnCompletedAt: null,
       waitingForUser: false,
+      pendingTool: false,
       isSubagent: false,
       clientKind: null,
       reactionPendingMessageId: null,
@@ -117,6 +118,18 @@ export function reportEvent(cli, filePath, observation) {
   }
   // Any later event (e.g. the tool_result carrying the answer) clears it.
   session.waitingForUser = observation.waitingForUser === true;
+  // Track whether the session is mid-turn (a command or reply in progress) so
+  // the idle timeout keeps it at its desk — most importantly during a command
+  // awaiting the boss's permission, but also long-running commands or long
+  // replies — instead of sending it on a break. Only a completed turn (or an
+  // explicit wait for user input) clears it; plain liveness lines such as tool
+  // results or meta entries leave it untouched, so a still-pending tool is
+  // never mistaken for an idle session.
+  if (observation.turnComplete || observation.waitingForUser === true) {
+    session.pendingTool = false;
+  } else if (observation.activityKind !== undefined || observation.task) {
+    session.pendingTool = true;
+  }
   if (observation.isSubagent) session.isSubagent = true;
   if (observation.clientKind !== undefined) session.clientKind = observation.clientKind;
 
@@ -200,7 +213,11 @@ function deriveStatus(session, now) {
   if (session.lastEventAt === null) return 'break';
   // Waiting for the user has no idle timeout — the human may take a while.
   if (session.waitingForUser) return 'waiting';
-  if (now - session.lastEventAt > WORKING_IDLE_TIMEOUT_MS) return 'break';
+  if (now - session.lastEventAt > WORKING_IDLE_TIMEOUT_MS) {
+    // A tool call still in flight (e.g. a command awaiting permission) means
+    // the member is blocked at their desk, not resting.
+    return session.pendingTool ? 'blocked' : 'break';
+  }
   if (
     session.turnCompletedAt !== null &&
     now - session.turnCompletedAt > TURN_COMPLETE_GRACE_MS
@@ -255,7 +272,7 @@ export function snapshot() {
       task: status !== 'break' ? session.task : null,
       activity: status !== 'break' ? session.activity : null,
       activityKind: status !== 'break' ? session.activityKind : null,
-      subagents: status === 'working' ? session.subagents : [],
+      subagents: status === 'working' || status === 'blocked' ? session.subagents : [],
       isSubagent: session.isSubagent,
       mcpCalls: session.mcpCalls.filter((c) => now - c.at < MCP_BADGE_EXPIRE_MS),
       firstSeenAt: session.firstSeenAt,

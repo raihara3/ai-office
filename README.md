@@ -43,7 +43,11 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 
 - **Working**: an event was observed within the last 90 seconds and the turn
   has not completed.
-- **Break**: the turn completed (15-second grace period) or no recent events.
+- **Break**: the turn completed (15-second grace period) or no recent events
+  and no tool call is still in flight.
+- **Blocked**: a tool call was issued but its result has not arrived (most
+  notably a command awaiting the user's permission, or a long-running
+  command). No idle timeout applies; the avatar stays seated at its desk.
 - **Waiting**: the agent asked the user a question or requested approval
   (e.g. `AskUserQuestion`, plan approval, Codex approval requests). No idle
   timeout applies; the avatar stands in front of its desk with a 🖐️ bubble.
@@ -53,7 +57,8 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 ### Visualization
 
 - Speech bubble: 確認中 (inspecting) / 考え中 (thinking) / 作業中 (working)
-  while at the desk, ☕ on break, plus おはようございます on arrival and
+  while at the desk, ・・・ while blocked (a tool call in flight, e.g. awaiting
+  permission), ☕ on break, plus おはようございます on arrival and
   お疲れさまでした when walking out
 - Desk nameplate: the repository (project) name, in the vendor's color
 - Mini avatars beside the desk: running subagents (label = agent type);

@@ -718,7 +718,10 @@
       const seat = seatByKey.get(key);
       if (seat === undefined) continue;
       const desk = deskPosition(seat);
-      const working = employee.status === 'working';
+      // "blocked" (a tool call awaiting a result, e.g. command permission)
+      // stays seated at the desk just like active work.
+      const working =
+        employee.status === 'working' || employee.status === 'blocked';
       const waiting = employee.status === 'waiting';
       const atDeskStatus = working || waiting;
       const mcpCall = employee.mcpCalls[employee.mcpCalls.length - 1];
@@ -748,8 +751,15 @@
         drawBubble(actor.x, actor.y - 58, 'おはようございます');
       } else if (seated) {
         drawSubagents(employee, spec, actor, desk.x, desk.y, time);
-        const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
-        drawBubble(actor.x, actor.y - 58, MOOD_LABELS[employee.activityKind] ?? '作業中');
+        // "blocked" (a tool call still in flight — e.g. awaiting the boss's
+        // command permission, or a long silent stretch mid-turn) shows "・・・"
+        // and reverts to the normal label once fresh activity resumes.
+        if (employee.status === 'blocked') {
+          drawBubble(actor.x, actor.y - 58, '・・・');
+        } else {
+          const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
+          drawBubble(actor.x, actor.y - 58, MOOD_LABELS[employee.activityKind] ?? '作業中');
+        }
       } else if (standing) {
         drawBubble(actor.x, actor.y - 58, '🖐️');
       } else if (!atDeskStatus && !actor.walking) {

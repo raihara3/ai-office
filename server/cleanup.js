@@ -121,11 +121,16 @@ export function findRetirableSessions() {
       if (session.status !== 'working') retirable.push(session);
       continue;
     }
-    // App/editor-owned sessions (ChatGPT app, VSCode extension) cannot be
-    // matched by cwd — their host process runs from an unrelated directory.
-    // Any non-MCP session therefore stays while an app host of its CLI is
-    // running; only MCP one-shots skip this and retire eagerly.
-    if (session.clientKind !== 'mcp' && appHostRunning[session.cli]) {
+    // App/editor-owned sessions (ChatGPT app, VSCode extension) run inside the
+    // host process from an unrelated directory, so they cannot be matched by
+    // cwd. Keep them while actively working; once idle they become eligible
+    // for retirement on request, since a closed conversation leaves no process
+    // of its own to detect. Non-app sessions (cli, mcp) fall through to the
+    // cwd-based matching below.
+    if (session.clientKind === 'app' && appHostRunning[session.cli]) {
+      if (session.status !== 'working' && session.status !== 'blocked') {
+        retirable.push(session);
+      }
       continue;
     }
     const seats = seatsByCli[session.cli];

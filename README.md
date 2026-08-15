@@ -78,8 +78,11 @@ An HR avatar stands by the entrance (the EXIT door, bottom-left). Clicking it
 finds sessions whose CLI process is no longer running. Each running process
 grants one "seat" per (CLI, working directory) — checked via `ps` + `lsof` —
 and only the most recently active sessions keep a seat; the rest are
-considered exited. Sessions currently shown as working are never retired,
-and ambiguous cases err on the side of alive. Retired avatars walk out the
+considered exited. App/editor-owned sessions (ChatGPT app, VSCode extension)
+run inside a host process from an unrelated directory and cannot be seat-
+matched, so they are kept only while actively working and become retirable
+once idle. Sessions currently shown as working are never retired, and
+ambiguous cases err on the side of alive. Retired avatars walk out the
 door and their log files are
 moved to the macOS Trash (`~/.Trash`), not deleted. Endpoints:
 `GET /api/cleanup/preview`, `POST /api/cleanup`.

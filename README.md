@@ -51,7 +51,7 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 - **Waiting**: the agent asked the user a question or requested approval
   (e.g. `AskUserQuestion`, plan approval, Codex approval requests). No idle
   timeout applies; the avatar stands in front of its desk with a 🖐️ bubble.
-- Sessions with no events for 24 hours expire from the office (their log
+- Sessions with no events for 3 days expire from the office (their log
   files are no longer tailed).
 
 ### Visualization

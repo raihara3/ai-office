@@ -8,7 +8,7 @@ import path from 'node:path';
 
 const TAIL_INITIAL_BYTES = 256 * 1024;
 const RESCAN_INTERVAL_MS = 4_000;
-const FILE_MAX_AGE_MS = 24 * 60 * 60_000;
+const FILE_MAX_AGE_MS = 3 * 24 * 60 * 60_000;
 const MAX_TAILED_FILES = 20;
 
 class JsonlTailer {

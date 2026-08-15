@@ -6,7 +6,7 @@ const WORKING_IDLE_TIMEOUT_MS = 90_000;
 const TURN_COMPLETE_GRACE_MS = 5_000;
 const SUBAGENT_EXPIRE_MS = 30 * 60_000;
 const MCP_BADGE_EXPIRE_MS = 60_000;
-const SESSION_EXPIRE_MS = 24 * 60 * 60_000;
+const SESSION_EXPIRE_MS = 3 * 24 * 60 * 60_000;
 
 export const CLI_INFO = {
   claude: { name: 'Claude Code', vendor: 'anthropic', mention: 'Claude' },

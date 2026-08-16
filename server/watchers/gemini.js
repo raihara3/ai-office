@@ -2,11 +2,13 @@
 // The first line is session metadata; later lines are state patches such as
 // {"$set": {"messages": [...]}}. Message shapes vary between versions, so we
 // walk the JSON generically looking for message-like objects.
+//
+// `handleLine` takes an injected `report` (the state's reportEvent) so it can
+// be unit-tested with a stub; `startGeminiWatcher` wires it to the real store.
 
 import os from 'node:os';
 import path from 'node:path';
 import { watchJsonl } from '../tail.js';
-import { reportEvent } from '../state.js';
 
 const NATIVE_TOOL_NAMES = new Set([
   'run_shell_command', 'read_file', 'read_many_files', 'write_file', 'replace',
@@ -72,7 +74,7 @@ function projectFromPath(filePath) {
   return chatsIndex > 0 ? segments[chatsIndex - 1] : null;
 }
 
-function handleLine(entry, { filePath }) {
+export function handleLine(entry, filePath, report) {
   const messages = [];
   collectMessages(entry, messages);
   if (messages.length === 0) return;
@@ -86,7 +88,7 @@ function handleLine(entry, { filePath }) {
 
     if (message.type === 'choice') {
       // Gemini is showing the user a choice prompt and blocks on the answer.
-      reportEvent('gemini', filePath, { ...observation, waitingForUser: true });
+      report('gemini', filePath, { ...observation, waitingForUser: true });
       continue;
     }
 
@@ -97,7 +99,7 @@ function handleLine(entry, { filePath }) {
         observation.activity = null;
         observation.activityKind = 'think';
       }
-      reportEvent('gemini', filePath, observation);
+      report('gemini', filePath, observation);
       continue;
     }
 
@@ -108,14 +110,14 @@ function handleLine(entry, { filePath }) {
       for (const call of functionCalls) {
         if (!NATIVE_TOOL_NAMES.has(call.name) && call.name.includes('__')) {
           const [server, ...toolParts] = call.name.split('__').filter(Boolean);
-          reportEvent('gemini', filePath, {
+          report('gemini', filePath, {
             ...observation,
             activity: `MCP: ${server} / ${toolParts.join('__')}`,
             activityKind: 'work',
             mcpCall: { server, tool: toolParts.join('__') },
           });
         } else {
-          reportEvent('gemini', filePath, {
+          report('gemini', filePath, {
             ...observation,
             activity: call.name,
             activityKind: INSPECT_TOOL_NAMES.has(call.name) ? 'inspect' : 'work',
@@ -123,18 +125,18 @@ function handleLine(entry, { filePath }) {
         }
       }
     } else if (text) {
-      reportEvent('gemini', filePath, { ...observation, turnComplete: true });
+      report('gemini', filePath, { ...observation, turnComplete: true });
     } else {
-      reportEvent('gemini', filePath, observation);
+      report('gemini', filePath, observation);
     }
   }
 }
 
-export function startGeminiWatcher() {
+export function startGeminiWatcher({ report }) {
   watchJsonl({
     rootDirectory: path.join(os.homedir(), '.gemini', 'tmp'),
     filePattern: /^session-.*\.jsonl$/,
     maxDepth: 3,
-    onLine: handleLine,
+    onLine: (entry, { filePath }) => handleLine(entry, filePath, report),
   });
 }

@@ -5,11 +5,13 @@
 //   event_msg / task_complete    -> a turn finished
 //   event_msg / user_message     -> the user's assignment
 //   response_item / function_call -> current tool action (incl. MCP tools)
+//
+// `handleLine` takes an injected `report` (the state's reportEvent) so it can
+// be unit-tested with a stub; `startCodexWatcher` wires it to the real store.
 
 import os from 'node:os';
 import path from 'node:path';
 import { watchJsonl } from '../tail.js';
-import { reportEvent } from '../state.js';
 
 const NATIVE_TOOL_NAMES = new Set([
   'exec_command', 'shell', 'apply_patch', 'update_plan', 'view_image',
@@ -89,7 +91,7 @@ function observeItem(item, observation) {
   }
 }
 
-function handleLine(entry, { filePath }) {
+export function handleLine(entry, filePath, report) {
   const payload = entry.payload;
   if (!payload) return;
   const timestamp = entry.timestamp ? Date.parse(entry.timestamp) : Date.now();
@@ -109,7 +111,7 @@ function handleLine(entry, { filePath }) {
         : payload.originator === 'codex_cli_rs'
           ? 'cli'
           : 'app';
-    reportEvent('codex', filePath, observation);
+    report('codex', filePath, observation);
     return;
   }
 
@@ -142,14 +144,14 @@ function handleLine(entry, { filePath }) {
         }
         return;
     }
-    reportEvent('codex', filePath, observation);
+    report('codex', filePath, observation);
     return;
   }
 
   if (entry.type === 'response_item' && payload.type === 'function_call') {
     const name = payload.name ?? '';
     if (AGENT_TOOL_NAMES.has(name)) {
-      reportEvent('codex', filePath, {
+      report('codex', filePath, {
         ...observation,
         activity: 'Subagent working',
         activityKind: 'work',
@@ -161,14 +163,14 @@ function handleLine(entry, { filePath }) {
         : name.split(/__|\./);
       const server = parts[0];
       const tool = parts.slice(1).join('__') || name;
-      reportEvent('codex', filePath, {
+      report('codex', filePath, {
         ...observation,
         activity: `MCP: ${server} / ${tool}`,
         activityKind: 'work',
         mcpCall: { server, tool },
       });
     } else {
-      reportEvent('codex', filePath, {
+      report('codex', filePath, {
         ...observation,
         activity: describeFunctionCall(name, payload.arguments),
         activityKind: name === 'web_search' || name === 'read_file' ? 'inspect' : 'work',
@@ -177,11 +179,11 @@ function handleLine(entry, { filePath }) {
   }
 }
 
-export function startCodexWatcher() {
+export function startCodexWatcher({ report }) {
   watchJsonl({
     rootDirectory: path.join(os.homedir(), '.codex', 'sessions'),
     filePattern: /^rollout-.*\.jsonl$/,
     maxDepth: 4,
-    onLine: handleLine,
+    onLine: (entry, { filePath }) => handleLine(entry, filePath, report),
   });
 }

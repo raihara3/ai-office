@@ -1,11 +1,14 @@
 // Watches Claude Code transcripts (~/.claude/projects/**/*.jsonl).
 // Transcript lines carry type user/assistant plus metadata such as
 // cwd, isSidechain (subagent transcript lines) and tool_use blocks.
+//
+// `handleLine` / `handleSubagentEnd` take an injected `report` (the state's
+// reportEvent) so they can be unit-tested with a stub. `startClaudeWatcher`
+// wires them to the real store.
 
 import os from 'node:os';
 import path from 'node:path';
 import { watchJsonl } from '../tail.js';
-import { reportEvent } from '../state.js';
 
 const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent']);
 
@@ -56,7 +59,7 @@ function extractUserText(message) {
   return null;
 }
 
-function handleLine(entry, filePath) {
+export function handleLine(entry, filePath, report) {
   if (entry.type !== 'user' && entry.type !== 'assistant') return;
   const timestamp = entry.timestamp ? Date.parse(entry.timestamp) : Date.now();
   const observation = { timestamp };
@@ -72,17 +75,17 @@ function handleLine(entry, filePath) {
     observation.cwd = entry.cwd;
     observation.project = path.basename(entry.cwd);
   }
-  const report = (extra) => reportEvent('claude', filePath, { ...observation, ...extra });
+  const emit = (extra) => report('claude', filePath, { ...observation, ...extra });
 
   if (entry.type === 'user') {
     if (sidechain) return;
     const text = extractUserText(entry.message);
     if (entry.isMeta || !text || text.startsWith('<') || text.startsWith('[Request interrupted')) {
       // Meta/tool_result/interruption lines still prove the session is alive.
-      report();
+      emit();
       return;
     }
-    report({ task: truncate(text, 100), activity: null, activityKind: 'think' });
+    emit({ task: truncate(text, 100), activity: null, activityKind: 'think' });
     return;
   }
 
@@ -97,18 +100,18 @@ function handleLine(entry, filePath) {
     sawToolUse = true;
 
     if (sidechain) {
-      report({ subagentActivity: describeToolUse(block) });
+      emit({ subagentActivity: describeToolUse(block) });
       continue;
     }
 
     if (block.name === 'AskUserQuestion' || block.name === 'ExitPlanMode') {
-      report({
+      emit({
         activity: block.name === 'ExitPlanMode' ? 'プラン確認待ち' : '質問への回答待ち',
         waitingForUser: true,
       });
     } else if (SUBAGENT_TOOL_NAMES.has(block.name)) {
       const input = block.input ?? {};
-      report({
+      emit({
         activity: `Subagent: ${truncate(input.description ?? input.subagent_type, 50)}`,
         activityKind: 'work',
         subagentStarted: {
@@ -118,13 +121,13 @@ function handleLine(entry, filePath) {
       });
     } else if (block.name?.startsWith('mcp__')) {
       const [, server, ...toolParts] = block.name.split('__');
-      report({
+      emit({
         activity: `MCP: ${server} / ${toolParts.join('__')}`,
         activityKind: 'work',
         mcpCall: { server, tool: toolParts.join('__') },
       });
     } else {
-      report({
+      emit({
         activity: describeToolUse(block),
         activityKind: INSPECT_TOOL_NAMES.has(block.name) ? 'inspect' : 'work',
       });
@@ -133,18 +136,18 @@ function handleLine(entry, filePath) {
 
   if (!sawToolUse && !sidechain && stopReason !== 'tool_use') {
     // A plain text answer usually ends the turn.
-    report({ turnComplete: true });
+    emit({ turnComplete: true });
   }
 }
 
 // tool_result for a Task tool_use marks the subagent as finished.
-function handleSubagentEnd(entry, filePath) {
+export function handleSubagentEnd(entry, filePath, report) {
   if (entry.type !== 'user' || entry.isSidechain) return;
   const content = entry.message?.content;
   if (!Array.isArray(content)) return;
   for (const block of content) {
     if (block?.type === 'tool_result' && block.tool_use_id) {
-      reportEvent('claude', filePath, {
+      report('claude', filePath, {
         timestamp: entry.timestamp ? Date.parse(entry.timestamp) : Date.now(),
         subagentEnded: { key: block.tool_use_id },
       });
@@ -152,14 +155,14 @@ function handleSubagentEnd(entry, filePath) {
   }
 }
 
-export function startClaudeWatcher() {
+export function startClaudeWatcher({ report }) {
   watchJsonl({
     rootDirectory: path.join(os.homedir(), '.claude', 'projects'),
     filePattern: /\.jsonl$/,
     maxDepth: 3,
     onLine: (entry, { filePath }) => {
-      handleSubagentEnd(entry, filePath);
-      handleLine(entry, filePath);
+      handleSubagentEnd(entry, filePath, report);
+      handleLine(entry, filePath, report);
     },
   });
 }

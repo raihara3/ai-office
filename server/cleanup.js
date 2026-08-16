@@ -7,12 +7,16 @@
 // running session would keep every past session of the same directory
 // alive forever. Sessions currently shown as "working" are never
 // dismissed, and ambiguous cases err on the side of alive.
+//
+// `createCleanup` takes the state instance plus the OS-inspection functions
+// (process list, open files, file existence, trash) as injectable
+// dependencies, so the retirement logic can be unit-tested against canned
+// `ps`/`lsof` output without touching real processes or the filesystem.
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { listSessions, dismissSession, postMessage } from './state.js';
 
 const CLI_EXECUTABLE_NAMES = { claude: 'claude', codex: 'codex', gemini: 'gemini' };
 
@@ -26,37 +30,6 @@ const NON_INTERACTIVE_ARGS = /\b(mcp-server|mcp serve)\b/;
 // rather than by directory.
 const APP_HOST_ARGS = /\b(app-server|code-mode-host)\b/;
 
-function findProcessIds() {
-  const processIds = { claude: [], codex: [], gemini: [] };
-  const appHostRunning = { claude: false, codex: false, gemini: false };
-  let psOutput;
-  try {
-    psOutput = execFileSync('ps', ['-axo', 'pid=,args='], { encoding: 'utf8' });
-  } catch {
-    return { processIds, appHostRunning };
-  }
-  for (const line of psOutput.split('\n')) {
-    const match = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (!match) continue;
-    const [, pid, args] = match;
-    if (NON_INTERACTIVE_ARGS.test(args)) continue;
-    // The CLI may be invoked via an interpreter or with flags in between
-    // (e.g. "node --flag /path/to/claude"), so scan every argv token.
-    // False positives only err on the safe side (session stays alive).
-    const argv = args.split(/\s+/);
-    for (const [cli, executable] of Object.entries(CLI_EXECUTABLE_NAMES)) {
-      if (argv.some((token) => path.basename(token) === executable)) {
-        if (APP_HOST_ARGS.test(args)) {
-          appHostRunning[cli] = true;
-        } else {
-          processIds[cli].push(pid);
-        }
-      }
-    }
-  }
-  return { processIds, appHostRunning };
-}
-
 // Normalize symlink differences such as /tmp vs /private/tmp on macOS.
 function toRealPath(directory) {
   try {
@@ -66,122 +39,27 @@ function toRealPath(directory) {
   }
 }
 
-// One running process = one seat, so several processes in the same
-// directory keep several sessions alive.
-function findWorkingDirectorySeats(processIds) {
-  const seats = {};
-  for (const [cli, pids] of Object.entries(processIds)) {
-    seats[cli] = new Map();
-    if (pids.length === 0) continue;
-    try {
-      // -F n prints "p<pid>" and "n<path>" lines, safe against spaces.
-      const lsofOutput = execFileSync(
-        'lsof',
-        ['-a', '-d', 'cwd', '-p', pids.join(','), '-F', 'n'],
-        { encoding: 'utf8' }
-      );
-      for (const line of lsofOutput.split('\n')) {
-        if (!line.startsWith('n')) continue;
-        const cwd = toRealPath(line.slice(1));
-        seats[cli].set(cwd, (seats[cli].get(cwd) ?? 0) + 1);
-      }
-    } catch {
-      // lsof exits non-zero when some pids vanished; partial output is fine.
-    }
-  }
-  return seats;
-}
-
 // Directory-name matching for CLIs that only record a project name (Gemini
 // derives it from the workspace, sometimes dropping leading dots), so match
 // any path segment of the cwd, ignoring leading dots.
-function cwdMatchesProject(cwd, project) {
+export function cwdMatchesProject(cwd, project) {
   return cwd
     .split(path.sep)
     .some((segment) => segment.replace(/^\.+/, '') === project);
 }
 
-export function findRetirableSessions() {
-  const { processIds, appHostRunning } = findProcessIds();
-  const seatsByCli = findWorkingDirectorySeats(processIds);
-  const retirable = [];
-  const groups = new Map();
-
-  for (const session of listSessions()) {
-    // A session whose log file vanished can never produce events again —
-    // it is a ghost regardless of which processes are running.
-    if (!fs.existsSync(session.filePath)) {
-      if (session.status !== 'working') retirable.push(session);
-      continue;
-    }
-    // Subagents have no process of their own (they run inside the parent)
-    // and never resume once done, so they never claim a seat: retire them
-    // as soon as they go idle, independent of the parent's liveness.
-    if (session.isSubagent) {
-      if (session.status !== 'working') retirable.push(session);
-      continue;
-    }
-    // App/editor-owned sessions (ChatGPT app, VSCode extension) run inside the
-    // host process from an unrelated directory, so they cannot be matched by
-    // cwd. Keep them while actively working; once idle they become eligible
-    // for retirement on request, since a closed conversation leaves no process
-    // of its own to detect. Non-app sessions (cli, mcp) fall through to the
-    // cwd-based matching below.
-    if (session.clientKind === 'app' && appHostRunning[session.cli]) {
-      if (session.status !== 'working' && session.status !== 'blocked') {
-        retirable.push(session);
-      }
-      continue;
-    }
-    const seats = seatsByCli[session.cli];
-    let capacity;
-    let groupKey;
-    if (session.cwd) {
-      const realCwd = toRealPath(session.cwd);
-      capacity = seats.get(realCwd) ?? 0;
-      groupKey = `${session.cli}|${realCwd}`;
-    } else if (session.project) {
-      // Gemini logs record only the project directory name, not the full path.
-      capacity = 0;
-      for (const [cwd, count] of seats) {
-        if (cwdMatchesProject(cwd, session.project)) capacity += count;
-      }
-      groupKey = `${session.cli}|#${session.project}`;
-    } else {
-      // Unknown workspace: stay alive while any process of this CLI runs.
-      if (seats.size === 0 && session.status !== 'working') retirable.push(session);
-      continue;
-    }
-
-    if (capacity === 0) {
-      if (session.status !== 'working') retirable.push(session);
-      continue;
-    }
-    let group = groups.get(groupKey);
-    if (!group) {
-      group = { capacity, sessions: [] };
-      groups.set(groupKey, group);
-    }
-    group.sessions.push(session);
-  }
-
-  // Within each directory, working sessions claim seats first, then the
-  // most recently active ones; whoever is left without a seat retires.
-  for (const group of groups.values()) {
-    group.sessions.sort((a, b) => {
-      if ((a.status === 'working') !== (b.status === 'working')) {
-        return a.status === 'working' ? -1 : 1;
-      }
-      return (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0);
-    });
-    for (const session of group.sessions.slice(group.capacity)) {
-      if (session.status !== 'working') retirable.push(session);
-    }
-  }
-  return retirable;
+function defaultRunProcessList() {
+  return execFileSync('ps', ['-axo', 'pid=,args='], { encoding: 'utf8' });
 }
 
-function moveToTrash(filePath) {
+function defaultRunOpenFiles(pids) {
+  // -F n prints "p<pid>" and "n<path>" lines, safe against spaces.
+  return execFileSync('lsof', ['-a', '-d', 'cwd', '-p', pids.join(','), '-F', 'n'], {
+    encoding: 'utf8',
+  });
+}
+
+function defaultMoveToTrash(filePath) {
   // Already gone (ghost session): nothing to move, retirement still counts.
   if (!fs.existsSync(filePath)) return;
   const trashDirectory = path.join(os.homedir(), '.Trash');
@@ -203,34 +81,177 @@ function moveToTrash(filePath) {
   }
 }
 
-// selectedKeys limits retirement to sessions the user actually confirmed in
-// the preview dialog; without it, sessions that became retirable in between
-// would be removed sight-unseen.
-export function retireSessions(selectedKeys) {
-  const retired = [];
-  const failed = [];
-  let candidates = findRetirableSessions();
-  if (Array.isArray(selectedKeys)) {
-    const allowed = new Set(selectedKeys);
-    candidates = candidates.filter((session) => allowed.has(session.key));
-  }
-  for (const session of candidates) {
+export function createCleanup({
+  state,
+  runProcessList = defaultRunProcessList,
+  runOpenFiles = defaultRunOpenFiles,
+  fileExists = fs.existsSync,
+  moveToTrash = defaultMoveToTrash,
+  now = () => Date.now(),
+}) {
+  function findProcessIds() {
+    const processIds = { claude: [], codex: [], gemini: [] };
+    const appHostRunning = { claude: false, codex: false, gemini: false };
+    let psOutput;
     try {
-      moveToTrash(session.filePath);
-      dismissSession(session.key);
-      retired.push({ key: session.key, cli: session.cli, project: session.project });
-    } catch (error) {
-      failed.push({ key: session.key, error: error.message });
+      psOutput = runProcessList();
+    } catch {
+      return { processIds, appHostRunning };
     }
+    for (const line of psOutput.split('\n')) {
+      const match = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (!match) continue;
+      const [, pid, args] = match;
+      if (NON_INTERACTIVE_ARGS.test(args)) continue;
+      // The CLI may be invoked via an interpreter or with flags in between
+      // (e.g. "node --flag /path/to/claude"), so scan every argv token.
+      // False positives only err on the safe side (session stays alive).
+      const argv = args.split(/\s+/);
+      for (const [cli, executable] of Object.entries(CLI_EXECUTABLE_NAMES)) {
+        if (argv.some((token) => path.basename(token) === executable)) {
+          if (APP_HOST_ARGS.test(args)) {
+            appHostRunning[cli] = true;
+          } else {
+            processIds[cli].push(pid);
+          }
+        }
+      }
+    }
+    return { processIds, appHostRunning };
   }
-  postMessage({
-    authorKind: 'hr',
-    authorName: '人事',
-    text:
-      retired.length > 0
-        ? `@社長 ${retired.length}人退勤しました`
-        : '@社長 サボっている人はいませんでした',
-    at: Date.now(),
-  });
-  return { retired, failed };
+
+  // One running process = one seat, so several processes in the same
+  // directory keep several sessions alive.
+  function findWorkingDirectorySeats(processIds) {
+    const seats = {};
+    for (const [cli, pids] of Object.entries(processIds)) {
+      seats[cli] = new Map();
+      if (pids.length === 0) continue;
+      try {
+        const lsofOutput = runOpenFiles(pids);
+        for (const line of lsofOutput.split('\n')) {
+          if (!line.startsWith('n')) continue;
+          const cwd = toRealPath(line.slice(1));
+          seats[cli].set(cwd, (seats[cli].get(cwd) ?? 0) + 1);
+        }
+      } catch {
+        // lsof exits non-zero when some pids vanished; partial output is fine.
+      }
+    }
+    return seats;
+  }
+
+  function findRetirableSessions() {
+    const { processIds, appHostRunning } = findProcessIds();
+    const seatsByCli = findWorkingDirectorySeats(processIds);
+    const retirable = [];
+    const groups = new Map();
+
+    for (const session of state.listSessions()) {
+      // A session whose log file vanished can never produce events again —
+      // it is a ghost regardless of which processes are running.
+      if (!fileExists(session.filePath)) {
+        if (session.status !== 'working') retirable.push(session);
+        continue;
+      }
+      // Subagents have no process of their own (they run inside the parent)
+      // and never resume once done, so they never claim a seat: retire them
+      // as soon as they go idle, independent of the parent's liveness.
+      if (session.isSubagent) {
+        if (session.status !== 'working') retirable.push(session);
+        continue;
+      }
+      // App/editor-owned sessions (ChatGPT app, VSCode extension) run inside the
+      // host process from an unrelated directory, so they cannot be matched by
+      // cwd. Keep them while actively working; once idle they become eligible
+      // for retirement on request, since a closed conversation leaves no process
+      // of its own to detect. Non-app sessions (cli, mcp) fall through to the
+      // cwd-based matching below.
+      if (session.clientKind === 'app' && appHostRunning[session.cli]) {
+        if (session.status !== 'working' && session.status !== 'blocked') {
+          retirable.push(session);
+        }
+        continue;
+      }
+      const seats = seatsByCli[session.cli];
+      let capacity;
+      let groupKey;
+      if (session.cwd) {
+        const realCwd = toRealPath(session.cwd);
+        capacity = seats.get(realCwd) ?? 0;
+        groupKey = `${session.cli}|${realCwd}`;
+      } else if (session.project) {
+        // Gemini logs record only the project directory name, not the full path.
+        capacity = 0;
+        for (const [cwd, count] of seats) {
+          if (cwdMatchesProject(cwd, session.project)) capacity += count;
+        }
+        groupKey = `${session.cli}|#${session.project}`;
+      } else {
+        // Unknown workspace: stay alive while any process of this CLI runs.
+        if (seats.size === 0 && session.status !== 'working') retirable.push(session);
+        continue;
+      }
+
+      if (capacity === 0) {
+        if (session.status !== 'working') retirable.push(session);
+        continue;
+      }
+      let group = groups.get(groupKey);
+      if (!group) {
+        group = { capacity, sessions: [] };
+        groups.set(groupKey, group);
+      }
+      group.sessions.push(session);
+    }
+
+    // Within each directory, working sessions claim seats first, then the
+    // most recently active ones; whoever is left without a seat retires.
+    for (const group of groups.values()) {
+      group.sessions.sort((a, b) => {
+        if ((a.status === 'working') !== (b.status === 'working')) {
+          return a.status === 'working' ? -1 : 1;
+        }
+        return (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0);
+      });
+      for (const session of group.sessions.slice(group.capacity)) {
+        if (session.status !== 'working') retirable.push(session);
+      }
+    }
+    return retirable;
+  }
+
+  // selectedKeys limits retirement to sessions the user actually confirmed in
+  // the preview dialog; without it, sessions that became retirable in between
+  // would be removed sight-unseen.
+  function retireSessions(selectedKeys) {
+    const retired = [];
+    const failed = [];
+    let candidates = findRetirableSessions();
+    if (Array.isArray(selectedKeys)) {
+      const allowed = new Set(selectedKeys);
+      candidates = candidates.filter((session) => allowed.has(session.key));
+    }
+    for (const session of candidates) {
+      try {
+        moveToTrash(session.filePath);
+        state.dismissSession(session.key);
+        retired.push({ key: session.key, cli: session.cli, project: session.project });
+      } catch (error) {
+        failed.push({ key: session.key, error: error.message });
+      }
+    }
+    state.postMessage({
+      authorKind: 'hr',
+      authorName: '人事',
+      text:
+        retired.length > 0
+          ? `@社長 ${retired.length}人退勤しました`
+          : '@社長 サボっている人はいませんでした',
+      at: now(),
+    });
+    return { retired, failed };
+  }
+
+  return { findRetirableSessions, retireSessions };
 }

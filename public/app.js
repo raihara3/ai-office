@@ -5,6 +5,7 @@
   const composerElement = document.getElementById('composer');
   const sendButton = document.getElementById('composer-send');
   const connectionElement = document.getElementById('connection');
+  const client = window.OFFICE_CLIENT.create();
 
   const CLI_COLORS = { claude: '#d97757', codex: '#e8e8e8', gemini: '#7aa2f7' };
   const AUTHOR_COLORS = { user: '#a9b1d6', hr: '#8a93a6' };
@@ -200,17 +201,9 @@
     cleanupInFlight = true;
     sendButton.disabled = true;
     try {
-      const preview = await (await fetch('/api/cleanup/preview')).json();
-      const result = await (
-        await fetch('/api/cleanup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            keys: preview.candidates.map((c) => c.key),
-            text: document.getElementById('composer-input').value,
-          }),
-        })
-      ).json();
+      const result = await client.runCleanup(
+        document.getElementById('composer-input').value
+      );
       window.OFFICE.hrSay(
         result.retired.length > 0
           ? `${result.retired.length}人が退勤しました`
@@ -224,21 +217,15 @@
     }
   });
 
-  function connect() {
-    const source = new EventSource('/events');
-    source.onopen = () => {
-      connectionElement.textContent = '● 接続中';
-    };
-    source.onmessage = (event) => {
-      const snapshot = JSON.parse(event.data);
+  client.connect({
+    onSnapshot: (snapshot) => {
       window.OFFICE.setState(snapshot);
       alertOnBossMention(snapshot);
       renderChat(snapshot);
-    };
-    source.onerror = () => {
-      connectionElement.textContent = '○ 再接続待ち…';
-    };
-  }
-
-  connect();
+    },
+    onStatus: (status) => {
+      connectionElement.textContent =
+        status === 'connected' ? '● 接続中' : '○ 再接続待ち…';
+    },
+  });
 })();

@@ -16,28 +16,60 @@ const PUBLIC_DIRECTORY = path.join(
 
 // Bind to loopback only: the streamed session logs contain prompts and
 // commands that must not be exposed to the local network.
+//
+// Returns a handle whose `ready` promise resolves (with the same handle) once
+// the socket is accepting connections, or rejects on a bind failure such as
+// EADDRINUSE. Callers must await `ready` before loading the URL. Pass port 0
+// to bind an arbitrary free port; `url`/`port` are updated to the real one.
 export function startServer({ port = DEFAULT_PORT, publicDirectory = PUBLIC_DIRECTORY } = {}) {
   const core = createCore();
-  core.start();
   const server = createHttpServer(core, { publicDirectory });
-  server.listen(port, '127.0.0.1');
-  const url = `http://127.0.0.1:${port}`;
-  return {
+
+  const handle = {
     server,
-    port,
-    url,
     core,
+    port,
+    url: `http://127.0.0.1:${port}`,
+    ready: null,
     close() {
-      server.close();
+      try {
+        server.close();
+      } catch {
+        // Server may never have started listening (failed bind); ignore.
+      }
       core.stop();
     },
   };
+
+  handle.ready = new Promise((resolve, reject) => {
+    const onStartupError = (error) => reject(error);
+    server.once('error', onStartupError);
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', onStartupError);
+      // Later runtime errors must not throw as unhandled 'error' events.
+      server.on('error', (error) => console.error(`[ai-office] server error: ${error.message}`));
+      // Start the watchers only once we actually own the port, so a failed
+      // bind never leaves a set of file watchers running.
+      core.start();
+      const actualPort = server.address().port;
+      handle.port = actualPort;
+      handle.url = `http://127.0.0.1:${actualPort}`;
+      resolve(handle);
+    });
+  });
+
+  return handle;
 }
 
-// Run directly (`node server/index.js`): start and log the URL.
+// Run directly (`node server/index.js`): start, then log the URL or the error.
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
-  const { url } = startServer();
-  console.log(`ai-office running at ${url}`);
+  const embedded = startServer();
+  embedded.ready
+    .then(() => console.log(`ai-office running at ${embedded.url}`))
+    .catch((error) => {
+      console.error(`ai-office failed to start: ${error.message}`);
+      process.exit(1);
+    });
 }

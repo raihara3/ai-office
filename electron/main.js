@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { startServer } from '../server/index.js'
@@ -34,8 +34,34 @@ function createWindow() {
   mainWindow.loadURL(embeddedServer.url)
 }
 
-app.whenReady().then(() => {
-  embeddedServer = startServer()
+// Start the embedded server, waiting until it actually listens before the
+// window loads its URL (avoids an ERR_CONNECTION_REFUSED race). If the default
+// port is already taken — e.g. a standalone `npm start` is running — fall back
+// to an arbitrary free port so the desktop app still opens.
+async function startEmbeddedServer() {
+  let handle = startServer()
+  try {
+    await handle.ready
+  } catch (error) {
+    if (error && error.code === 'EADDRINUSE') {
+      handle.close()
+      handle = startServer({ port: 0 })
+      await handle.ready
+    } else {
+      throw error
+    }
+  }
+  return handle
+}
+
+app.whenReady().then(async () => {
+  try {
+    embeddedServer = await startEmbeddedServer()
+  } catch (error) {
+    dialog.showErrorBox('AI Office', `Failed to start the server:\n${error.message}`)
+    app.quit()
+    return
+  }
   createWindow()
 
   app.on('activate', () => {

@@ -4,10 +4,34 @@
   "description": "A Gather-like virtual office visualizing Claude Code, Codex CLI and Gemini CLI as coworkers",
   "type": "module",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test": "node --test",
+    "electron": "electron .",
+    "dist": "electron-builder"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.raihara3.ai-office",
+    "productName": "AI Office",
+    "files": [
+      "server/**",
+      "public/**",
+      "electron/**",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
   }
 }

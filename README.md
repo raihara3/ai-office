@@ -15,13 +15,33 @@ tool calls appear as a plug badge with the server name.
 
 ## Usage
 
+### Browser (server only)
+
 ```sh
 npm start
 # open http://localhost:4680
 ```
 
-No dependencies — Node.js standard library only. Set `PORT` to change the
-listen port.
+The server has no runtime dependencies — Node.js standard library only. Set
+`PORT` to change the listen port.
+
+### Desktop app (Electron)
+
+```sh
+npm install       # installs Electron (a dev dependency) the first time
+npm run electron  # launches the desktop window (embeds the server)
+npm run dist      # optional: build a macOS .dmg/.zip via electron-builder
+```
+
+The Electron main process embeds the same server in-process and points a
+window at it, so the browser and desktop paths share all logic. (Don't run
+`npm start` and `npm run electron` at once — they would fight over the port.)
+
+### Tests
+
+```sh
+npm test          # node --test, no external test framework
+```
 
 ## How it works
 
@@ -89,19 +109,32 @@ moved to the macOS Trash (`~/.Trash`), not deleted. Endpoints:
 
 ## Architecture
 
+The core (state + watchers + cleanup) is decoupled from any transport, so it
+can be driven by the HTTP/SSE adapter, embedded in Electron, or exercised by
+tests. Dependencies point inward: `index.js` → `core.js` → state/watchers/
+cleanup; `http.js` only talks to the core's public handle.
+
 ```
 server/
-  index.js          HTTP static server + SSE endpoint (/events, /api/state)
-  state.js          employee state store + status derivation + broadcast
+  index.js          wiring + startServer() (also the Electron embed contract)
+  core.js           composes state + watchers + cleanup; lifecycle (start/stop)
+  http.js           HTTP static + SSE + /api/* adapter over the core
+  state.js          createState() store, deriveStatus() (pure), #general log
   tail.js           JSONL tailing (fs.watch + periodic rescan fallback)
-  cleanup.js        stale-session detection (ps + lsof) + move logs to Trash
+  cleanup.js        createCleanup(): stale-session detection (ps + lsof)
   watchers/
-    claude.js       Claude Code transcript parser
+    claude.js       Claude Code transcript parser (handleLine + startWatcher)
     codex.js        Codex rollout log parser
     gemini.js       Gemini chat log parser
 public/
   office.js         Canvas rendering (room, desks, avatars, bubbles)
-  app.js            SSE client + side panel
+  office-client.js  transport client (SSE + cleanup API), swappable for IPC
+  app.js            chat rendering, mention chime, side panel
+electron/
+  main.js           Electron main: embeds the server, opens the window
+  preload.js        placeholder for a future IPC transport
+test/
+  *.test.js         node:test unit tests (state, cleanup, watchers)
 ```
 
 ## Limitations

@@ -57,6 +57,7 @@ function setup({
   sessions = [],
   ps = '',
   lsof = '',
+  liveLockIds = new Set(),
   fileExists = () => true,
   moveToTrash,
 } = {}) {
@@ -71,6 +72,7 @@ function setup({
     state,
     runProcessList: () => ps,
     runOpenFiles: () => lsof,
+    listLiveLockIds: () => liveLockIds,
     fileExists,
     moveToTrash: trash,
     now: () => 12345,
@@ -154,6 +156,59 @@ test('app session on break is retirable even when the app host runs', () => {
     ps: makePs({ 200: 'codex --stdio app-server' }),
   });
   assert.deepEqual(keysOf(cleanup.findRetirableSessions()), ['app-break']);
+});
+
+// A Codex Desktop rollout file whose id matches an open writer lock.
+const CODEX_APP_FILE =
+  '/logs/rollout-2026-08-16T16-54-58-01a00991-1676-7581-b910-9be65800d7f5.jsonl';
+const CODEX_APP_ID = '01a00991-1676-7581-b910-9be65800d7f5';
+
+test('idle Codex app session with a held writer lock is not retirable', () => {
+  const session = makeSession({
+    key: 'codex-open',
+    clientKind: 'app',
+    cli: 'codex',
+    filePath: CODEX_APP_FILE,
+    status: 'break',
+  });
+  const { cleanup } = setup({
+    sessions: [session],
+    ps: makePs({ 200: 'codex --stdio app-server' }),
+    liveLockIds: new Set([CODEX_APP_ID]),
+  });
+  assert.deepEqual(cleanup.findRetirableSessions(), []);
+});
+
+test('idle Codex app session whose writer lock was released is retirable', () => {
+  const session = makeSession({
+    key: 'codex-closed',
+    clientKind: 'app',
+    cli: 'codex',
+    filePath: CODEX_APP_FILE,
+    status: 'break',
+  });
+  const { cleanup } = setup({
+    sessions: [session],
+    ps: makePs({ 200: 'codex --stdio app-server' }),
+    liveLockIds: new Set(),
+  });
+  assert.deepEqual(keysOf(cleanup.findRetirableSessions()), ['codex-closed']);
+});
+
+test('Codex app session is kept alive when the lock check cannot run', () => {
+  const session = makeSession({
+    key: 'codex-unknown',
+    clientKind: 'app',
+    cli: 'codex',
+    filePath: CODEX_APP_FILE,
+    status: 'break',
+  });
+  const { cleanup } = setup({
+    sessions: [session],
+    ps: makePs({ 200: 'codex --stdio app-server' }),
+    liveLockIds: null,
+  });
+  assert.deepEqual(cleanup.findRetirableSessions(), []);
 });
 
 // --- ghost sessions (log file gone) --------------------------------------

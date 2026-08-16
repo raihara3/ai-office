@@ -20,6 +20,20 @@ import { execFileSync } from 'node:child_process';
 
 const CLI_EXECUTABLE_NAMES = { claude: 'claude', codex: 'codex', gemini: 'gemini' };
 
+// A Codex Desktop thread holds <session-id>.lock open under this directory for
+// the whole conversation (between turns included), so a held lock is the
+// authoritative "this chat is still open" signal for app-owned sessions.
+const THREAD_WRITER_LOCKS_DIR = path.join(os.homedir(), '.codex', 'thread-writer-locks');
+
+// Codex rollout files are named rollout-<timestamp>-<session-id>.jsonl; the
+// session id is also the writer-lock's basename.
+const CODEX_SESSION_ID = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+
+function codexSessionId(filePath) {
+  const match = CODEX_SESSION_ID.exec(filePath);
+  return match ? match[1].toLowerCase() : null;
+}
+
 // MCP server processes are not interactive sessions and must not grant
 // seats — e.g. "codex mcp-server" spawned by a Claude session would
 // otherwise keep idle MCP-created sessions alive.
@@ -59,6 +73,36 @@ function defaultRunOpenFiles(pids) {
   });
 }
 
+function parseLockIds(lsofOutput) {
+  const ids = new Set();
+  for (const line of lsofOutput.split('\n')) {
+    if (!line.startsWith('n')) continue;
+    const base = path.basename(line.slice(1));
+    if (base.endsWith('.lock')) ids.add(base.slice(0, -'.lock'.length).toLowerCase());
+  }
+  return ids;
+}
+
+// Session ids of Codex Desktop threads whose writer lock is held open right
+// now. Returns null when the check itself cannot run (e.g. lsof missing) so
+// callers can err on the side of "still alive" and never trash a live chat.
+function defaultListLiveLockIds() {
+  try {
+    // +D lists open files anywhere under the directory, regardless of which
+    // process (the Electron app holds the lock, not the `codex` binary).
+    const output = execFileSync('lsof', ['-F', 'n', '+D', THREAD_WRITER_LOCKS_DIR], {
+      encoding: 'utf8',
+    });
+    return parseLockIds(output);
+  } catch (error) {
+    // lsof exits non-zero both when nothing is open (authoritatively none) and
+    // when the directory is absent; partial stdout is still meaningful.
+    if (typeof error.stdout === 'string' && error.stdout) return parseLockIds(error.stdout);
+    if (error.code === 'ENOENT') return null; // lsof binary itself is missing
+    return new Set();
+  }
+}
+
 function defaultMoveToTrash(filePath) {
   // Already gone (ghost session): nothing to move, retirement still counts.
   if (!fs.existsSync(filePath)) return;
@@ -85,6 +129,7 @@ export function createCleanup({
   state,
   runProcessList = defaultRunProcessList,
   runOpenFiles = defaultRunOpenFiles,
+  listLiveLockIds = defaultListLiveLockIds,
   fileExists = fs.existsSync,
   moveToTrash = defaultMoveToTrash,
   now = () => Date.now(),
@@ -146,6 +191,12 @@ export function createCleanup({
     const seatsByCli = findWorkingDirectorySeats(processIds);
     const retirable = [];
     const groups = new Map();
+    // Computed on demand (one lsof) only when an app-owned Codex session needs it.
+    let liveLockIdsCache;
+    const getLiveLockIds = () => {
+      if (liveLockIdsCache === undefined) liveLockIdsCache = listLiveLockIds();
+      return liveLockIdsCache;
+    };
 
     for (const session of state.listSessions()) {
       // A session whose log file vanished can never produce events again —
@@ -161,16 +212,23 @@ export function createCleanup({
         if (session.status !== 'working') retirable.push(session);
         continue;
       }
-      // App/editor-owned sessions (ChatGPT app, VSCode extension) run inside the
-      // host process from an unrelated directory, so they cannot be matched by
-      // cwd. Keep them while actively working; once idle they become eligible
-      // for retirement on request, since a closed conversation leaves no process
-      // of its own to detect. Non-app sessions (cli, mcp) fall through to the
-      // cwd-based matching below.
+      // App/editor-owned sessions (Codex Desktop, VSCode extension) run inside
+      // the host process from an unrelated directory, so they cannot be matched
+      // by cwd. Keep them while actively working or blocked. When idle, a Codex
+      // Desktop conversation is NOT closed — it holds its per-thread writer lock
+      // open for the whole thread — so a held lock means "still open" and the
+      // session must not be retired (retiring trashes the log file the app is
+      // still writing to). Only once the lock is released does it retire. Other
+      // app CLIs have no such signal and retire on idle as before.
       if (session.clientKind === 'app' && appHostRunning[session.cli]) {
-        if (session.status !== 'working' && session.status !== 'blocked') {
-          retirable.push(session);
+        if (session.status === 'working' || session.status === 'blocked') continue;
+        if (session.cli === 'codex') {
+          const liveLockIds = getLiveLockIds();
+          if (liveLockIds === null) continue; // cannot tell → assume alive
+          const sessionId = codexSessionId(session.filePath);
+          if (sessionId && liveLockIds.has(sessionId)) continue;
         }
+        retirable.push(session);
         continue;
       }
       const seats = seatsByCli[session.cli];

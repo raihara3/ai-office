@@ -100,9 +100,13 @@ grants one "seat" per (CLI, working directory) — checked via `ps` + `lsof` —
 and only the most recently active sessions keep a seat; the rest are
 considered exited. App/editor-owned sessions (ChatGPT app, VSCode extension)
 run inside a host process from an unrelated directory and cannot be seat-
-matched, so they are kept only while actively working and become retirable
-once idle. Sessions currently shown as working are never retired, and
-ambiguous cases err on the side of alive. Retired avatars walk out the
+matched. A Codex Desktop conversation instead holds a per-thread writer lock
+(`~/.codex/thread-writer-locks/<session-id>.lock`) open for its whole life, so
+it is kept alive while that lock is held (idle between turns included) and only
+becomes retirable once the lock is released; other app hosts, lacking such a
+signal, become retirable once idle. Sessions currently shown as working are
+never retired, and ambiguous cases err on the side of alive. Retired avatars
+walk out the
 door and their log files are
 moved to the macOS Trash (`~/.Trash`), not deleted. Endpoints:
 `GET /api/cleanup/preview`, `POST /api/cleanup`.

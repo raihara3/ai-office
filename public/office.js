@@ -3,40 +3,27 @@
 // fills from the top-left as sessions appear. An HR avatar by the entrance
 // retires sessions whose CLI process has exited (logs go to the Trash).
 // app.js pushes state via OFFICE.setState(); this file owns the draw loop.
+// Pure geometry, vendor specs and the break-room small talk live in the
+// ./office/ modules so this file is just the canvas rendering.
+
+import { CLI_SPECS, HR_SPEC } from './office/specs.js';
+import {
+  CANVAS_WIDTH,
+  computeLayout,
+  deskPosition,
+  breakSpot,
+  doorPosition,
+  lowestFreeSeat,
+} from './office/layout.js';
+import { createSmallTalk } from './office/small-talk.js';
 
 (() => {
   const canvas = document.getElementById('office');
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
 
-  const CANVAS_WIDTH = 960;
   const WALK_SPEED = 1.6;
   const LEAVE_SPEED = 2.6;
-  const FIRST_ROW_Y = 260;
-  const ROW_SPACING = 190;
-  const GRID_COLUMNS = 5;
-  const FIRST_COLUMN_X = 120;
-  const COLUMN_SPACING = 180;
-
-  const CLI_SPECS = {
-    claude: {
-      colors: { body: '#d97757', accent: '#f5e6d3', head: '#b85c3e', eye: '#ffe9c9' },
-      emblem: 'asterisk',
-    },
-    codex: {
-      colors: { body: '#e8e8e8', accent: '#111111', head: '#222222', eye: '#8be9fd' },
-      emblem: 'knot',
-    },
-    gemini: {
-      colors: { body: '#4285f4', accent: '#d8c7ff', head: '#3367d6', eye: '#ffffff' },
-      emblem: 'sparkle',
-    },
-  };
-
-  const HR_SPEC = {
-    colors: { body: '#8a93a6', accent: '#f5d76e', head: '#5b6270', eye: '#ffffff' },
-    emblem: 'badge',
-  };
 
   let state = { employees: [] };
   // key -> {employee, leaving} — keeps departed sessions around while the
@@ -47,62 +34,10 @@
   const usedSeats = new Set();
   let hrBubble = null;
 
-  // Purely cosmetic small talk between avatars resting in the break area:
-  // one speaks, a beat later another replies.
-  const SMALL_TALK_LINES = [
-    ['おつかれさま〜', 'おつかれさまです'],
-    ['そっち忙しそうだね', 'それほどでもないよ'],
-    ['最近どう?', 'ぼちぼちです'],
-    ['ここのコーヒーおいしいね', 'わかる'],
-    ['休憩は大事だね', 'ほんとそれ'],
-    ['今日は調子いいかも', 'いいですね〜'],
-  ];
-  const smallTalk = {
-    phase: 'idle',
-    nextAt: 5000,
-    phaseUntil: 0,
-    speakerKey: null,
-    replyKey: null,
-    line: null,
-  };
+  // Break-room chatter (see ./office/small-talk.js). restingKeys is refreshed
+  // at the end of each frame with whoever is currently on break.
+  const smallTalk = createSmallTalk();
   let restingKeys = [];
-
-  function updateSmallTalk(time) {
-    if (smallTalk.phase === 'idle') {
-      if (time < smallTalk.nextAt || restingKeys.length < 2) return;
-      const speakerIndex = Math.floor(Math.random() * restingKeys.length);
-      let replyIndex = Math.floor(Math.random() * (restingKeys.length - 1));
-      if (replyIndex >= speakerIndex) replyIndex += 1;
-      smallTalk.speakerKey = restingKeys[speakerIndex];
-      smallTalk.replyKey = restingKeys[replyIndex];
-      smallTalk.line = SMALL_TALK_LINES[Math.floor(Math.random() * SMALL_TALK_LINES.length)];
-      smallTalk.phase = 'speak';
-      smallTalk.phaseUntil = time + 2800;
-      return;
-    }
-    const bothResting =
-      restingKeys.includes(smallTalk.speakerKey) && restingKeys.includes(smallTalk.replyKey);
-    if (!bothResting) {
-      smallTalk.phase = 'idle';
-      smallTalk.nextAt = time + 6000;
-      return;
-    }
-    if (time >= smallTalk.phaseUntil) {
-      if (smallTalk.phase === 'speak') {
-        smallTalk.phase = 'reply';
-        smallTalk.phaseUntil = time + 2800;
-      } else {
-        smallTalk.phase = 'idle';
-        smallTalk.nextAt = time + 9000 + Math.random() * 12000;
-      }
-    }
-  }
-
-  function smallTalkBubbleFor(key) {
-    if (smallTalk.phase === 'speak' && key === smallTalk.speakerKey) return smallTalk.line[0];
-    if (smallTalk.phase === 'reply' && key === smallTalk.replyKey) return smallTalk.line[1];
-    return null;
-  }
 
   // Small face icons for the chat sidebar, rendered once and cached.
   const faceCache = new Map();
@@ -169,9 +104,7 @@
         seen.add(employee.key);
         presence.set(employee.key, { employee, leaving: false });
         if (!seatByKey.has(employee.key)) {
-          // Fill the grid from the top-left: take the lowest free seat.
-          let seat = 0;
-          while (usedSeats.has(seat)) seat += 1;
+          const seat = lowestFreeSeat(usedSeats);
           usedSeats.add(seat);
           seatByKey.set(employee.key, seat);
         }
@@ -189,47 +122,7 @@
     },
   };
 
-  // --- layout ----------------------------------------------------------
-
-  function computeLayout() {
-    let maxRows = 1;
-    for (const seat of usedSeats) {
-      maxRows = Math.max(maxRows, Math.floor(seat / GRID_COLUMNS) + 1);
-    }
-    const lastRowY = FIRST_ROW_Y + (maxRows - 1) * ROW_SPACING;
-    // Anchor the break area (and the entrance beside it) to the bottom
-    // edge of the room instead of floating below the last desk row.
-    const height = Math.max(640, lastRowY + 280);
-    const breakTop = height - 150;
-    return { breakTop, height };
-  }
-
-  function deskPosition(seat) {
-    return {
-      x: FIRST_COLUMN_X + (seat % GRID_COLUMNS) * COLUMN_SPACING,
-      y: FIRST_ROW_Y + Math.floor(seat / GRID_COLUMNS) * ROW_SPACING,
-    };
-  }
-
-  // Spots are anchored to the break-area furniture: café tables and a sofa.
-  function breakSpot(index, layout) {
-    const top = layout.breakTop;
-    const spots = [
-      { x: 268, y: top + 92 },
-      { x: 334, y: top + 92 },
-      { x: 448, y: top + 92 },
-      { x: 514, y: top + 92 },
-      { x: 668, y: top + 96 },
-      { x: 732, y: top + 96 },
-    ];
-    if (index < spots.length) return spots[index];
-    return { x: 180 + ((index - spots.length) % 8) * 56, y: top + 40 };
-  }
-
-  // The entrance sits on the same horizontal band as the break area.
-  function doorPosition(layout) {
-    return { x: 46, y: layout.breakTop + 92 };
-  }
+  // --- actors ----------------------------------------------------------
 
   function actorFor(key, spawnAt, time) {
     let actor = actors.get(key);
@@ -678,14 +571,14 @@
   }
 
   function frame(time) {
-    const layout = computeLayout();
+    const layout = computeLayout(usedSeats);
     if (canvas.height !== layout.height) {
       canvas.height = layout.height;
       ctx.imageSmoothingEnabled = false;
     }
     drawRoom(time, layout);
     drawHr(layout, time);
-    updateSmallTalk(time);
+    smallTalk.update(time, restingKeys);
 
     const door = doorPosition(layout);
     let breakIndex = 0;
@@ -764,7 +657,7 @@
         drawBubble(actor.x, actor.y - 58, '🖐️');
       } else if (!atDeskStatus && !actor.walking) {
         nowResting.push(key);
-        drawBubble(actor.x, actor.y - 56, smallTalkBubbleFor(key) ?? '☕');
+        drawBubble(actor.x, actor.y - 56, smallTalk.bubbleFor(key) ?? '☕');
       }
     }
     restingKeys = nowResting;

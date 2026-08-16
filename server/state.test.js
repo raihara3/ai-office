@@ -1,11 +1,11 @@
-// Unit tests for the session state store (server/state.js).
+// Unit tests for the session state store (state.js).
 // Uses an injectable clock so status derivation (which depends on elapsed
 // time) is fully deterministic without real timers or sleeps.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createState, deriveStatus, CLI_INFO } from '../server/state.js';
+import { createState, deriveStatus, CLI_INFO } from './state.js';
 
 const WORKING_IDLE_TIMEOUT_MS = 90_000;
 const TURN_COMPLETE_GRACE_MS = 5_000;

@@ -25,7 +25,8 @@
       "server/**",
       "public/**",
       "electron/**",
-      "package.json"
+      "package.json",
+      "!**/*.test.js"
     ],
     "mac": {
       "target": [

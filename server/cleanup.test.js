@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createCleanup, cwdMatchesProject } from '../server/cleanup.js';
+import { createCleanup, cwdMatchesProject } from './cleanup.js';
 
 // Build a session object with sensible defaults; overrides win.
 function makeSession(overrides = {}) {

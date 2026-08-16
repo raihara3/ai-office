@@ -8,9 +8,9 @@ import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { handleLine as claudeHandleLine, handleSubagentEnd } from '../server/watchers/claude.js';
-import { handleLine as codexHandleLine } from '../server/watchers/codex.js';
-import { handleLine as geminiHandleLine } from '../server/watchers/gemini.js';
+import { handleLine as claudeHandleLine, handleSubagentEnd } from './claude.js';
+import { handleLine as codexHandleLine } from './codex.js';
+import { handleLine as geminiHandleLine } from './gemini.js';
 
 // A spy report(): pushes {cli, filePath, observation} for later assertions.
 function makeReport() {

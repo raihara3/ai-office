@@ -43,6 +43,113 @@ export function deriveStatus(session, now) {
   return 'working';
 }
 
+// A fresh session shell. Split out so `reportEvent` reads as "get or create,
+// then apply the observation" rather than inlining a 20-field literal.
+function createSession(key, cli, filePath, eventAt) {
+  return {
+    key,
+    cli,
+    filePath,
+    project: null,
+    cwd: null,
+    task: null,
+    activity: null,
+    activityKind: null,
+    subagents: [],
+    mcpCalls: [],
+    firstSeenAt: eventAt,
+    lastEventAt: null,
+    turnCompletedAt: null,
+    waitingForUser: false,
+    pendingTool: false,
+    isSubagent: false,
+    clientKind: null,
+    reactionPendingMessageId: null,
+  };
+}
+
+// Each of the following applies one facet of an observation to a session by
+// mutation. They are pure with respect to module state (no clock, no I/O), so
+// the whole state store stays deterministic and unit-testable through
+// `createState`.
+
+function applyTiming(session, eventAt) {
+  if (session.lastEventAt === null || eventAt > session.lastEventAt) {
+    session.lastEventAt = eventAt;
+  }
+  if (eventAt < session.firstSeenAt) session.firstSeenAt = eventAt;
+}
+
+function applyFields(session, observation) {
+  if (observation.project !== undefined) session.project = observation.project;
+  if (observation.cwd !== undefined) session.cwd = observation.cwd;
+  if (observation.task !== undefined) session.task = observation.task;
+  if (observation.activity !== undefined) session.activity = observation.activity;
+  if (observation.activityKind !== undefined) session.activityKind = observation.activityKind;
+  if (observation.isSubagent) session.isSubagent = true;
+  if (observation.clientKind !== undefined) session.clientKind = observation.clientKind;
+}
+
+function applyTurnState(session, observation, eventAt) {
+  session.turnCompletedAt = observation.turnComplete ? eventAt : null;
+  // Any later event (e.g. the tool_result carrying the answer) clears it.
+  session.waitingForUser = observation.waitingForUser === true;
+  // Track whether the session is mid-turn (a command or reply in progress) so
+  // the idle timeout keeps it at its desk — most importantly during a command
+  // awaiting the boss's permission, but also long-running commands or long
+  // replies — instead of sending it on a break. Only a completed turn (or an
+  // explicit wait for user input) clears it; plain liveness lines such as tool
+  // results or meta entries leave it untouched, so a still-pending tool is
+  // never mistaken for an idle session.
+  if (observation.turnComplete || observation.waitingForUser === true) {
+    session.pendingTool = false;
+  } else if (observation.activityKind !== undefined || observation.task) {
+    session.pendingTool = true;
+  }
+}
+
+function applySubagents(session, observation, eventAt) {
+  if (observation.subagentStarted) {
+    session.subagents.push({
+      key: observation.subagentStarted.key ?? `${eventAt}`,
+      label: observation.subagentStarted.label,
+      activity: null,
+      startedAt: eventAt,
+    });
+  }
+  if (observation.subagentActivity && session.subagents.length > 0) {
+    session.subagents[session.subagents.length - 1].activity = observation.subagentActivity;
+  }
+  if (observation.subagentEnded) {
+    session.subagents = session.subagents.filter(
+      (s) => s.key !== observation.subagentEnded.key
+    );
+  }
+}
+
+function applyMcpCall(session, observation, eventAt) {
+  if (!observation.mcpCall) return;
+  session.mcpCalls.push({
+    server: observation.mcpCall.server,
+    tool: observation.mcpCall.tool,
+    at: eventAt,
+  });
+  if (session.mcpCalls.length > 10) session.mcpCalls.shift();
+}
+
+// Whether an observation is the agent visibly acting on the current task, used
+// to drop the 🫡 "picked it up" reaction. Tool activity, thinking, or even a
+// plain text answer count (Codex and Gemini often reply without any tool).
+function isTaskPickup(observation) {
+  return Boolean(
+    observation.activity ||
+      observation.activityKind ||
+      observation.turnComplete ||
+      observation.mcpCall ||
+      observation.subagentStarted
+  );
+}
+
 export function createState({ now = () => Date.now() } = {}) {
   const sessions = new Map();
   const dismissedAt = new Map();
@@ -88,150 +195,83 @@ export function createState({ now = () => Date.now() } = {}) {
     }
   }
 
+  // A session dismissed by HR leaves a tombstone: reject its events for a
+  // while so a lingering log write (or a recreated file) can't resurrect it.
+  function isDismissed(key) {
+    const tombstone = dismissedAt.get(key);
+    if (tombstone === undefined) return false;
+    if (now() - tombstone < DISMISSED_TOMBSTONE_MS) return true;
+    dismissedAt.delete(key);
+    return false;
+  }
+
+  // #general channel: user requests, 🫡 on pickup, agent replies. Subagent
+  // sessions stay silent — their requests are internal. `before` holds the
+  // task/turn/waiting flags captured before the observation was applied, so we
+  // can post only on the transitions (new task, turn just completed, just
+  // started waiting). Old replayed conversations are welcome as history: the
+  // log keeps the newest MAX_MESSAGES entries sorted by time.
+  function updateGeneralChannel(session, observation, eventAt, before) {
+    const displayName = `${CLI_INFO[session.cli].mention} (${session.project ?? '?'})`;
+    if (observation.task !== undefined && observation.task && observation.task !== before.task) {
+      session.reactionPendingMessageId = postMessage({
+        authorKind: 'user',
+        authorName: '社長',
+        cli: session.cli,
+        text: `@${displayName} ${observation.task}`,
+        at: eventAt,
+      });
+    } else if (session.reactionPendingMessageId && isTaskPickup(observation)) {
+      addReaction(session.reactionPendingMessageId, '🫡');
+      session.reactionPendingMessageId = null;
+    }
+    if (observation.turnComplete && !before.turnComplete && session.task) {
+      postMessage({
+        authorKind: 'agent',
+        authorName: displayName,
+        cli: session.cli,
+        text: '@社長 作業が完了しました',
+        at: eventAt,
+      });
+    }
+    if (session.waitingForUser && !before.waiting && session.task) {
+      postMessage({
+        authorKind: 'agent',
+        authorName: displayName,
+        cli: session.cli,
+        text: '@社長 確認をお願いします',
+        at: eventAt,
+      });
+    }
+  }
+
   function reportEvent(cli, filePath, observation) {
     if (!CLI_INFO[cli]) return;
     const key = `${cli}:${filePath}`;
-    const tombstone = dismissedAt.get(key);
-    if (tombstone !== undefined) {
-      if (now() - tombstone < DISMISSED_TOMBSTONE_MS) return;
-      dismissedAt.delete(key);
-    }
-    let session = sessions.get(key);
-    const eventAt = observation.timestamp ?? now();
+    if (isDismissed(key)) return;
 
+    const eventAt = observation.timestamp ?? now();
+    let session = sessions.get(key);
     if (!session) {
-      session = {
-        key,
-        cli,
-        filePath,
-        project: null,
-        cwd: null,
-        task: null,
-        activity: null,
-        activityKind: null,
-        subagents: [],
-        mcpCalls: [],
-        firstSeenAt: eventAt,
-        lastEventAt: null,
-        turnCompletedAt: null,
-        waitingForUser: false,
-        pendingTool: false,
-        isSubagent: false,
-        clientKind: null,
-        reactionPendingMessageId: null,
-      };
+      session = createSession(key, cli, filePath, eventAt);
       sessions.set(key, session);
     }
 
-    const previousTask = session.task;
-    const wasTurnComplete = session.turnCompletedAt !== null;
-    const wasWaiting = session.waitingForUser;
+    // Snapshot the transition-sensitive flags before the observation mutates
+    // them; #general messaging fires only on the edges.
+    const before = {
+      task: session.task,
+      turnComplete: session.turnCompletedAt !== null,
+      waiting: session.waitingForUser,
+    };
 
-    if (session.lastEventAt === null || eventAt > session.lastEventAt) {
-      session.lastEventAt = eventAt;
-    }
-    if (eventAt < session.firstSeenAt) session.firstSeenAt = eventAt;
+    applyTiming(session, eventAt);
+    applyFields(session, observation);
+    applyTurnState(session, observation, eventAt);
+    applySubagents(session, observation, eventAt);
+    applyMcpCall(session, observation, eventAt);
 
-    if (observation.project !== undefined) session.project = observation.project;
-    if (observation.cwd !== undefined) session.cwd = observation.cwd;
-    if (observation.task !== undefined) session.task = observation.task;
-    if (observation.activity !== undefined) session.activity = observation.activity;
-    if (observation.activityKind !== undefined) session.activityKind = observation.activityKind;
-
-    if (observation.turnComplete) {
-      session.turnCompletedAt = eventAt;
-    } else {
-      session.turnCompletedAt = null;
-    }
-    // Any later event (e.g. the tool_result carrying the answer) clears it.
-    session.waitingForUser = observation.waitingForUser === true;
-    // Track whether the session is mid-turn (a command or reply in progress) so
-    // the idle timeout keeps it at its desk — most importantly during a command
-    // awaiting the boss's permission, but also long-running commands or long
-    // replies — instead of sending it on a break. Only a completed turn (or an
-    // explicit wait for user input) clears it; plain liveness lines such as tool
-    // results or meta entries leave it untouched, so a still-pending tool is
-    // never mistaken for an idle session.
-    if (observation.turnComplete || observation.waitingForUser === true) {
-      session.pendingTool = false;
-    } else if (observation.activityKind !== undefined || observation.task) {
-      session.pendingTool = true;
-    }
-    if (observation.isSubagent) session.isSubagent = true;
-    if (observation.clientKind !== undefined) session.clientKind = observation.clientKind;
-
-    if (observation.subagentStarted) {
-      session.subagents.push({
-        key: observation.subagentStarted.key ?? `${eventAt}`,
-        label: observation.subagentStarted.label,
-        activity: null,
-        startedAt: eventAt,
-      });
-    }
-    if (observation.subagentActivity && session.subagents.length > 0) {
-      session.subagents[session.subagents.length - 1].activity = observation.subagentActivity;
-    }
-    if (observation.subagentEnded) {
-      session.subagents = session.subagents.filter(
-        (s) => s.key !== observation.subagentEnded.key
-      );
-    }
-    if (observation.mcpCall) {
-      session.mcpCalls.push({
-        server: observation.mcpCall.server,
-        tool: observation.mcpCall.tool,
-        at: eventAt,
-      });
-      if (session.mcpCalls.length > 10) session.mcpCalls.shift();
-    }
-
-    // #general channel: user requests, 🫡 on pickup, agent replies.
-    // Subagent sessions stay silent — their requests are internal. Old
-    // replayed conversations are welcome as history: the log keeps the
-    // newest MAX_MESSAGES entries sorted by time, dates shown in the UI.
-    if (!session.isSubagent) {
-      const displayName = `${CLI_INFO[cli].mention} (${session.project ?? '?'})`;
-      if (observation.task !== undefined && observation.task && observation.task !== previousTask) {
-        session.reactionPendingMessageId = postMessage({
-          authorKind: 'user',
-          authorName: '社長',
-          cli,
-          text: `@${displayName} ${observation.task}`,
-          at: eventAt,
-        });
-      } else if (
-        session.reactionPendingMessageId &&
-        // Any sign of the agent responding counts as picking the task up:
-        // tool activity, thinking, or even a plain text answer (Codex and
-        // Gemini often reply without using a single tool).
-        (observation.activity ||
-          observation.activityKind ||
-          observation.turnComplete ||
-          observation.mcpCall ||
-          observation.subagentStarted)
-      ) {
-        addReaction(session.reactionPendingMessageId, '🫡');
-        session.reactionPendingMessageId = null;
-      }
-      if (observation.turnComplete && !wasTurnComplete && session.task) {
-        postMessage({
-          authorKind: 'agent',
-          authorName: displayName,
-          cli,
-          text: '@社長 作業が完了しました',
-          at: eventAt,
-        });
-      }
-      if (session.waitingForUser && !wasWaiting && session.task) {
-        postMessage({
-          authorKind: 'agent',
-          authorName: displayName,
-          cli,
-          text: '@社長 確認をお願いします',
-          at: eventAt,
-        });
-      }
-    }
+    if (!session.isSubagent) updateGeneralChannel(session, observation, eventAt, before);
 
     scheduleBroadcast();
   }

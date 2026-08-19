@@ -176,8 +176,10 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 
 ### `office/specs.js`
 
-ベンダー別アバターの外観(`CLI_SPECS`、`HR_SPEC`):body/accent/head/eye の色と
+ベンダー別アバターの外観(`CLI_SPECS`、`UNSET_SPEC`):body/accent/head/eye の色と
 エンブレム。canvas とサイドバーの顔アイコンが共有する単一の真実の源です。
+`UNSET_SPEC` は中立のフォールバックアバターで、人事(HR)と、LLM が未設定の席
+(常駐チームの机)が共有します。
 
 ### `office/layout.js`
 

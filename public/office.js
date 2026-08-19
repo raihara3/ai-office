@@ -6,7 +6,7 @@
 // Pure geometry, vendor specs and the break-room small talk live in the
 // ./office/ modules so this file is just the canvas rendering.
 
-import { CLI_SPECS, HR_SPEC } from './office/specs.js';
+import { CLI_SPECS, UNSET_SPEC } from './office/specs.js';
 import {
   CANVAS_WIDTH,
   computeLayout,
@@ -64,7 +64,7 @@ import { createSmallTalk } from './office/small-talk.js';
       faceCache.set(kind, url);
       return url;
     }
-    const spec = kind === 'hr' ? HR_SPEC : CLI_SPECS[kind];
+    const spec = kind === 'hr' ? UNSET_SPEC : CLI_SPECS[kind];
     if (!spec) return null;
     // head
     face.beginPath();
@@ -165,27 +165,84 @@ import { createSmallTalk } from './office/small-talk.js';
 
   // --- room ------------------------------------------------------------
 
+  // The window sky gradient is position-independent, so build it once.
+  let windowSky = null;
+
+  // Shadow-blurred text is expensive to rasterize, so the neon sign is
+  // rendered once into an offscreen sprite and stamped each frame.
+  let neonSignSprite = null;
+  function drawNeonSign(x, y) {
+    if (!neonSignSprite) {
+      neonSignSprite = document.createElement('canvas');
+      neonSignSprite.width = 122;
+      neonSignSprite.height = 34;
+      const sign = neonSignSprite.getContext('2d');
+      sign.beginPath();
+      sign.roundRect(0, 0, 122, 34, 6);
+      sign.fillStyle = '#2e3440';
+      sign.fill();
+      sign.font = 'bold 16px "Hiragino Sans", sans-serif';
+      sign.textAlign = 'center';
+      sign.shadowColor = '#5ad1a0';
+      sign.shadowBlur = 8;
+      sign.fillStyle = '#7ee2b8';
+      sign.fillText('AI OFFICE', 61, 23);
+    }
+    ctx.drawImage(neonSignSprite, x, y);
+  }
+
   function drawRoom(time, layout) {
     const height = layout.height;
-    // wall
-    px(0, 0, CANVAS_WIDTH, 96, '#4a4458');
-    px(0, 88, CANVAS_WIDTH, 8, '#3a3547');
-    for (const wx of [70, 330, 590, 820]) {
-      px(wx, 20, 70, 52, '#2b2640');
-      const glow = 0.5 + 0.5 * Math.sin(time / 4000);
-      ctx.fillStyle = `rgba(137, 180, 250, ${0.35 + glow * 0.2})`;
-      ctx.fillRect(wx + 4, 24, 62, 44);
-      px(wx + 33, 24, 4, 44, '#2b2640');
-      px(wx + 4, 44, 62, 3, '#2b2640');
+    // wall: warm plaster with a crown line and a baseboard
+    px(0, 0, CANVAS_WIDTH, 96, '#ece6da');
+    px(0, 0, CANVAS_WIDTH, 6, '#ddd5c6');
+    px(0, 86, CANVAS_WIDTH, 10, '#c9c0ae');
+    // daylight windows: slim dark frames, sky gradient, drifting clouds
+    if (!windowSky) {
+      windowSky = ctx.createLinearGradient(0, 16, 0, 74);
+      windowSky.addColorStop(0, '#8ecff0');
+      windowSky.addColorStop(1, '#cdeaf7');
     }
-    // floor tiles
-    for (let ty = 96; ty < height; ty += 48) {
-      for (let tx = 0; tx < CANVAS_WIDTH; tx += 48) {
-        const even = ((tx + ty) / 48) % 2 === 0;
-        px(tx, ty, 48, 48, even ? '#8a7a6b' : '#93826f');
+    for (const wx of [60, 310, 560, 810]) {
+      px(wx - 4, 12, 104, 66, '#3d4852');
+      ctx.fillStyle = windowSky;
+      ctx.fillRect(wx, 16, 96, 58);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(wx, 16, 96, 58);
+      ctx.clip();
+      const drift = ((time / 150 + wx) % 140) - 20;
+      px(wx + drift, 28, 26, 7, 'rgba(255, 255, 255, 0.9)');
+      px(wx + drift + 6, 23, 14, 6, 'rgba(255, 255, 255, 0.9)');
+      px(wx + ((drift + 70) % 140), 48, 20, 6, 'rgba(255, 255, 255, 0.7)');
+      ctx.restore();
+      px(wx + 46, 16, 4, 58, '#3d4852');
+      px(wx, 42, 96, 3, '#3d4852');
+      px(wx - 6, 74, 108, 6, '#f7f3ea');
+    }
+    // whiteboard with a sketch, between the first two windows
+    ctx.lineWidth = 2;
+    roundRect(196, 22, 76, 50, 4, '#fbfaf6', '#b9b2a2');
+    px(204, 32, 40, 3, '#7aa2f7');
+    px(204, 40, 56, 3, '#c9c2b2');
+    px(204, 48, 48, 3, '#c9c2b2');
+    px(204, 56, 30, 3, '#e0707a');
+    px(214, 72, 40, 4, '#b9b2a2');
+    // neon company sign on a dark mounting board
+    drawNeonSign(672, 30);
+    // oak plank floor with staggered seams
+    for (let ty = 96; ty < height; ty += 24) {
+      const row = (ty - 96) / 24;
+      px(0, ty, CANVAS_WIDTH, 24, row % 2 === 0 ? '#d6b489' : '#cfab7e');
+      ctx.fillStyle = 'rgba(90, 62, 40, 0.14)';
+      ctx.fillRect(0, ty, CANVAS_WIDTH, 2);
+      for (let sx = (row % 3) * 110; sx < CANVAS_WIDTH; sx += 320) {
+        ctx.fillRect(sx, ty, 2, 24);
       }
     }
-    drawResidentRoom();
+    // soft shadow the wall casts on the floor
+    px(0, 96, CANVAS_WIDTH, 5, 'rgba(0, 0, 0, 0.10)');
+    drawResidentRoom(time);
     drawBreakArea(layout);
     // plants (the left edge is now the resident room, so only the right stays)
     drawPlant(930, 180);
@@ -193,10 +250,10 @@ import { createSmallTalk } from './office/small-talk.js';
     // entrance door, spanning the same y band as the break area
     const door = doorPosition(layout);
     const doorTop = layout.breakTop + 10;
-    px(0, doorTop, 18, 112, '#3a3547');
-    px(4, doorTop + 6, 10, 100, '#26232e');
-    roundRect(door.x - 20, door.y + 4, 52, 12, 4, '#5d4037');
-    roundRect(door.x - 16, layout.breakTop - 22, 56, 18, 4, '#204d32');
+    px(0, doorTop, 18, 112, '#8a8172');
+    px(4, doorTop + 6, 10, 100, '#4e463c');
+    roundRect(door.x - 20, door.y + 4, 52, 12, 4, '#607d8b');
+    roundRect(door.x - 16, layout.breakTop - 22, 56, 18, 4, '#2f5d50');
     ctx.fillStyle = '#8fe3a5';
     ctx.font = 'bold 11px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'center';
@@ -206,9 +263,9 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.save();
     ctx.beginPath();
     ctx.arc(480, 48, 22, 0, Math.PI * 2);
-    ctx.fillStyle = '#f5f0e8';
+    ctx.fillStyle = '#fbf8f2';
     ctx.fill();
-    ctx.strokeStyle = '#2b2640';
+    ctx.strokeStyle = '#4e463c';
     ctx.lineWidth = 3;
     ctx.stroke();
     const now = new Date();
@@ -224,14 +281,14 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.restore();
   }
 
-  // The resident team's corner on the left edge: an open (wall-less) greige
-  // floor patch holding an island of four always-present full-size desks (two
-  // columns of two). Purely decorative furniture for now — no avatars are
-  // seated here, leaving the island for a resident team to move in later.
-  function drawResidentRoom() {
+  // The resident team's corner on the left edge: an open (wall-less) carpeted
+  // patch holding an island of four always-present full-size desks (two
+  // columns of two), each seating the neutral avatar until a resident team
+  // member is configured for it.
+  function drawResidentRoom(time) {
     const room = RESIDENT_ROOM;
-    // a muted greige floor with a faint checker marks the area off from the
-    // office while blending with its warm, low-saturation tones. Clipped to a
+    // a sage carpet-tile patch marks the area off from the oak floor while
+    // staying in the office's warm, low-saturation palette. Clipped to a
     // soft-cornered rect so the checker stops cleanly without partition walls.
     ctx.save();
     ctx.beginPath();
@@ -242,19 +299,21 @@ import { createSmallTalk } from './office/small-talk.js';
     for (let ty = room.y; ty < bottom; ty += 48) {
       for (let tx = room.x; tx < right; tx += 48) {
         const even = ((tx + ty) / 48) % 2 === 0;
-        px(tx, ty, 48, 48, even ? '#bcae99' : '#b3a48d');
+        px(tx, ty, 48, 48, even ? '#a9bfa4' : '#a0b69a');
       }
     }
     ctx.restore();
 
-    // Empty desks, each with an empty chair tucked beneath it.
+    // Desks, each seating the neutral (unset-LLM) avatar. They have no work to
+    // do, so they face the room (toward the viewer) rather than the monitor.
     for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
       const desk = residentDeskPosition(index);
       drawResidentDesk(desk.x, desk.y);
+      drawAvatar(UNSET_SPEC, desk.x, desk.y + 44, { time });
     }
 
-    // sign (dark so it reads on the greige floor)
-    ctx.fillStyle = '#4a3b2a';
+    // sign (dark so it reads on the sage carpet)
+    ctx.fillStyle = '#3c4a38';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('常駐チーム', room.x + 8, room.y + 22);
@@ -266,136 +325,184 @@ import { createSmallTalk } from './office/small-talk.js';
   function drawResidentDesk(centerX, centerY) {
     ctx.save();
     ctx.translate(centerX, centerY);
-    roundRect(-13, 34, 26, 12, 4, '#3f3a4a');
-    px(-52, 20, 8, 14, '#5d4037');
-    px(44, 20, 8, 14, '#5d4037');
-    px(-56, -20, 112, 40, '#6d4c41');
-    px(-56, -20, 112, 6, '#8d6e63');
-    px(-26, -58, 52, 36, '#263238');
-    px(-22, -54, 44, 28, '#111418');
-    px(-4, -22, 8, 4, '#455a64');
-    px(-20, -12, 40, 8, '#455a64');
+    roundRect(-13, 34, 26, 12, 4, '#37474f');
+    px(-52, 20, 6, 16, '#9aa3ac');
+    px(46, 20, 6, 16, '#9aa3ac');
+    px(-56, -20, 112, 38, '#f4efe6');
+    px(-56, -20, 112, 5, '#fbf8f2');
+    px(-56, 14, 112, 4, '#d9d2c4');
+    px(-26, -58, 52, 34, '#22262b');
+    px(-23, -55, 46, 28, '#0b0d10');
+    px(-3, -24, 6, 6, '#5c6670');
+    px(-20, -12, 40, 7, '#cfd4d9');
     ctx.restore();
   }
 
-  // An office break corner: wooden floor, coffee counter, café tables,
-  // a sofa and a plant. Aligned with the entrance at the bottom band.
+  // A café-style break corner: checkered tiles, a walnut coffee counter under
+  // pendant lamps, round café tables, a mustard sofa and a plant. Aligned with
+  // the entrance at the bottom band.
   function drawBreakArea(layout) {
     const top = layout.breakTop;
-    // wooden floor with plank lines
+    // checkered café tiles
     ctx.save();
     ctx.beginPath();
     ctx.roundRect(140, top, 690, 132, 12);
     ctx.clip();
-    ctx.fillStyle = '#a08055';
-    ctx.fillRect(140, top, 690, 132);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
-    for (let plankY = top + 12; plankY < top + 132; plankY += 12) {
-      ctx.fillRect(140, plankY, 690, 2);
+    for (let ty = 0; ty < 132; ty += 22) {
+      for (let tx = 0; tx < 690; tx += 22) {
+        const even = ((tx + ty) / 22) % 2 === 0;
+        px(140 + tx, top + ty, 22, 22, even ? '#efe6d3' : '#ddd0b6');
+      }
     }
     ctx.restore();
     ctx.lineWidth = 3;
-    roundRect(140, top, 690, 132, 12, null, '#7a5c3e');
+    roundRect(140, top, 690, 132, 12, null, '#b3a68d');
 
-    // coffee counter along the inside top-right
-    px(640, top + 10, 172, 28, '#5d4037');
-    px(640, top + 10, 172, 6, '#8d6e63');
-    // coffee machine on the counter
-    px(700, top - 16, 34, 30, '#37474f');
-    px(707, top - 9, 20, 10, '#80cbc4');
-    px(712, top + 6, 10, 6, '#263238');
+    // walnut coffee counter along the inside top-right
+    px(640, top + 10, 172, 30, '#4e342e');
+    px(640, top + 10, 172, 5, '#7b5e57');
+    // espresso machine on the counter
+    px(654, top - 16, 34, 30, '#2e3440');
+    px(661, top - 9, 20, 10, '#80cbc4');
+    px(666, top + 6, 10, 6, '#1c2128');
     // cups
-    px(756, top + 2, 8, 8, '#f5f0e8');
-    px(770, top + 2, 8, 8, '#f5f0e8');
+    px(756, top + 2, 8, 8, '#fbf8f2');
+    px(770, top + 2, 8, 8, '#fbf8f2');
+    // pendant lamps hanging over the counter, with warm pools of light
+    for (const lampX of [706, 756, 800]) {
+      px(lampX - 1, top - 34, 2, 24, '#4e463c');
+      ctx.fillStyle = '#2e3440';
+      ctx.beginPath();
+      ctx.moveTo(lampX - 10, top - 2);
+      ctx.lineTo(lampX + 10, top - 2);
+      ctx.lineTo(lampX + 5, top - 12);
+      ctx.lineTo(lampX - 5, top - 12);
+      ctx.closePath();
+      ctx.fill();
+      px(lampX - 4, top - 2, 8, 3, '#ffd97a');
+      ctx.fillStyle = 'rgba(255, 214, 120, 0.18)';
+      ctx.beginPath();
+      ctx.ellipse(lampX, top + 18, 20, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // round café tables
+    // round café tables: white tops on dark pedestals
     for (const tableX of [301, 481]) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
       ctx.beginPath();
       ctx.ellipse(tableX, top + 100, 18, 6, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#6d4c41';
+      px(tableX - 3, top + 84, 6, 14, '#37474f');
+      ctx.fillStyle = '#5d4037';
       ctx.beginPath();
       ctx.arc(tableX, top + 84, 17, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#a1887f';
+      ctx.fillStyle = '#e8d5b5';
       ctx.beginPath();
       ctx.arc(tableX, top + 84, 14, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-      ctx.beginPath();
-      ctx.arc(tableX - 4, top + 80, 5, 0, Math.PI * 2);
-      ctx.fill();
+      // a shared coffee pot in the middle
+      px(tableX - 4, top + 76, 8, 8, '#2e3440');
+      px(tableX + 4, top + 78, 3, 4, '#2e3440');
     }
 
-    // sofa (avatars settle in front, looking like they sat down)
-    px(654, top + 46, 8, 36, '#55796b');
-    px(742, top + 46, 8, 36, '#55796b');
-    px(660, top + 46, 84, 14, '#55796b');
-    px(662, top + 58, 80, 24, '#6f9779');
+    // mustard sofa with teal cushions (avatars settle in front)
+    px(654, top + 46, 8, 36, '#c98f2d');
+    px(742, top + 46, 8, 36, '#c98f2d');
+    px(660, top + 46, 84, 14, '#c98f2d');
+    px(662, top + 58, 80, 24, '#e0a63c');
+    px(668, top + 50, 18, 10, '#3f7d74');
+    px(716, top + 50, 18, 10, '#3f7d74');
 
     // plant in the corner of the area
     drawPlant(812, top + 124);
 
     // sign
-    ctx.fillStyle = '#d7ccc8';
+    ctx.fillStyle = '#5a4632';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('☕ BREAK ROOM', 152, top - 8);
   }
 
   function drawPlant(x, y) {
-    px(x - 10, y - 14, 20, 14, '#8d6e63');
-    ctx.fillStyle = '#66bb6a';
+    // terracotta pot with layered monstera-like foliage
+    px(x - 11, y - 16, 22, 16, '#c96f4a');
+    px(x - 11, y - 16, 22, 4, '#b35f3d');
+    ctx.fillStyle = '#3e8e52';
     ctx.beginPath();
-    ctx.arc(x, y - 24, 12, 0, Math.PI * 2);
-    ctx.arc(x - 8, y - 16, 8, 0, Math.PI * 2);
-    ctx.arc(x + 8, y - 16, 8, 0, Math.PI * 2);
+    ctx.arc(x - 8, y - 22, 9, 0, Math.PI * 2);
+    ctx.arc(x + 8, y - 22, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#5cb86e';
+    ctx.beginPath();
+    ctx.arc(x, y - 30, 11, 0, Math.PI * 2);
+    ctx.arc(x - 10, y - 32, 6, 0, Math.PI * 2);
+    ctx.arc(x + 10, y - 32, 6, 0, Math.PI * 2);
     ctx.fill();
   }
 
   function drawDesk(deskLabel, x, y, mcpCall, time, employeeKey, spec, working) {
-    // nameplate: repository / work name, tinted with the vendor color
+    // nameplate: repository / work name on a Gather-style dark chip, tinted
+    // with the vendor color so it reads on the light oak floor
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    ctx.fillStyle = '#2b2640';
-    ctx.fillText(deskLabel, x + 1, y - 123);
+    const labelWidth = ctx.measureText(deskLabel).width + 16;
+    roundRect(x - labelWidth / 2, y - 136, labelWidth, 18, 9, 'rgba(38, 36, 50, 0.85)');
     ctx.fillStyle = spec.colors.body;
-    ctx.fillText(deskLabel, x, y - 124);
+    ctx.fillText(deskLabel, x, y - 123);
     // MCP badge between the nameplate and the monitor
     if (mcpCall) {
       ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
       const text = `🔌 ${mcpCall.server}`;
       const badgeWidth = ctx.measureText(text).width + 14;
+      ctx.lineWidth = 1;
       roundRect(x - badgeWidth / 2, y - 113, badgeWidth, 17, 8, '#33283a', '#bb9af7');
       ctx.fillStyle = '#bb9af7';
       ctx.fillText(text, x, y - 101);
     }
 
-    // table
-    px(x - 56, y - 46, 112, 40, '#6d4c41');
-    px(x - 56, y - 46, 112, 6, '#8d6e63');
-    px(x - 52, y - 6, 8, 14, '#5d4037');
-    px(x + 44, y - 6, 8, 14, '#5d4037');
-    // monitor
-    px(x - 26, y - 84, 52, 36, '#263238');
-    px(x - 22, y - 80, 44, 28, working ? '#1a2b3c' : '#111418');
+    // table: white top on steel legs
+    px(x - 52, y - 6, 6, 16, '#9aa3ac');
+    px(x + 46, y - 6, 6, 16, '#9aa3ac');
+    px(x - 56, y - 46, 112, 40, '#f4efe6');
+    px(x - 56, y - 46, 112, 5, '#fbf8f2');
+    px(x - 56, y - 10, 112, 4, '#d9d2c4');
+    // slim monitor
+    px(x - 26, y - 84, 52, 34, '#22262b');
+    px(x - 23, y - 81, 46, 28, working ? '#1a2b3c' : '#0b0d10');
     if (working) {
       ctx.save();
       ctx.beginPath();
-      ctx.rect(x - 22, y - 80, 44, 28);
+      ctx.rect(x - 23, y - 81, 46, 28);
       ctx.clip();
       const scroll = (time / 120) % 8;
       for (let i = -1; i < 5; i += 1) {
-        const lineY = y - 78 + i * 7 + scroll;
+        const lineY = y - 79 + i * 7 + scroll;
         const width = 12 + ((i * 37 + employeeKey.length * 13) % 24);
         px(x - 19, lineY, width, 2, i % 3 === 0 ? '#7aa2f7' : '#9ece6a');
       }
       ctx.restore();
     }
-    px(x - 4, y - 48, 8, 4, '#455a64');
+    px(x - 3, y - 50, 6, 6, '#5c6670');
     // keyboard
-    px(x - 20, y - 38, 40, 8, '#455a64');
+    px(x - 20, y - 38, 40, 7, '#cfd4d9');
+    // a small personal prop, picked deterministically per session
+    const prop = employeeKey.length % 3;
+    if (prop === 0) {
+      // succulent in a terracotta pot
+      px(x + 36, y - 50, 10, 8, '#c96f4a');
+      px(x + 38, y - 56, 6, 6, '#5cb86e');
+      px(x + 35, y - 53, 4, 4, '#3e8e52');
+      px(x + 43, y - 53, 4, 4, '#3e8e52');
+    } else if (prop === 1) {
+      // coffee mug
+      px(x + 37, y - 50, 9, 8, '#e0707a');
+      px(x + 46, y - 48, 3, 4, '#e0707a');
+    } else {
+      // a short stack of books
+      px(x + 34, y - 46, 16, 4, '#3f7d74');
+      px(x + 36, y - 50, 14, 4, '#d9a441');
+    }
   }
 
   // --- avatar ----------------------------------------------------------
@@ -526,13 +633,15 @@ import { createSmallTalk } from './office/small-talk.js';
     const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
     const height = lines.length * 15 + 10;
     const left = Math.min(Math.max(x - width / 2, 6), CANVAS_WIDTH - 6 - width);
-    roundRect(left, y - height, width, height, 7, '#f5f0e8');
+    // white bubble with a thin outline so it stays visible on light floors
+    ctx.lineWidth = 1.5;
+    roundRect(left, y - height, width, height, 7, '#ffffff', 'rgba(60, 54, 72, 0.45)');
     ctx.beginPath();
     ctx.moveTo(x - 5, y);
     ctx.lineTo(x + 5, y);
     ctx.lineTo(x, y + 6);
     ctx.closePath();
-    ctx.fillStyle = '#f5f0e8';
+    ctx.fillStyle = '#ffffff';
     ctx.fill();
     ctx.fillStyle = '#2b2640';
     ctx.textAlign = 'left';
@@ -578,13 +687,13 @@ import { createSmallTalk } from './office/small-talk.js';
       drawAvatar(spec, x, y, { scale, typing: true, time: time + index * 400 });
       drawWakabaMark(x + 10 * scale, y - 46 * scale, 12 * scale);
       ctx.font = '9px "Hiragino Sans", sans-serif';
-      ctx.fillStyle = '#f5f0e8';
+      ctx.fillStyle = '#4a4136';
       ctx.textAlign = 'center';
       ctx.fillText(String(subagent.label).slice(0, 10), x, y + 12);
     });
     if (employee.subagents.length > 2) {
       ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
-      ctx.fillStyle = '#9ece6a';
+      ctx.fillStyle = '#2e7d32';
       ctx.fillText(`+${employee.subagents.length - 2}`, deskX + 44, deskY + 52);
     }
     for (const key of actor.subagentPop.keys()) {
@@ -598,9 +707,9 @@ import { createSmallTalk } from './office/small-talk.js';
     const door = doorPosition(layout);
     const x = door.x + 62;
     const y = door.y + 6;
-    drawAvatar(HR_SPEC, x, y, { time });
+    drawAvatar(UNSET_SPEC, x, y, { time });
     ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
-    ctx.fillStyle = '#f5f0e8';
+    ctx.fillStyle = '#4a4136';
     ctx.textAlign = 'center';
     ctx.fillText('人事', x, y + 14);
     if (hrBubble && hrBubble.until > Date.now()) {

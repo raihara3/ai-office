@@ -17,8 +17,9 @@ export const CLI_SPECS = {
   },
 };
 
-// The HR avatar by the entrance that runs the retirement cleanup.
-export const HR_SPEC = {
+// The neutral fallback avatar: used by the HR figure at the entrance and by
+// any seat whose LLM/vendor is not configured (e.g. the resident-team desks).
+export const UNSET_SPEC = {
   colors: { body: '#8a93a6', accent: '#f5d76e', head: '#5b6270', eye: '#ffffff' },
   emblem: 'badge',
 };

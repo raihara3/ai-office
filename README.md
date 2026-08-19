@@ -4,12 +4,13 @@ A Gather-like virtual office that visualizes your local AI coding agents —
 Claude Code, Codex CLI and Gemini CLI — as pixel-art coworkers.
 
 Each session (one log file) gets its own avatar and desk on a shared grid
-that fills from the top-left as sessions appear. When an agent is actively
+of eight pre-furnished desks (four columns by two rows) that fills from the
+top-left; vacant seats show an empty desk, and sessions beyond eight
+overflow onto extra rows. When an agent is actively
 working, its avatar sits at
 the desk and a speech bubble shows what it is doing right now (current tool
 action or the user's request). When idle, the avatar walks to the break room
-for a coffee. Subagent runs appear as mini avatars next to the desk, and MCP
-tool calls appear as a plug badge with the server name.
+for a coffee. Subagent runs appear as mini avatars next to the desk.
 
 ![status](https://img.shields.io/badge/runtime-Node.js%20%E2%89%A520-brightgreen)
 
@@ -84,7 +85,6 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 - Mini avatars beside the desk: running subagents (label = agent type);
   background subagent sessions get their own desk. Both wear a green-and-
   yellow beginner's mark (若葉マーク)
-- `🔌 server` badge: an MCP tool call within the last 60 seconds
 - Sidebar: a Slack-like #general channel. User requests post as
   `@Claude (repo) <request>` from 社長 (with a 🫡 reaction once the agent
   starts), agents reply `@社長 作業が完了しました` / `確認をお願いします`,

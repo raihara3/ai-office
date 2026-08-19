@@ -3,29 +3,41 @@
 // module is unit-testable and shared by the renderer.
 
 export const CANVAS_WIDTH = 960;
-export const FIRST_ROW_Y = 260;
-export const ROW_SPACING = 190;
-export const GRID_COLUMNS = 5;
-// The main desk grid is shifted right of the resident-team room that occupies
-// the left edge; the column spacing is tightened so five columns still fit.
-export const FIRST_COLUMN_X = 360;
-export const COLUMN_SPACING = 134;
+// The first free-address row shares its y with the resident island's top row
+// (both use the same desk anchor), so the two islands line up horizontally.
+// Kept low enough that a desk's nameplate chip (drawn 106px above the anchor)
+// stays clear of the wall's baseboard.
+export const FIRST_ROW_Y = 240;
+// The packing limit for rows: a desk's nameplate chip starts 106px above its
+// anchor, while the row above extends 64px below its anchor (the subagent
+// mini-avatars and their labels), leaving a couple of pixels of clearance.
+export const ROW_SPACING = 172;
+export const GRID_COLUMNS = 4;
+// Eight seats are furnished up front (two rows of four); sessions beyond that
+// still overflow onto extra rows below.
+export const SEAT_COUNT = 8;
+// The main desk grid starts right of the resident-team room, leaving an
+// aisle between the room's right edge (288) and the first desk's left edge.
+export const FIRST_COLUMN_X = 400;
+export const COLUMN_SPACING = 150;
 
 // The resident team's room pinned to the top-left edge: a fixed partition
 // holding a fixed island of full-size desks, independent of live sessions.
 // Unlike the main grid it never grows, so it stays put as the office fills up.
-export const RESIDENT_ROOM = { x: 8, y: 104, width: 280, height: 298 };
+export const RESIDENT_ROOM = { x: 8, y: 104, width: 280, height: 344 };
 export const RESIDENT_DESK_COUNT = 4;
 
 // An island of four full-size desks in two columns and two rows, all upright
 // (monitor sitting on the desktop). The rows are spaced far enough apart that
 // every desk — the top row included — shows an empty chair tucked beneath it,
 // and the columns keep a margin to the side walls so nothing overflows them.
+// The anchor matches deskPosition's, and both rows share the free-address
+// grid's FIRST_ROW_Y / ROW_SPACING so the two islands line up horizontally.
 export function residentDeskPosition(index) {
   const centerX = RESIDENT_ROOM.x + 140;
   const columnOffset = 62;
-  const topY = RESIDENT_ROOM.y + 96;
-  const bottomY = topY + 128;
+  const topY = FIRST_ROW_Y;
+  const bottomY = topY + ROW_SPACING;
   const layout = [
     { x: centerX - columnOffset, y: topY },
     { x: centerX + columnOffset, y: topY },
@@ -43,11 +55,11 @@ export function lowestFreeSeat(usedSeats) {
   return seat;
 }
 
-// Room height grows with the number of occupied rows; the break area and the
-// entrance are anchored to the bottom edge rather than floating below the last
-// desk row.
+// Room height grows with the number of occupied rows — never below the two
+// rows of pre-placed seats; the break area and the entrance are anchored to
+// the bottom edge rather than floating below the last desk row.
 export function computeLayout(usedSeats) {
-  let maxRows = 1;
+  let maxRows = Math.ceil(SEAT_COUNT / GRID_COLUMNS);
   for (const seat of usedSeats) {
     maxRows = Math.max(maxRows, Math.floor(seat / GRID_COLUMNS) + 1);
   }

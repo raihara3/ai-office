@@ -17,6 +17,7 @@ import {
   RESIDENT_ROOM,
   RESIDENT_DESK_COUNT,
   residentDeskPosition,
+  SEAT_COUNT,
 } from './office/layout.js';
 import { createSmallTalk } from './office/small-talk.js';
 
@@ -308,8 +309,8 @@ import { createSmallTalk } from './office/small-talk.js';
     // do, so they face the room (toward the viewer) rather than the monitor.
     for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
       const desk = residentDeskPosition(index);
-      drawResidentDesk(desk.x, desk.y);
-      drawAvatar(UNSET_SPEC, desk.x, desk.y + 44, { time });
+      drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
+      drawAvatar(UNSET_SPEC, desk.x, desk.y + 18, { time });
     }
 
     // sign (dark so it reads on the sage carpet)
@@ -319,23 +320,22 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.fillText('常駐チーム', room.x + 8, room.y + 22);
   }
 
-  // A full-size unoccupied desk matching the main desks' dimensions, drawn
-  // upright: legs and empty chair at the bottom, then the desktop with a
-  // powered-off monitor and keyboard sitting on top of it.
-  function drawResidentDesk(centerX, centerY) {
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    roundRect(-13, 34, 26, 12, 4, '#37474f');
-    px(-52, 20, 6, 16, '#9aa3ac');
-    px(46, 20, 6, 16, '#9aa3ac');
-    px(-56, -20, 112, 38, '#f4efe6');
-    px(-56, -20, 112, 5, '#fbf8f2');
-    px(-56, 14, 112, 4, '#d9d2c4');
-    px(-26, -58, 52, 34, '#22262b');
-    px(-23, -55, 46, 28, '#0b0d10');
-    px(-3, -24, 6, 6, '#5c6670');
-    px(-20, -12, 40, 7, '#cfd4d9');
-    ctx.restore();
+  // The desk furniture shared by occupied and vacant desks: chair, steel
+  // legs, white top, monitor shell, stand and keyboard. Only the screen fill
+  // varies, so occupied desks can light it up (and animate over it). Vacant
+  // seats — free-address or the resident island — pass the powered-off color.
+  const SCREEN_OFF = '#0b0d10';
+  function drawDeskFurniture(x, y, screenColor) {
+    roundRect(x - 13, y + 8, 26, 12, 4, '#37474f');
+    px(x - 52, y - 6, 6, 16, '#9aa3ac');
+    px(x + 46, y - 6, 6, 16, '#9aa3ac');
+    px(x - 56, y - 46, 112, 40, '#f4efe6');
+    px(x - 56, y - 46, 112, 5, '#fbf8f2');
+    px(x - 56, y - 10, 112, 4, '#d9d2c4');
+    px(x - 26, y - 84, 52, 34, '#22262b');
+    px(x - 23, y - 81, 46, 28, screenColor);
+    px(x - 3, y - 50, 6, 6, '#5c6670');
+    px(x - 20, y - 38, 40, 7, '#cfd4d9');
   }
 
   // A café-style break corner: checkered tiles, a walnut coffee counter under
@@ -441,36 +441,20 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.fill();
   }
 
-  function drawDesk(deskLabel, x, y, mcpCall, time, employeeKey, spec, working) {
+  function drawDesk(deskLabel, x, y, time, employeeKey, spec, working) {
     // nameplate: repository / work name on a Gather-style dark chip, tinted
-    // with the vendor color so it reads on the light oak floor
+    // with the vendor color so it reads on the light oak floor. It hugs the
+    // monitor so the desk rows can pack tightly.
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
     const labelWidth = ctx.measureText(deskLabel).width + 16;
-    roundRect(x - labelWidth / 2, y - 136, labelWidth, 18, 9, 'rgba(38, 36, 50, 0.85)');
+    roundRect(x - labelWidth / 2, y - 106, labelWidth, 18, 9, 'rgba(38, 36, 50, 0.85)');
     ctx.fillStyle = spec.colors.body;
-    ctx.fillText(deskLabel, x, y - 123);
-    // MCP badge between the nameplate and the monitor
-    if (mcpCall) {
-      ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
-      const text = `🔌 ${mcpCall.server}`;
-      const badgeWidth = ctx.measureText(text).width + 14;
-      ctx.lineWidth = 1;
-      roundRect(x - badgeWidth / 2, y - 113, badgeWidth, 17, 8, '#33283a', '#bb9af7');
-      ctx.fillStyle = '#bb9af7';
-      ctx.fillText(text, x, y - 101);
-    }
+    ctx.fillText(deskLabel, x, y - 93);
 
-    // table: white top on steel legs
-    px(x - 52, y - 6, 6, 16, '#9aa3ac');
-    px(x + 46, y - 6, 6, 16, '#9aa3ac');
-    px(x - 56, y - 46, 112, 40, '#f4efe6');
-    px(x - 56, y - 46, 112, 5, '#fbf8f2');
-    px(x - 56, y - 10, 112, 4, '#d9d2c4');
-    // slim monitor
-    px(x - 26, y - 84, 52, 34, '#22262b');
-    px(x - 23, y - 81, 46, 28, working ? '#1a2b3c' : '#0b0d10');
+    drawDeskFurniture(x, y, working ? '#1a2b3c' : SCREEN_OFF);
     if (working) {
+      // scrolling code lines on the lit screen
       ctx.save();
       ctx.beginPath();
       ctx.rect(x - 23, y - 81, 46, 28);
@@ -483,9 +467,6 @@ import { createSmallTalk } from './office/small-talk.js';
       }
       ctx.restore();
     }
-    px(x - 3, y - 50, 6, 6, '#5c6670');
-    // keyboard
-    px(x - 20, y - 38, 40, 7, '#cfd4d9');
     // a small personal prop, picked deterministically per session
     const prop = employeeKey.length % 3;
     if (prop === 0) {
@@ -743,6 +724,14 @@ import { createSmallTalk } from './office/small-talk.js';
       ctx.imageSmoothingEnabled = false;
     }
     drawRoom(time, layout);
+    // The eight free-address seats are furnished up front; vacant ones show
+    // an empty desk until a session clocks in and claims the seat.
+    for (let seat = 0; seat < SEAT_COUNT; seat += 1) {
+      if (!usedSeats.has(seat)) {
+        const desk = deskPosition(seat);
+        drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
+      }
+    }
     drawHr(layout, time);
     smallTalk.update(time, restingKeys);
 
@@ -783,8 +772,7 @@ import { createSmallTalk } from './office/small-talk.js';
         employee.status === 'working' || employee.status === 'blocked';
       const waiting = employee.status === 'waiting';
       const atDeskStatus = working || waiting;
-      const mcpCall = employee.mcpCalls[employee.mcpCalls.length - 1];
-      drawDesk(employee.project ?? employee.name, desk.x, desk.y, mcpCall, time, key, spec, atDeskStatus);
+      drawDesk(employee.project ?? employee.name, desk.x, desk.y, time, key, spec, atDeskStatus);
 
       const actor = actorFor(key, door, time);
       // Sit in front of the desk, facing the monitor, while working.

@@ -11,7 +11,7 @@
 依存は内向き(inward)に向きます:
 
 ```
-index.js → core.js → state.js / watchers/* / cleanup.js
+index.js → core.js → state.js / watchers/* / cleanup.js / residents/*
 http.js  → core.js(公開ハンドルのみ)
 ```
 
@@ -36,6 +36,9 @@ CLI セッションログ (JSONL)                   ブラウザ / Electron ウ�
 各 CLI は自身のセッショントランスクリプトを書き出します。`tail.js` は追記行を対応する watcher へ流し込み、watcher はそれをトランスポート非依存の*observation* にパースします。
 `state.js` は observation をセッションごとの状態にマージし、表示ステータスを導出し、`#general` チャットログを保持します。
 core はスナップショットをブロードキャストし、フロントエンドがそれを canvas とサイドバーへ描画します。
+常駐チーム(`residents/`)はこのパイプラインの*上流*に位置します: スケジュールに従って
+CLI をヘッドレス起動すると、CLI が通常のトランスクリプトを書き出すため、既存の
+tail → watcher → state の流れがそのまま実行を可視化します。
 
 ## ファイルツリー
 
@@ -49,13 +52,24 @@ server/                バックエンド(Node.js 標準ライブラリのみ)
   tail.js              汎用 JSONL 追従(fs.watch + 定期再スキャンのフォールバック)
   cleanup.js           createCleanup(): 終了済みセッション検出(ps + lsof)
   cleanup.test.js      人事(HR)退勤ヒューリスティックのテスト
+  residents/           常駐チーム(スケジュール実行される常駐エージェント)
+    residents.js       オーケストレータ: tick ループ + precheck + 報告生成
+    manifest.js        resident.json / INSTRUCTIONS.md / state.json の読み書きと検証
+    manifest.test.js   マニフェスト検証・入出力のテスト
+    scheduler.js       トリガー判定(schedule / interval)の純粋関数
+    scheduler.test.js  トリガー判定のテスト
+    registry.js        セッションレジストリ(セッションログ ↔ 常駐員の紐付け)
+    runner.js          ヘッドレス CLI 実行(コマンド構築 + タイムアウト)
+    runner.test.js     コマンド構築・出力パースのテスト
+    whiteboard.js      ホワイトボード(frontmatter 付き Markdown 報告 + 既読管理)
+    whiteboard.test.js frontmatter パース・既読管理のテスト
   watchers/
     claude.js          Claude Code トランスクリプト解析(handleLine + startWatcher)
     codex.js           Codex CLI rollout ログ解析
     gemini.js          Gemini CLI チャットログ解析
     watchers.test.js   3 つの watcher の行パーステスト
 public/                フロントエンド(静的 ES モジュールとして配信)
-  index.html           マークアップ: canvas + #general サイドバー
+  index.html           マークアップ: canvas + #general サイドバー + オーバーレイパネル
   style.css            canvas ラッパとチャットパネルのスタイル
   office.js            canvas 描画ループ(部屋・デスク・アバター・吹き出し)
   office/
@@ -89,16 +103,24 @@ Electron ビルドでは `package.json` の `!**/*.test.js` によって配布�
 
 ### `core.js`
 
-state ストア・人事 cleanup・3 つの CLI watcher を、トランスポート非依存の 1 つの
-ハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、`postMessage`、
-`previewCleanup`、`runCleanup`)に合成します。リフレッシュタイマーを保持し、
-経過時間のみで起きる `working → break` の遷移もクライアントへ届くようにします。
+state ストア・人事 cleanup・3 つの CLI watcher・常駐チームを、トランスポート
+非依存の 1 つのハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、
+`postMessage`、`previewCleanup`、`runCleanup`、常駐員 CRUD / 実行、
+ホワイトボード読み出し / アーカイブ)に合成します。スナップショットには常駐チームの
+オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
+その席を常駐チームの島に配置)、常駐員名簿とホワイトボードの未読数を添付
+します。リフレッシュタイマーを保持し、経過時間のみで起きる
+`working → break` の遷移もクライアントへ届くようにします。
 
 ### `http.js`
 
 HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態スナップショットを
 Server-Sent Events(`/events`)でストリームし、人事 cleanup のエンドポイント
-(`GET /api/cleanup/preview`、`POST /api/cleanup`)を公開します。ドメインロジックは
+(`GET /api/cleanup/preview`、`POST /api/cleanup`)、常駐チーム管理
+(`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
+`POST /api/residents/:name/run`)、ホワイトボード(`GET /api/whiteboard`、
+`POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)を公開します。状態を変更するリクエストには
+Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 すべて core にあり、本ファイルは配管(plumbing)に徹します。
 
 ### `state.js`
@@ -113,7 +135,9 @@ Server-Sent Events(`/events`)でストリームし、人事 cleanup のエンド
   持たないため、ストアは決定的に保たれます。
 - `isDismissed` — 人事 cleanup が残す tombstone(墓標)を尊重します。
 - `updateGeneralChannel` — 状態遷移に応じて `#general` メッセージ(依頼、🫡 の
-  受領リアクション、完了 / 確認依頼の返信)を投稿します。
+  受領リアクション、完了 / 確認依頼の返信)を投稿します。注入された
+  `isResidentFile` が真のセッション(常駐チームの実行)ではこのやり取りを
+  抑止します(報告通知は residents モジュールが自前で投稿するため)。
 
 `deriveStatus(session, now)` は独立した純粋関数として export され、セッションと
 現在時刻を `working` / `break` / `blocked` / `waiting` にマップします。
@@ -132,7 +156,9 @@ macOS でイベントを取りこぼすことがあるため)。3 つの watcher
 ため、退勤ヒューリスティックを実プロセスに触れずに単体テストできます。実行中の
 プロセスは (CLI, 作業ディレクトリ) ごとに 1 つの「席」を付与し、直近に活動した
 セッションのみが席を保持、残りは退勤対象となります。`working` 表示中の
-セッションは決して退勤させず、曖昧なケースは「生存」側に倒します。
+セッションは決して退勤させず、曖昧なケースは「生存」側に倒します。注入された
+`isProtected` が真のセッション(常駐チームの実行)は常勤スタッフとして
+退勤対象から除外します。
 
 ### `watchers/`
 
@@ -152,6 +178,38 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   パッチ。メッセージ形状はバージョン間で変わるため、JSON を汎用的に走査する
   ベストエフォート実装です。
 
+### `residents/`
+
+常駐チーム: 左上のデスク島に常駐する最大 4 人のエージェント(1 人 = 1 役割)。
+設定は `~/Library/Application Support/ai-office/residents/<name>/` 配下の
+ファイル(`resident.json`・`INSTRUCTIONS.md`・`state.json`・`outbox/`)が
+単一の真実の源で、アプリ内パネルとテキストエディタのどちらで編集しても
+同じ場所に行き着きます。
+
+- **`residents.js`** — オーケストレータ。30 秒ごとの tick でマニフェストを
+  再読込し、期日が来たトリガーを発火します。interval トリガーは任意の
+  `precheck` シェルコマンドでゲートされ(標準出力が空なら実行スキップ)、
+  実行完了時にはホワイトボード報告と `#general` への報告通知を生成します。
+- **`manifest.js`** — 常駐員ディレクトリの読み書きと `resident.json` の検証。
+  キャッシュせず毎回ディスクへ読みに行きます。
+- **`scheduler.js`** — トリガー判定の純粋関数群。
+  `{type: "schedule", days, times}`(曜日 + 時刻)と
+  `{type: "interval", minutes, activeDays?, activeHours?}` をサポートし、
+  schedule の発火は 1 時間まで遅延を許容(それより古い回はスキップ)します。
+  現在時刻は常に引数で受け取ります。
+- **`registry.js`** — セッションレジストリ(`session-registry.json`)。実行が
+  生むセッションログを常駐員に紐付けて永続化し、その席をフリーアドレスの
+  グリッドではなく常駐チームの島に固定します。
+- **`runner.js`** — ヘッドレス CLI 実行(`claude -p --session-id <uuid>`、
+  `codex exec --sandbox …`、`gemini -p`)。read-only / edit のモードを各 CLI の
+  権限フラグにマップし、30 分のタイムアウトと常駐員ごとの同時 1 実行を
+  強制します。コマンド構築と出力パースは純粋関数として export されます。
+- **`whiteboard.js`** — 常駐員から人間への報告。frontmatter 付き Markdown を
+  各常駐員の `outbox/` に保存し、既読状態はサイドカーの
+  `whiteboard-state.json` に持ちます(報告ファイル自体は読んでも不変)。
+  ボードから外された報告は `outbox/.archived/` へ移動され(削除はしません)、
+  サイドカーの既読エントリも取り除かれます。
+
 ## フロントエンド(`public/`)
 
 ES モジュールとしてドキュメント順に読み込まれます:`office.js`(`window.OFFICE` を
@@ -160,7 +218,8 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 ### `index.html`
 
 マークアップ:`<canvas>` と `#general` サイドバー(チャット一覧・cleanup
-composer・接続インジケータ)。
+composer・接続インジケータ)、およびオーバーレイパネル(ホワイトボードの
+報告一覧・常駐員の割り当てフォーム)。
 
 ### `style.css`
 
@@ -170,9 +229,15 @@ composer・接続インジケータ)。
 
 canvas 描画ループ。部屋・デスク・アバター・吹き出し・サブエージェントの
 ミニアバター・人事アバターのフレームごとの描画と、アバターの移動(デスク /
-休憩室 / 出口への歩行)を担います。`window.OFFICE` として `setState`、
-`faceDataUrl`、`hrSay` を公開します。純粋で DOM 非依存のロジックは `office/`
-モジュールへ委譲しています。
+休憩室 / 出口への歩行)を担います。常駐チームの席は 3 状態で描き分けます:
+未割り当て(こちらを向くグレーのアバター)、割り当て済みアイドル(ベンダー
+カラーでこちらを向き、画面は消灯。稼働オフなら ⏸)、実行中(モニターに
+向かい、画面点灯 + ステータス吹き出し)。常駐員は休憩室にも出口にも
+行きません。ホワイトボード(未読バッジ付き)も描画し、ホワイトボード /
+常駐デスクのクリックは CustomEvent(`office:whiteboard-open`、
+`office:resident-seat-open`)として `app.js` のパネルへ通知します。
+`window.OFFICE` として `setState`、`faceDataUrl`、`hrSay` を公開します。
+純粋で DOM 非依存のロジックは `office/` モジュールへ委譲しています。
 
 ### `office/specs.js`
 
@@ -188,7 +253,9 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 (`SEAT_COUNT`)を事前設置とし、空席には空机が描かれ、超過分は下の行へ
 あふれます。1 行目の y は常駐チームの机の 1 行目と揃えています。左端の
 常駐チームエリア(壁のない床パッチ `RESIDENT_ROOM`)とその空机 4 つ
-(2 列 2 行の島)の座標 `residentDeskPosition` もここに定義します。canvas も DOM も触れないため単体テスト可能です。
+(2 列 2 行の島)の座標 `residentDeskPosition`、常駐デスクのクリック領域
+`residentDeskHitRect`、上壁のホワイトボードのクリック領域 `WHITEBOARD` も
+ここに定義します。canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/small-talk.js`
 
@@ -200,15 +267,20 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 
 UI のトランスポート層。`connect({ onSnapshot, onStatus })` は SSE ストリーム
 (自動再接続)をラップし、`runCleanup(text)` は人事 cleanup エンドポイントを
-呼び出します。将来 SSE を Electron IPC に差し替える際は、このファイルだけを
-変更すれば済みます。
+呼び出します。常駐チーム管理(`listResidents` / `saveResident` /
+`deleteResident` / `runResident`)とホワイトボード(`listReports` /
+`markReportRead` / `archiveReport`)の API 呼び出しもここに集約します。将来 SSE を Electron
+IPC に差し替える際は、このファイルだけを変更すれば済みます。
 
 ### `app.js`
 
 サイドバーの挙動:`#general` チャット(メンション・リアクション・タイムスタンプ)
 の描画、社長(`@社長`)が新たにメンションされた際の WebAudio チャイム再生、
 composer から人事 cleanup を起動する配線。クライアントストリームを
-`window.OFFICE.setState` へ橋渡しします。
+`window.OFFICE.setState` へ橋渡しします。canvas からの CustomEvent を受けて
+オーバーレイパネルも担います: ホワイトボードの報告一覧(展開で既読化、
+✕ でボードから外す)と、
+常駐員の割り当てフォーム(作成 / 編集 / 割り当て解除 / 今すぐ実行)。
 
 ## デスクトップ(`electron/`)
 
@@ -233,3 +305,6 @@ Electron メインプロセス。`startServer` により同一サーバをプロ
 - `createCleanup` への **OS 検査関数のスタブ** 注入。
 - 各 watcher の `handleLine` への **`report` スタブ** 注入。
 - `createSmallTalk` への **`random`** の注入。
+- `createManifestStore` / `createWhiteboard` / `createSessionRegistry` への
+  **ファイルシステムのスタブ** 注入。scheduler と runner のコマンド構築は
+  現在時刻や設定を引数に取る純粋関数です。

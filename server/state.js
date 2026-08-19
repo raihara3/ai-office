@@ -150,7 +150,11 @@ function isTaskPickup(observation) {
   );
 }
 
-export function createState({ now = () => Date.now() } = {}) {
+// `isResidentFile` marks session logs spawned by the resident team: their
+// runs are scheduled, not requested by the boss, so the #general request/
+// reply exchange is suppressed (the residents module posts its own report
+// notification instead).
+export function createState({ now = () => Date.now(), isResidentFile = () => false } = {}) {
   const sessions = new Map();
   const dismissedAt = new Map();
   const changeListeners = new Set();
@@ -271,7 +275,9 @@ export function createState({ now = () => Date.now() } = {}) {
     applySubagents(session, observation, eventAt);
     applyMcpCall(session, observation, eventAt);
 
-    if (!session.isSubagent) updateGeneralChannel(session, observation, eventAt, before);
+    if (!session.isSubagent && !isResidentFile(session.filePath)) {
+      updateGeneralChannel(session, observation, eventAt, before);
+    }
 
     scheduleBroadcast();
   }

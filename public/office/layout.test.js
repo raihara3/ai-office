@@ -11,6 +11,9 @@ import {
   doorPosition,
   lowestFreeSeat,
   residentDeskPosition,
+  residentDeskHitRect,
+  RESIDENT_ROOM,
+  WHITEBOARD,
 } from './layout.js';
 
 test('lowestFreeSeat: empty -> 0, contiguous -> next, gap -> fills gap', () => {
@@ -45,6 +48,19 @@ test('residentDeskPosition: two upright columns over two spaced rows', () => {
 test('both free-address rows line up with the resident island', () => {
   assert.equal(deskPosition(0).y, residentDeskPosition(0).y);
   assert.equal(deskPosition(4).y, residentDeskPosition(2).y);
+});
+
+test('residentDeskHitRect: covers the desk from nameplate to chair', () => {
+  const desk = residentDeskPosition(1);
+  const hit = residentDeskHitRect(1);
+  assert.ok(hit.x <= desk.x - 56 && hit.x + hit.width >= desk.x + 56);
+  assert.ok(hit.y <= desk.y - 106 && hit.y + hit.height >= desk.y + 20);
+});
+
+test('whiteboard hangs on the top wall above the resident room', () => {
+  // Inside the wall band (0..96) and horizontally clear of the resident sign.
+  assert.ok(WHITEBOARD.y + WHITEBOARD.height <= 96);
+  assert.ok(WHITEBOARD.x + WHITEBOARD.width <= RESIDENT_ROOM.x + RESIDENT_ROOM.width);
 });
 
 test('breakSpot: fixed furniture first, then an overflow back row', () => {

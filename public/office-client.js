@@ -28,7 +28,53 @@
         });
         return response.json();
       },
+
+      // Resident team management. Errors surface as thrown Error objects with
+      // the server's message, so the panel can show them verbatim.
+      async listResidents() {
+        return (await fetch('/api/residents')).json();
+      },
+      async saveResident(name, payload) {
+        return requestJson(`/api/residents/${encodeURIComponent(name)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      },
+      async deleteResident(name) {
+        return requestJson(`/api/residents/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      },
+      async runResident(name) {
+        return requestJson(`/api/residents/${encodeURIComponent(name)}/run`, { method: 'POST' });
+      },
+
+      // The whiteboard: full reports (bodies included) and read receipts.
+      async listReports() {
+        return (await fetch('/api/whiteboard')).json();
+      },
+      async markReportRead(id) {
+        return requestJson('/api/whiteboard/read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+      },
+      // Takes a report off the board (the file is archived, not deleted).
+      async archiveReport(id) {
+        return requestJson('/api/whiteboard/archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+      },
     };
+  }
+
+  async function requestJson(url, options) {
+    const response = await fetch(url, options);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error ?? `HTTP ${response.status}`);
+    return result;
   }
 
   window.OFFICE_CLIENT = { create: createOfficeClient };

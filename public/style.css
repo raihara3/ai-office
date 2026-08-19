@@ -184,3 +184,243 @@ main {
   font-size: 11px;
   color: #565a6e;
 }
+
+/* display:flex would defeat the hidden attribute's UA display:none. */
+#overlay[hidden] { display: none; }
+
+#overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(10, 10, 16, 0.6);
+}
+
+/* display:flex would defeat the hidden attribute's UA display:none. */
+.overlay-card[hidden] { display: none; }
+
+.overlay-card {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  border: 1px solid #2a2b3a;
+  border-radius: 14px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+  background: #16161e;
+}
+
+.overlay-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #2a2b3a;
+}
+
+.overlay-card h2 {
+  color: #e6e6ef;
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.overlay-close {
+  border: none;
+  background: none;
+  color: #565a6e;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.overlay-close:hover { color: #e6e6ef; }
+
+#report-list {
+  overflow-y: auto;
+  padding: 12px 18px 18px;
+}
+
+.report {
+  border-bottom: 1px solid #22232f;
+  padding: 10px 0;
+}
+
+.report-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.report-level {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.report-level.info {
+  background: rgba(122, 162, 247, 0.16);
+  color: #7aa2f7;
+}
+
+.report-level.review-needed {
+  background: rgba(224, 112, 122, 0.18);
+  color: #e0707a;
+}
+
+.report-title {
+  flex: 1;
+  min-width: 0;
+  color: #c8cbe0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.report.unread .report-title { color: #f5c877; }
+
+.report-time {
+  flex-shrink: 0;
+  color: #565a6e;
+  font-size: 11px;
+}
+
+.report-archive {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #565a6e;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.report-archive:hover { color: #e0707a; }
+
+.report-body {
+  margin-top: 8px;
+  color: #a9b1d6;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.report-body a { color: #7aa2f7; }
+
+.report-empty {
+  padding: 24px 0;
+  color: #565a6e;
+  font-size: 13px;
+  text-align: center;
+}
+
+#resident-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+}
+
+#resident-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #a9b1d6;
+  font-size: 12px;
+}
+
+#resident-form input,
+#resident-form select,
+#resident-form textarea {
+  border: 1px solid #3b4261;
+  border-radius: 8px;
+  background: #1f2030;
+  color: #e6e6ef;
+  font-size: 12px;
+  padding: 7px 10px;
+  font-family: inherit;
+}
+
+#resident-form textarea { resize: vertical; }
+
+#resident-form input:disabled { opacity: 0.5; }
+
+.form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.form-row label { flex: 1; }
+
+.weekday-row {
+  display: flex;
+  gap: 4px;
+}
+
+.weekday-row label {
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+  border: 1px solid #3b4261;
+  border-radius: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.weekday-row label:has(input:checked) {
+  border-color: #7aa2f7;
+  background: rgba(122, 162, 247, 0.16);
+  color: #7aa2f7;
+}
+
+.weekday-row input { display: none; }
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+}
+
+.form-error {
+  color: #e0707a;
+  font-size: 12px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.form-actions button {
+  border: none;
+  border-radius: 8px;
+  background: #3b4261;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.form-actions button:hover { background: #4a5378; }
+
+.form-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#resident-save { background: #2c7a4b; }
+
+#resident-save:hover { background: #359159; }
+
+#resident-unassign {
+  margin-left: auto;
+  background: #6e3b45;
+}
+
+#resident-unassign:hover { background: #8a4a57; }

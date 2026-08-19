@@ -47,6 +47,17 @@ export function residentDeskPosition(index) {
   return layout[index];
 }
 
+// The whiteboard on the top wall, between the first two windows: resident
+// team reports to the human are posted here, so it is a click target.
+export const WHITEBOARD = { x: 188, y: 16, width: 96, height: 58 };
+
+// The clickable area of a resident desk, spanning the nameplate chip (106px
+// above the anchor) down past the chair, matching the drawn furniture.
+export function residentDeskHitRect(index) {
+  const desk = residentDeskPosition(index);
+  return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 132 };
+}
+
 // The lowest seat index not present in `usedSeats`. The grid fills from the
 // top-left as sessions appear, reusing seats freed when avatars leave.
 export function lowestFreeSeat(usedSeats) {

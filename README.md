@@ -10,7 +10,9 @@ overflow onto extra rows. When an agent is actively
 working, its avatar sits at
 the desk and a speech bubble shows what it is doing right now (current tool
 action or the user's request). When idle, the avatar walks to the break room
-for a coffee. Subagent runs appear as mini avatars next to the desk.
+for a coffee. Subagent runs appear as mini avatars next to the desk. A
+separate desk island in the top-left seats the resident team — permanently
+assigned agents that run on schedules and report to a wall whiteboard.
 
 ![status](https://img.shields.io/badge/runtime-Node.js%20%E2%89%A520-brightgreen)
 
@@ -105,11 +107,54 @@ matched. A Codex Desktop conversation instead holds a per-thread writer lock
 it is kept alive while that lock is held (idle between turns included) and only
 becomes retirable once the lock is released; other app hosts, lacking such a
 signal, become retirable once idle. Sessions currently shown as working are
-never retired, and ambiguous cases err on the side of alive. Retired avatars
+never retired, resident-team sessions are permanent staff and never retire,
+and ambiguous cases err on the side of alive. Retired avatars
 walk out the
 door and their log files are
 moved to the macOS Trash (`~/.Trash`), not deleted. Endpoints:
 `GET /api/cleanup/preview`, `POST /api/cleanup`.
+
+## Resident team
+
+Beyond the free-address grid, a four-desk island in the top-left seats the
+resident team: permanently assigned agents, one role each. A resident is
+configured declaratively under
+`~/Library/Application Support/ai-office/residents/<name>/` —
+`resident.json` (display name, seat, CLI, read-only/edit mode, working
+directory, trigger, optional precheck, enabled), `INSTRUCTIONS.md` (the role
+prompt), `state.json` (run bookkeeping) and `outbox/` (reports). The files
+are the source of truth; clicking a resident desk opens an in-app panel with
+the same fields (create, edit, unassign, run now).
+
+Triggers are `{type: "schedule", days, times}` (fixed weekday/time slots;
+occurrences still fire up to one hour late, older ones are skipped) or
+`{type: "interval", minutes, activeDays?, activeHours?}`. An optional
+`precheck` shell command gates interval runs — empty stdout means "nothing
+to do" and the agent run is skipped.
+
+A due resident runs its CLI headlessly (`claude -p --session-id <uuid>`,
+`codex exec --sandbox …`, `gemini -p`); the read-only / edit mode maps to
+the CLI's permission flags. One run per resident at a time, with a
+30-minute timeout. The CLI writes its normal transcript, so the existing
+tail → watcher → state pipeline visualizes the run; a session registry
+(`session-registry.json`) binds the session to its resident so it seats at
+the resident island — never the free-address grid — is protected from HR
+cleanup, and skips the `#general` request/reply exchange (the resident posts
+its own report notification instead).
+
+Resident seats render three states: unassigned (gray avatar facing the
+viewer), assigned idle (vendor-colored, screen off, ⏸ when disabled) and
+running (facing the monitor, lit screen, status bubble). Residents never go
+to the break room or walk out.
+
+Run results are saved as frontmatter Markdown reports in the resident's
+`outbox/`; the whiteboard on the top wall shows an unread badge and, when
+clicked, opens a report panel (read state lives in a `whiteboard-state.json`
+sidecar). Each report row has a ✕ button that takes it off the board — the
+file is moved to the resident's `outbox/.archived/`, never deleted.
+Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
+`POST /api/residents/:name/run`, `GET /api/whiteboard`,
+`POST /api/whiteboard/read`, `POST /api/whiteboard/archive`.
 
 ## Architecture
 
@@ -123,7 +168,9 @@ see [docs/architecture.md](docs/architecture.md).
 
 ## Limitations
 
-- Read-only MVP: the office visualizes state; it does not control the CLIs.
+- Free-address sessions are visualize-only: the office does not control
+  CLIs you start yourself (resident runs, spawned headlessly by the office,
+  are the exception).
 - Gemini log parsing is best-effort — the chat log format varies between
   Gemini CLI versions.
 - Codex subagent detection is heuristic (`spawn_agent` style tool names).

@@ -26,6 +26,38 @@ function writeToClient(client, frame, sseClients) {
   }
 }
 
+// CSRF guard for state-changing requests: browsers send Origin on cross-site
+// requests, and the Host check alone does not stop a malicious website from
+// firing them.
+function isForbiddenOrigin(request) {
+  const origin = request.headers.origin;
+  return Boolean(origin) && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
+}
+
+function readJsonBody(request, maxBytes, onDone) {
+  let body = '';
+  request.on('data', (chunk) => {
+    body += chunk;
+    if (body.length > maxBytes) request.destroy();
+  });
+  request.on('end', () => {
+    // Parse separately from the handler call: a handler exception must not be
+    // misreported as a malformed body (onDone(null)).
+    let parsed = null;
+    try {
+      parsed = JSON.parse(body || '{}');
+    } catch {
+      // parsed stays null, signalling a malformed body.
+    }
+    onDone(parsed);
+  });
+}
+
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+  response.end(JSON.stringify(payload));
+}
+
 function serveStatic(request, response, publicDirectory) {
   const urlPath = new URL(request.url, 'http://localhost').pathname;
   const relativePath = urlPath === '/' ? 'index.html' : urlPath.slice(1);
@@ -93,10 +125,7 @@ export function createHttpServer(core, { publicDirectory }) {
         response.writeHead(405).end();
         return;
       }
-      // CSRF guard: browsers send Origin on cross-site POSTs. The Host check
-      // above does not stop a malicious website from firing this request.
-      const origin = request.headers.origin;
-      if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)) {
+      if (isForbiddenOrigin(request)) {
         response.writeHead(403).end();
         return;
       }
@@ -122,6 +151,80 @@ export function createHttpServer(core, { publicDirectory }) {
         const result = core.runCleanup(selectedKeys);
         response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify(result));
+      });
+      return;
+    }
+
+    // Resident team management: list/save/unassign/run. The resident files on
+    // disk stay the source of truth; these endpoints only read and write them
+    // through the core.
+    const residentMatch = urlPath.match(/^\/api\/residents(?:\/([a-z0-9][a-z0-9-]{0,63})(\/run)?)?$/);
+    if (residentMatch) {
+      const [, residentName, runSuffix] = residentMatch;
+      if (request.method !== 'GET' && isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      if (request.method === 'GET' && !residentName) {
+        sendJson(response, 200, { residents: core.listResidents() });
+      } else if (request.method === 'PUT' && residentName && !runSuffix) {
+        readJsonBody(request, 256 * 1024, (parsed) => {
+          if (parsed === null) {
+            sendJson(response, 400, { error: 'invalid JSON body' });
+            return;
+          }
+          try {
+            core.saveResident(residentName, {
+              configuration: parsed.configuration,
+              instructions: parsed.instructions,
+            });
+            sendJson(response, 200, { ok: true });
+          } catch (error) {
+            sendJson(response, 400, { error: error.message });
+          }
+        });
+      } else if (request.method === 'DELETE' && residentName && !runSuffix) {
+        try {
+          core.deleteResident(residentName);
+          sendJson(response, 200, { ok: true });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      } else if (request.method === 'POST' && residentName && runSuffix) {
+        try {
+          core.runResident(residentName);
+          sendJson(response, 200, { ok: true });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      } else {
+        response.writeHead(405).end();
+      }
+      return;
+    }
+
+    // The whiteboard: reports from residents to the human, plus read state.
+    if (urlPath === '/api/whiteboard') {
+      sendJson(response, 200, { reports: core.listReports() });
+      return;
+    }
+    if (urlPath === '/api/whiteboard/read' || urlPath === '/api/whiteboard/archive') {
+      if (request.method !== 'POST') {
+        response.writeHead(405).end();
+        return;
+      }
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      const applyToReport =
+        urlPath === '/api/whiteboard/archive' ? core.archiveReport : core.markReportRead;
+      readJsonBody(request, 4 * 1024, (parsed) => {
+        if (parsed === null || typeof parsed.id !== 'string') {
+          sendJson(response, 400, { error: 'invalid JSON body' });
+          return;
+        }
+        sendJson(response, 200, { ok: applyToReport(parsed.id) });
       });
       return;
     }

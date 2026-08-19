@@ -112,11 +112,15 @@
     if (freshCompletion) playCompletionChime();
   }
 
+  // Quotes are escaped too: escaped text is interpolated into attribute
+  // values (e.g. linkify's href), where a raw quote would break out.
   function escapeHtml(text) {
     return String(text)
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
   }
 
   // Highlight @社長 / @here / @Claude (repo) style mentions.
@@ -214,6 +218,268 @@
     } finally {
       cleanupInFlight = false;
       sendButton.disabled = false;
+    }
+  });
+
+  // --- overlay panels (whiteboard + resident seats) ---------------------
+  // The canvas reports clicks on the whiteboard / resident desks as window
+  // events (see office.js); the DOM panels live here.
+
+  const overlayElement = document.getElementById('overlay');
+  const whiteboardPanel = document.getElementById('whiteboard-panel');
+  const residentPanel = document.getElementById('resident-panel');
+  const reportListElement = document.getElementById('report-list');
+  const residentForm = document.getElementById('resident-form');
+  const residentError = document.getElementById('resident-error');
+
+  const WEEKDAYS = [
+    ['mon', '月'],
+    ['tue', '火'],
+    ['wed', '水'],
+    ['thu', '木'],
+    ['fri', '金'],
+    ['sat', '土'],
+    ['sun', '日'],
+  ];
+  for (const containerId of ['schedule-days', 'interval-days']) {
+    document.getElementById(containerId).innerHTML = WEEKDAYS.map(
+      ([key, label]) =>
+        `<label><input type="checkbox" value="${key}">${label}</label>`
+    ).join('');
+  }
+
+  function checkedDays(containerId) {
+    return [...document.querySelectorAll(`#${containerId} input:checked`)].map(
+      (input) => input.value
+    );
+  }
+
+  function setCheckedDays(containerId, days) {
+    for (const input of document.querySelectorAll(`#${containerId} input`)) {
+      input.checked = (days ?? []).includes(input.value);
+    }
+  }
+
+  function field(id) {
+    return document.getElementById(id);
+  }
+
+  function closeOverlay() {
+    overlayElement.hidden = true;
+    whiteboardPanel.hidden = true;
+    residentPanel.hidden = true;
+  }
+  overlayElement.addEventListener('click', (event) => {
+    if (event.target === overlayElement) closeOverlay();
+  });
+  for (const button of document.querySelectorAll('.overlay-close')) {
+    button.addEventListener('click', closeOverlay);
+  }
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !overlayElement.hidden) closeOverlay();
+  });
+
+  // --- whiteboard panel -------------------------------------------------
+
+  function linkify(escapedText) {
+    return escapedText.replace(
+      /https?:\/\/[^\s<]+/g,
+      (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+    );
+  }
+
+  function renderReports(reports) {
+    if (reports.length === 0) {
+      reportListElement.innerHTML =
+        '<div class="report-empty">報告はまだありません</div>';
+      return;
+    }
+    reportListElement.innerHTML = reports
+      .map(
+        (report) => `
+          <div class="report${report.read ? '' : ' unread'}" data-id="${escapeHtml(report.id)}">
+            <div class="report-head">
+              <span class="report-level ${report.level}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
+              <span class="report-title">${escapeHtml(report.title)}</span>
+              <span class="report-time">${formatTime(report.createdAt)}</span>
+              <button type="button" class="report-archive" title="ボードから外す">✕</button>
+            </div>
+            <div class="report-body" hidden>${linkify(escapeHtml(report.body))}</div>
+          </div>`
+      )
+      .join('');
+    for (const reportElement of reportListElement.querySelectorAll('.report')) {
+      reportElement.querySelector('.report-head').addEventListener('click', () => {
+        const body = reportElement.querySelector('.report-body');
+        body.hidden = !body.hidden;
+        if (!body.hidden && reportElement.classList.contains('unread')) {
+          reportElement.classList.remove('unread');
+          client.markReportRead(reportElement.dataset.id).catch(() => {});
+        }
+      });
+      reportElement.querySelector('.report-archive').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        try {
+          const { ok } = await client.archiveReport(reportElement.dataset.id);
+          if (ok) {
+            reportElement.remove();
+            if (reportListElement.querySelector('.report') === null) renderReports([]);
+            return;
+          }
+        } catch {
+          // Fall through: reload so the panel reflects what is really on disk.
+        }
+        openWhiteboard();
+      });
+    }
+  }
+
+  async function openWhiteboard() {
+    overlayElement.hidden = false;
+    whiteboardPanel.hidden = false;
+    residentPanel.hidden = true;
+    reportListElement.innerHTML = '<div class="report-empty">読み込み中…</div>';
+    try {
+      const { reports } = await client.listReports();
+      renderReports(reports ?? []);
+    } catch {
+      reportListElement.innerHTML =
+        '<div class="report-empty">読み込みに失敗しました</div>';
+    }
+  }
+  window.addEventListener('office:whiteboard-open', openWhiteboard);
+
+  // --- resident panel ---------------------------------------------------
+
+  let panelSeat = null;
+  let panelIsNew = true;
+
+  function showTriggerSection(type) {
+    document.getElementById('trigger-schedule').hidden = type !== 'schedule';
+    document.getElementById('trigger-interval').hidden = type !== 'interval';
+  }
+  field('resident-trigger-type').addEventListener('change', (event) =>
+    showTriggerSection(event.target.value)
+  );
+
+  function fillResidentForm(entry) {
+    const configuration = entry?.configuration;
+    field('resident-name').value = entry?.name ?? '';
+    field('resident-name').disabled = entry !== null;
+    field('resident-display-name').value = configuration?.displayName ?? '';
+    field('resident-cli').value = configuration?.cli ?? 'claude';
+    field('resident-mode').value = configuration?.mode ?? 'read-only';
+    field('resident-working-directory').value = configuration?.workingDirectory ?? '';
+    field('resident-precheck').value = configuration?.precheck ?? '';
+    field('resident-instructions').value = entry?.instructions ?? '';
+    field('resident-enabled').checked = configuration?.enabled ?? true;
+    const trigger = configuration?.trigger ?? { type: 'schedule' };
+    field('resident-trigger-type').value = trigger.type;
+    showTriggerSection(trigger.type);
+    setCheckedDays('schedule-days', trigger.type === 'schedule' ? trigger.days : ['mon']);
+    field('schedule-times').value =
+      trigger.type === 'schedule' ? (trigger.times ?? []).join(', ') : '09:00';
+    field('interval-minutes').value = trigger.type === 'interval' ? trigger.minutes : 30;
+    setCheckedDays('interval-days', trigger.type === 'interval' ? trigger.activeDays : []);
+    field('interval-start').value = trigger.activeHours?.start ?? '';
+    field('interval-end').value = trigger.activeHours?.end ?? '';
+    field('resident-run').disabled = entry === null;
+    field('resident-unassign').disabled = entry === null;
+    residentError.hidden = true;
+  }
+
+  function collectTrigger() {
+    if (field('resident-trigger-type').value === 'schedule') {
+      return {
+        type: 'schedule',
+        days: checkedDays('schedule-days'),
+        times: field('schedule-times')
+          .value.split(',')
+          .map((text) => text.trim())
+          .filter((text) => text !== ''),
+      };
+    }
+    const trigger = { type: 'interval', minutes: Number(field('interval-minutes').value) };
+    const activeDays = checkedDays('interval-days');
+    if (activeDays.length > 0 && activeDays.length < 7) trigger.activeDays = activeDays;
+    if (field('interval-start').value && field('interval-end').value) {
+      trigger.activeHours = {
+        start: field('interval-start').value,
+        end: field('interval-end').value,
+      };
+    }
+    return trigger;
+  }
+
+  function showResidentError(message) {
+    residentError.textContent = message;
+    residentError.hidden = false;
+  }
+
+  async function openResidentPanel(seat, name) {
+    panelSeat = seat;
+    overlayElement.hidden = false;
+    residentPanel.hidden = false;
+    whiteboardPanel.hidden = true;
+    let entry = null;
+    if (name) {
+      try {
+        const { residents } = await client.listResidents();
+        entry = residents.find((r) => r.name === name) ?? null;
+      } catch {
+        // Treat as a new assignment if the fetch fails.
+      }
+    }
+    panelIsNew = entry === null;
+    document.getElementById('resident-panel-title').textContent = panelIsNew
+      ? `常駐員を追加(席 ${seat + 1})`
+      : `${entry.configuration.displayName}(席 ${seat + 1})`;
+    fillResidentForm(entry);
+  }
+  window.addEventListener('office:resident-seat-open', (event) =>
+    openResidentPanel(event.detail.seat, event.detail.name)
+  );
+
+  residentForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = field('resident-name').value.trim();
+    try {
+      await client.saveResident(name, {
+        configuration: {
+          displayName: field('resident-display-name').value.trim(),
+          seat: panelSeat,
+          cli: field('resident-cli').value,
+          mode: field('resident-mode').value,
+          workingDirectory: field('resident-working-directory').value.trim(),
+          trigger: collectTrigger(),
+          precheck: field('resident-precheck').value.trim() || null,
+          enabled: field('resident-enabled').checked,
+        },
+        instructions: field('resident-instructions').value,
+      });
+      closeOverlay();
+    } catch (error) {
+      showResidentError(error.message);
+    }
+  });
+
+  field('resident-run').addEventListener('click', async () => {
+    try {
+      await client.runResident(field('resident-name').value.trim());
+      closeOverlay();
+    } catch (error) {
+      showResidentError(error.message);
+    }
+  });
+
+  field('resident-unassign').addEventListener('click', async () => {
+    const name = field('resident-name').value.trim();
+    if (!window.confirm(`${name} の割り当てを解除しますか?(設定と報告はアーカイブされます)`)) return;
+    try {
+      await client.deleteResident(name);
+      closeOverlay();
+    } catch (error) {
+      showResidentError(error.message);
     }
   });
 

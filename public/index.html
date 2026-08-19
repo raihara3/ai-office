@@ -21,6 +21,88 @@
       <footer id="connection">connecting…</footer>
     </aside>
   </main>
+  <div id="overlay" hidden>
+    <section id="whiteboard-panel" class="overlay-card" hidden>
+      <header>
+        <h2>📋 ホワイトボード</h2>
+        <button type="button" class="overlay-close">✕</button>
+      </header>
+      <div id="report-list"></div>
+    </section>
+    <section id="resident-panel" class="overlay-card" hidden>
+      <header>
+        <h2 id="resident-panel-title">常駐員</h2>
+        <button type="button" class="overlay-close">✕</button>
+      </header>
+      <form id="resident-form">
+        <label>ID(半角英小文字・数字・ハイフン)
+          <input id="resident-name" pattern="[a-z0-9][a-z0-9-]*" required>
+        </label>
+        <label>表示名
+          <input id="resident-display-name" required>
+        </label>
+        <div class="form-row">
+          <label>CLI
+            <select id="resident-cli">
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
+          <label>権限
+            <select id="resident-mode">
+              <option value="read-only">読み取りのみ</option>
+              <option value="edit">編集あり</option>
+            </select>
+          </label>
+        </div>
+        <label>作業ディレクトリ
+          <input id="resident-working-directory" placeholder="~/dev/repo" required>
+        </label>
+        <label>トリガー
+          <select id="resident-trigger-type">
+            <option value="schedule">曜日と時刻を指定</option>
+            <option value="interval">一定間隔</option>
+          </select>
+        </label>
+        <div id="trigger-schedule">
+          <div class="weekday-row" id="schedule-days"></div>
+          <label>時刻(カンマ区切り)
+            <input id="schedule-times" placeholder="09:00">
+          </label>
+        </div>
+        <div id="trigger-interval" hidden>
+          <label>間隔(分)
+            <input id="interval-minutes" type="number" min="1" value="30">
+          </label>
+          <div class="weekday-row" id="interval-days"></div>
+          <div class="form-row">
+            <label>稼働開始
+              <input id="interval-start" type="time">
+            </label>
+            <label>稼働終了
+              <input id="interval-end" type="time">
+            </label>
+          </div>
+        </div>
+        <label>事前チェックコマンド(出力が空なら実行をスキップ。空欄なら毎回実行)
+          <input id="resident-precheck" placeholder="gh issue list --label needs-ai">
+        </label>
+        <label>指示書(INSTRUCTIONS.md)
+          <textarea id="resident-instructions" rows="8" placeholder="この常駐員の役割・手順を書いてください"></textarea>
+        </label>
+        <label class="checkbox-label">
+          <input id="resident-enabled" type="checkbox" checked> 稼働する(オフで一時停止)
+        </label>
+        <p id="resident-error" class="form-error" hidden></p>
+        <div class="form-actions">
+          <button type="submit" id="resident-save">保存</button>
+          <button type="button" id="resident-run">今すぐ実行</button>
+          <button type="button" id="resident-unassign">割り当て解除</button>
+        </div>
+      </form>
+    </section>
+  </div>
   <script type="module" src="office.js"></script>
   <script type="module" src="office-client.js"></script>
   <script type="module" src="app.js"></script>

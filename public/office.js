@@ -17,7 +17,9 @@ import {
   RESIDENT_ROOM,
   RESIDENT_DESK_COUNT,
   residentDeskPosition,
+  residentDeskHitRect,
   SEAT_COUNT,
+  WHITEBOARD,
 } from './office/layout.js';
 import { createSmallTalk } from './office/small-talk.js';
 
@@ -28,11 +30,15 @@ import { createSmallTalk } from './office/small-talk.js';
 
   const WALK_SPEED = 1.6;
   const LEAVE_SPEED = 2.6;
+  const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
 
   let state = { employees: [] };
   // key -> {employee, leaving} — keeps departed sessions around while the
   // avatar walks to the door.
   const presence = new Map();
+  // resident name -> its most recently active session. Resident-run sessions
+  // are visualized at the resident island, never on the free-address grid.
+  let residentEmployees = new Map();
   const actors = new Map();
   const seatByKey = new Map();
   const usedSeats = new Set();
@@ -104,7 +110,15 @@ import { createSmallTalk } from './office/small-talk.js';
     setState(next) {
       state = next;
       const seen = new Set();
+      residentEmployees = new Map();
       for (const employee of next.employees) {
+        if (employee.resident) {
+          const known = residentEmployees.get(employee.resident);
+          if (!known || (employee.lastEventAt ?? 0) > (known.lastEventAt ?? 0)) {
+            residentEmployees.set(employee.resident, employee);
+          }
+          continue;
+        }
         seen.add(employee.key);
         presence.set(employee.key, { employee, leaving: false });
         if (!seatByKey.has(employee.key)) {
@@ -221,14 +235,7 @@ import { createSmallTalk } from './office/small-talk.js';
       px(wx, 42, 96, 3, '#3d4852');
       px(wx - 6, 74, 108, 6, '#f7f3ea');
     }
-    // whiteboard with a sketch, between the first two windows
-    ctx.lineWidth = 2;
-    roundRect(196, 22, 76, 50, 4, '#fbfaf6', '#b9b2a2');
-    px(204, 32, 40, 3, '#7aa2f7');
-    px(204, 40, 56, 3, '#c9c2b2');
-    px(204, 48, 48, 3, '#c9c2b2');
-    px(204, 56, 30, 3, '#e0707a');
-    px(214, 72, 40, 4, '#b9b2a2');
+    drawWhiteboard();
     // neon company sign on a dark mounting board
     drawNeonSign(672, 30);
     // oak plank floor with staggered seams
@@ -282,10 +289,40 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.restore();
   }
 
+  // The whiteboard on the top wall where residents post reports for the
+  // human. Unread reports show as a count badge (red when one of them needs
+  // review); clicking the board opens the report panel (see app.js).
+  function drawWhiteboard() {
+    const board = WHITEBOARD;
+    ctx.lineWidth = 2;
+    roundRect(board.x, board.y, board.width, board.height, 4, '#fbfaf6', '#b9b2a2');
+    px(board.x + 8, board.y + 12, 40, 3, '#7aa2f7');
+    px(board.x + 8, board.y + 20, 56, 3, '#c9c2b2');
+    px(board.x + 8, board.y + 28, 48, 3, '#c9c2b2');
+    px(board.x + 8, board.y + 36, 30, 3, '#e0707a');
+    // pen tray under the board
+    px(board.x + 26, board.y + board.height + 0, 44, 4, '#b9b2a2');
+    const counts = state.whiteboard;
+    if (counts && counts.unread > 0) {
+      const badgeX = board.x + board.width - 3;
+      const badgeY = board.y + 3;
+      ctx.fillStyle = counts.reviewNeeded > 0 ? '#d93a4a' : '#e0952f';
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 11px "Hiragino Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(Math.min(counts.unread, 99)), badgeX, badgeY + 4);
+    }
+  }
+
   // The resident team's corner on the left edge: an open (wall-less) carpeted
   // patch holding an island of four always-present full-size desks (two
-  // columns of two), each seating the neutral avatar until a resident team
-  // member is configured for it.
+  // columns of two). A seat with no resident assigned keeps the neutral gray
+  // avatar; an assigned seat wears its CLI's colors, faces the room while
+  // idle, and turns to the monitor while a run is in progress. Residents
+  // never walk to the break room or the exit — they live at their desk.
   function drawResidentRoom(time) {
     const room = RESIDENT_ROOM;
     // a sage carpet-tile patch marks the area off from the oak floor while
@@ -305,12 +342,17 @@ import { createSmallTalk } from './office/small-talk.js';
     }
     ctx.restore();
 
-    // Desks, each seating the neutral (unset-LLM) avatar. They have no work to
-    // do, so they face the room (toward the viewer) rather than the monitor.
+    const residents = state.residents ?? [];
     for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
       const desk = residentDeskPosition(index);
-      drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
-      drawAvatar(UNSET_SPEC, desk.x, desk.y + 18, { time });
+      const resident = residents.find((r) => r.seat === index);
+      if (!resident) {
+        // Unassigned: gray avatar facing the room, screen off.
+        drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
+        drawAvatar(UNSET_SPEC, desk.x, desk.y + 18, { time });
+        continue;
+      }
+      drawResidentSeat(resident, desk, time);
     }
 
     // sign (dark so it reads on the sage carpet)
@@ -318,6 +360,45 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('常駐チーム', room.x + 8, room.y + 22);
+  }
+
+  // One assigned resident seat: nameplate in the vendor color, and the
+  // three-state avatar — running (typing at the lit monitor, with the usual
+  // status bubble and subagent minis), paused (⏸ on the dark screen) or
+  // simply waiting for the next trigger (facing the room).
+  function drawResidentSeat(resident, desk, time) {
+    const spec = CLI_SPECS[resident.cli] ?? UNSET_SPEC;
+    const employee = residentEmployees.get(resident.name);
+    const sessionActive =
+      employee && (employee.status === 'working' || employee.status === 'blocked');
+    const active = Boolean(resident.busy || sessionActive);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
+    const labelWidth = ctx.measureText(resident.displayName).width + 16;
+    roundRect(desk.x - labelWidth / 2, desk.y - 106, labelWidth, 18, 9, 'rgba(38, 36, 50, 0.85)');
+    ctx.fillStyle = spec.colors.body;
+    ctx.fillText(resident.displayName, desk.x, desk.y - 93);
+
+    drawDeskFurniture(desk.x, desk.y, active ? '#1a2b3c' : SCREEN_OFF);
+    if (active) {
+      drawScreenCode(desk.x, desk.y, time, resident.name);
+    } else if (!resident.enabled) {
+      ctx.fillStyle = '#5c6670';
+      ctx.font = 'bold 13px "Hiragino Sans", sans-serif';
+      ctx.fillText('⏸', desk.x, desk.y - 63);
+    }
+
+    drawAvatar(spec, desk.x, desk.y + 18, { time, typing: active, facingAway: active });
+    if (active && employee) {
+      const actor = actorFor(`resident:${resident.name}`, { x: desk.x, y: desk.y + 18 }, time);
+      drawSubagents(employee, spec, actor, desk.x, desk.y, time);
+      if (employee.status === 'blocked') {
+        drawBubble(desk.x, desk.y - 40, '・・・');
+      } else {
+        drawBubble(desk.x, desk.y - 40, MOOD_LABELS[employee.activityKind] ?? '作業中');
+      }
+    }
   }
 
   // The desk furniture shared by occupied and vacant desks: chair, steel
@@ -336,6 +417,22 @@ import { createSmallTalk } from './office/small-talk.js';
     px(x - 23, y - 81, 46, 28, screenColor);
     px(x - 3, y - 50, 6, 6, '#5c6670');
     px(x - 20, y - 38, 40, 7, '#cfd4d9');
+  }
+
+  // Scrolling code lines on a lit monitor, seeded per occupant so desks don't
+  // animate in lockstep.
+  function drawScreenCode(x, y, time, seedKey) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x - 23, y - 81, 46, 28);
+    ctx.clip();
+    const scroll = (time / 120) % 8;
+    for (let i = -1; i < 5; i += 1) {
+      const lineY = y - 79 + i * 7 + scroll;
+      const width = 12 + ((i * 37 + seedKey.length * 13) % 24);
+      px(x - 19, lineY, width, 2, i % 3 === 0 ? '#7aa2f7' : '#9ece6a');
+    }
+    ctx.restore();
   }
 
   // A café-style break corner: checkered tiles, a walnut coffee counter under
@@ -453,20 +550,7 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.fillText(deskLabel, x, y - 93);
 
     drawDeskFurniture(x, y, working ? '#1a2b3c' : SCREEN_OFF);
-    if (working) {
-      // scrolling code lines on the lit screen
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x - 23, y - 81, 46, 28);
-      ctx.clip();
-      const scroll = (time / 120) % 8;
-      for (let i = -1; i < 5; i += 1) {
-        const lineY = y - 79 + i * 7 + scroll;
-        const width = 12 + ((i * 37 + employeeKey.length * 13) % 24);
-        px(x - 19, lineY, width, 2, i % 3 === 0 ? '#7aa2f7' : '#9ece6a');
-      }
-      ctx.restore();
-    }
+    if (working) drawScreenCode(x, y, time, employeeKey);
     // a small personal prop, picked deterministically per session
     const prop = employeeKey.length % 3;
     if (prop === 0) {
@@ -699,6 +783,58 @@ import { createSmallTalk } from './office/small-talk.js';
       hrBubble = null;
     }
   }
+
+  // --- pointer targets --------------------------------------------------
+
+  // Canvas pixels from a mouse event; the canvas is CSS-scaled to fit.
+  function canvasPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / rect.width),
+      y: (event.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  }
+
+  function isInside(point, area) {
+    return (
+      point.x >= area.x &&
+      point.x <= area.x + area.width &&
+      point.y >= area.y &&
+      point.y <= area.y + area.height
+    );
+  }
+
+  function residentSeatAt(point) {
+    for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
+      if (isInside(point, residentDeskHitRect(index))) return index;
+    }
+    return null;
+  }
+
+  // The whiteboard and the resident desks open panels owned by app.js; the
+  // canvas only reports the hits as window events to stay DOM-agnostic.
+  canvas.addEventListener('click', (event) => {
+    const point = canvasPoint(event);
+    if (isInside(point, WHITEBOARD)) {
+      window.dispatchEvent(new CustomEvent('office:whiteboard-open'));
+      return;
+    }
+    const seat = residentSeatAt(point);
+    if (seat !== null) {
+      const resident = (state.residents ?? []).find((r) => r.seat === seat);
+      window.dispatchEvent(
+        new CustomEvent('office:resident-seat-open', {
+          detail: { seat, name: resident?.name ?? null },
+        })
+      );
+    }
+  });
+
+  canvas.addEventListener('mousemove', (event) => {
+    const point = canvasPoint(event);
+    const clickable = isInside(point, WHITEBOARD) || residentSeatAt(point) !== null;
+    canvas.style.cursor = clickable ? 'pointer' : 'default';
+  });
 
   // --- main loop -------------------------------------------------------
 

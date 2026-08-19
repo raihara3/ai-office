@@ -132,6 +132,8 @@ export function createCleanup({
   listLiveLockIds = defaultListLiveLockIds,
   fileExists = fs.existsSync,
   moveToTrash = defaultMoveToTrash,
+  // Resident-team sessions are permanent staff: HR never retires them.
+  isProtected = () => false,
   now = () => Date.now(),
 }) {
   function findProcessIds() {
@@ -199,6 +201,7 @@ export function createCleanup({
     };
 
     for (const session of state.listSessions()) {
+      if (isProtected(session)) continue;
       // A session whose log file vanished can never produce events again —
       // it is a ghost regardless of which processes are running.
       if (!fileExists(session.filePath)) {

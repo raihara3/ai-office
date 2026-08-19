@@ -182,7 +182,9 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 ### `office/layout.js`
 
 純粋なシーン幾何:`computeLayout(usedSeats)`、`deskPosition`、`breakSpot`、
-`doorPosition`、`lowestFreeSeat`。canvas も DOM も触れないため単体テスト可能です。
+`doorPosition`、`lowestFreeSeat`。左端の常駐チームエリア(壁のない床パッチ
+`RESIDENT_ROOM`)とその空机 4 つ(2 列 2 行の島)の座標 `residentDeskPosition` も
+ここに定義します。canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/small-talk.js`
 

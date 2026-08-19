@@ -10,6 +10,7 @@ import {
   breakSpot,
   doorPosition,
   lowestFreeSeat,
+  residentDeskPosition,
 } from './layout.js';
 
 test('lowestFreeSeat: empty -> 0, contiguous -> next, gap -> fills gap', () => {
@@ -28,9 +29,16 @@ test('computeLayout: a second row grows the room height', () => {
 });
 
 test('deskPosition: fills columns then wraps to the next row', () => {
-  assert.deepEqual(deskPosition(0), { x: 120, y: 260 });
-  assert.deepEqual(deskPosition(4), { x: 840, y: 260 });
-  assert.deepEqual(deskPosition(5), { x: 120, y: 450 });
+  assert.deepEqual(deskPosition(0), { x: 360, y: 260 });
+  assert.deepEqual(deskPosition(4), { x: 896, y: 260 });
+  assert.deepEqual(deskPosition(5), { x: 360, y: 450 });
+});
+
+test('residentDeskPosition: two upright columns over two spaced rows', () => {
+  assert.deepEqual(residentDeskPosition(0), { x: 86, y: 200 });
+  assert.deepEqual(residentDeskPosition(1), { x: 210, y: 200 });
+  assert.deepEqual(residentDeskPosition(2), { x: 86, y: 328 });
+  assert.deepEqual(residentDeskPosition(3), { x: 210, y: 328 });
 });
 
 test('breakSpot: fixed furniture first, then an overflow back row', () => {

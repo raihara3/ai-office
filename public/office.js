@@ -14,6 +14,9 @@ import {
   breakSpot,
   doorPosition,
   lowestFreeSeat,
+  RESIDENT_ROOM,
+  RESIDENT_DESK_COUNT,
+  residentDeskPosition,
 } from './office/layout.js';
 import { createSmallTalk } from './office/small-talk.js';
 
@@ -182,9 +185,9 @@ import { createSmallTalk } from './office/small-talk.js';
         px(tx, ty, 48, 48, even ? '#8a7a6b' : '#93826f');
       }
     }
+    drawResidentRoom();
     drawBreakArea(layout);
-    // plants
-    drawPlant(30, 180);
+    // plants (the left edge is now the resident room, so only the right stays)
     drawPlant(930, 180);
     drawPlant(930, height - 30);
     // entrance door, spanning the same y band as the break area
@@ -218,6 +221,60 @@ import { createSmallTalk } from './office/small-talk.js';
     ctx.moveTo(480, 48);
     ctx.lineTo(480 + Math.cos(minuteAngle) * 16, 48 + Math.sin(minuteAngle) * 16);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // The resident team's corner on the left edge: an open (wall-less) greige
+  // floor patch holding an island of four always-present full-size desks (two
+  // columns of two). Purely decorative furniture for now — no avatars are
+  // seated here, leaving the island for a resident team to move in later.
+  function drawResidentRoom() {
+    const room = RESIDENT_ROOM;
+    // a muted greige floor with a faint checker marks the area off from the
+    // office while blending with its warm, low-saturation tones. Clipped to a
+    // soft-cornered rect so the checker stops cleanly without partition walls.
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(room.x, room.y, room.width, room.height, 10);
+    ctx.clip();
+    const bottom = room.y + room.height;
+    const right = room.x + room.width;
+    for (let ty = room.y; ty < bottom; ty += 48) {
+      for (let tx = room.x; tx < right; tx += 48) {
+        const even = ((tx + ty) / 48) % 2 === 0;
+        px(tx, ty, 48, 48, even ? '#bcae99' : '#b3a48d');
+      }
+    }
+    ctx.restore();
+
+    // Empty desks, each with an empty chair tucked beneath it.
+    for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
+      const desk = residentDeskPosition(index);
+      drawResidentDesk(desk.x, desk.y);
+    }
+
+    // sign (dark so it reads on the greige floor)
+    ctx.fillStyle = '#4a3b2a';
+    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('常駐チーム', room.x + 8, room.y + 22);
+  }
+
+  // A full-size unoccupied desk matching the main desks' dimensions, drawn
+  // upright: legs and empty chair at the bottom, then the desktop with a
+  // powered-off monitor and keyboard sitting on top of it.
+  function drawResidentDesk(centerX, centerY) {
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    roundRect(-13, 34, 26, 12, 4, '#3f3a4a');
+    px(-52, 20, 8, 14, '#5d4037');
+    px(44, 20, 8, 14, '#5d4037');
+    px(-56, -20, 112, 40, '#6d4c41');
+    px(-56, -20, 112, 6, '#8d6e63');
+    px(-26, -58, 52, 36, '#263238');
+    px(-22, -54, 44, 28, '#111418');
+    px(-4, -22, 8, 4, '#455a64');
+    px(-20, -12, 40, 8, '#455a64');
     ctx.restore();
   }
 

@@ -19,14 +19,16 @@ test('buildHeadlessCommand: claude pins the session id and restricts read-only t
   assert.ok(!args.includes('--permission-mode'));
 });
 
-test('buildHeadlessCommand: claude edit mode accepts edits instead of allowlisting', () => {
+test('buildHeadlessCommand: claude edit mode bypasses permission prompts', () => {
   const { args } = buildHeadlessCommand({
     cli: 'claude',
     mode: 'edit',
     prompt: 'p',
     sessionId: 's',
   });
-  assert.ok(args.includes('--permission-mode'));
+  const flagIndex = args.indexOf('--permission-mode');
+  assert.notEqual(flagIndex, -1);
+  assert.equal(args[flagIndex + 1], 'bypassPermissions');
   assert.ok(!args.includes('--allowedTools'));
 });
 
@@ -48,7 +50,7 @@ test('buildHeadlessCommand: gemini stays read-only unless edit mode is chosen', 
   );
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'gemini', mode: 'edit', prompt: 'p', sessionId: 's' }).args,
-    ['--approval-mode', 'auto_edit', '-p', 'p']
+    ['--approval-mode', 'yolo', '-p', 'p']
   );
 });
 

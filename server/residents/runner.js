@@ -36,7 +36,10 @@ export function expandHomeDirectory(directory) {
 export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
   if (cli === 'claude') {
     const args = ['-p', prompt, '--session-id', sessionId, '--output-format', 'json'];
-    if (mode === 'edit') args.push('--permission-mode', 'acceptEdits');
+    // Headless runs cannot answer permission prompts, so edit mode skips them
+    // entirely. This trusts the resident's instructions and everything it
+    // reads — reserve edit mode for trusted directories and prompts.
+    if (mode === 'edit') args.push('--permission-mode', 'bypassPermissions');
     else args.push('--allowedTools', ...CLAUDE_READ_ONLY_TOOLS);
     return { command: 'claude', args };
   }
@@ -44,7 +47,7 @@ export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
     const sandbox = mode === 'edit' ? 'workspace-write' : 'read-only';
     return { command: 'codex', args: ['exec', '--sandbox', sandbox, prompt] };
   }
-  const args = mode === 'edit' ? ['--approval-mode', 'auto_edit', '-p', prompt] : ['-p', prompt];
+  const args = mode === 'edit' ? ['--approval-mode', 'yolo', '-p', prompt] : ['-p', prompt];
   return { command: 'gemini', args };
 }
 

@@ -61,7 +61,7 @@
     }
   }
 
-  // A single soft tone when a turn completes.
+  // A single soft tone when a report lands in the inbox.
   function playCompletionChime() {
     playChime([{ freq: 880, at: 0, duration: 0.4 }], 0.3);
   }
@@ -79,10 +79,14 @@
     );
   }
 
-  // Chime once when a snapshot introduces a message that mentions @社長.
+  // Chime once when a snapshot introduces a message that mentions @社長. Only
+  // two events are worth a sound: a session raising 🖐️ because it needs the
+  // boss's permission or answer (確認をお願いします → attention chime), and a
+  // report landing in the inbox (報告を掲示しました → completion chime, or the
+  // attention chime when the report is flagged review-needed). A plain
+  // turn-completion from a regular session is neither, so it stays silent.
   // The first snapshot only seeds the baseline id so history stays silent,
-  // and the boss's own messages never trigger their own alert. A request for
-  // confirmation (🖐️) gets its own distinct chime.
+  // and the boss's own messages never trigger their own alert.
   let lastSeenMessageId = null;
   function alertOnBossMention(snapshot) {
     const messages = snapshot.messages ?? [];
@@ -97,7 +101,7 @@
         message.text.includes('@社長')
       ) {
         if (message.text.includes('確認をお願いします')) freshAttention = true;
-        else freshCompletion = true;
+        else if (message.text.includes('報告を掲示しました')) freshCompletion = true;
       }
       if (message.id > maxId) maxId = message.id;
     }

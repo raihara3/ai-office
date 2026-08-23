@@ -26,7 +26,7 @@ test('validateResident accepts a complete configuration', () => {
 });
 
 test('validateResident rejects bad seat, cli, mode and trigger', () => {
-  assert.ok(validateResident(validConfiguration({ seat: 4 })).length > 0);
+  assert.ok(validateResident(validConfiguration({ seat: 6 })).length > 0);
   assert.ok(validateResident(validConfiguration({ cli: 'gpt' })).length > 0);
   assert.ok(validateResident(validConfiguration({ mode: 'yolo' })).length > 0);
   assert.ok(

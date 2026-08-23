@@ -360,7 +360,7 @@ import { createSmallTalk } from './office/small-talk.js';
   }
 
   // The resident team's corner on the left edge: an open (wall-less) carpeted
-  // patch holding an island of four always-present full-size desks (two
+  // patch holding an island of six always-present full-size desks (three
   // columns of two). A seat with no resident assigned keeps the neutral gray
   // avatar; an assigned seat wears its CLI's colors, faces the room while
   // idle, and turns to the monitor while a run is in progress. Residents

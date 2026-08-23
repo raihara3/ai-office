@@ -187,7 +187,7 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
 
 ### `residents/`
 
-常駐チーム: 左上のデスク島に常駐する最大 4 人のエージェント(1 人 = 1 役割)。
+常駐チーム: 左上のデスク島に常駐する最大 6 人のエージェント(1 人 = 1 役割)。
 設定は `~/Library/Application Support/ai-office/residents/<name>/` 配下の
 ファイル(`resident.json`・`INSTRUCTIONS.md`・`state.json`・`outbox/`)が
 単一の真実の源で、アプリ内パネルとテキストエディタのどちらで編集しても
@@ -256,11 +256,11 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 ### `office/layout.js`
 
 純粋なシーン幾何:`computeLayout(usedSeats)`、`deskPosition`、`breakSpot`、
-`doorPosition`、`lowestFreeSeat`。フリーアドレスのデスクグリッドは 4 列 × 8 席
+`doorPosition`、`lowestFreeSeat`。フリーアドレスのデスクグリッドは 3 列 × 6 席
 (`SEAT_COUNT`)を事前設置とし、空席には空机が描かれ、超過分は下の行へ
-あふれます。1 行目の y は常駐チームの机の 1 行目と揃えています。左端の
-常駐チームエリア(壁のない床パッチ `RESIDENT_ROOM`)とその空机 4 つ
-(2 列 2 行の島)の座標 `residentDeskPosition`、常駐デスクのクリック領域
+あふれます。各行の y は常駐チームの机の行と揃えています。左端の
+常駐チームエリア(壁のない床パッチ `RESIDENT_ROOM`)とその空机 6 つ
+(3 列 2 行の島)の座標 `residentDeskPosition`、常駐デスクのクリック領域
 `residentDeskHitRect`、上壁のホワイトボードのクリック領域 `WHITEBOARD` も
 ここに定義します。canvas も DOM も触れないため単体テスト可能です。
 

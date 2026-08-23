@@ -15,7 +15,7 @@ export const RESIDENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const RESIDENT_CLIS = ['claude', 'codex', 'gemini'];
 export const RESIDENT_MODES = ['read-only', 'edit'];
 // Mirrors RESIDENT_DESK_COUNT in public/office/layout.js.
-export const RESIDENT_SEAT_COUNT = 4;
+export const RESIDENT_SEAT_COUNT = 6;
 
 function isValidWeekdayList(days) {
   return Array.isArray(days) && days.length > 0 && days.every((d) => WEEKDAY_KEYS.includes(d));

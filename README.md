@@ -4,8 +4,8 @@ A Gather-like virtual office that visualizes your local AI coding agents —
 Claude Code, Codex CLI and Gemini CLI — as pixel-art coworkers.
 
 Each session (one log file) gets its own avatar and desk on a shared grid
-of eight pre-furnished desks (four columns by two rows) that fills from the
-top-left; vacant seats show an empty desk, and sessions beyond eight
+of six pre-furnished desks (three columns by two rows) that fills from
+the top-left; vacant seats show an empty desk, and sessions beyond six
 overflow onto extra rows. When an agent is actively
 working, its avatar sits at
 the desk and a speech bubble shows what it is doing right now (current tool
@@ -120,7 +120,7 @@ survives a server restart. Endpoints:
 
 ## Resident team
 
-Beyond the free-address grid, a four-desk island in the top-left seats the
+Beyond the free-address grid, a six-desk island in the top-left seats the
 resident team: permanently assigned agents, one role each. A resident is
 configured declaratively under
 `~/Library/Application Support/ai-office/residents/<name>/` —

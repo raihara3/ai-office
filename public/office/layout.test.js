@@ -23,31 +23,43 @@ test('lowestFreeSeat: empty -> 0, contiguous -> next, gap -> fills gap', () => {
 });
 
 test('computeLayout: an empty room still sizes for the pre-placed seats', () => {
-  // SEAT_COUNT (8) seats over GRID_COLUMNS (4) columns = two rows up front.
+  // SEAT_COUNT (6) seats over GRID_COLUMNS (3) columns = two rows up front.
   assert.deepEqual(computeLayout(new Set()), { height: 692, breakTop: 542 });
 });
 
-test('computeLayout: overflowing the pre-placed seats grows the room', () => {
-  // Seat 8 sits on row index 2, beyond the two pre-placed rows.
-  assert.deepEqual(computeLayout(new Set([8])), { height: 864, breakTop: 714 });
+test('computeLayout: overflowing the pre-placed rows grows the room', () => {
+  // Seat 6 sits on row index 2, beyond the two pre-placed rows.
+  assert.deepEqual(computeLayout(new Set([6])), { height: 864, breakTop: 714 });
 });
 
 test('deskPosition: fills columns then wraps to the next row', () => {
-  assert.deepEqual(deskPosition(0), { x: 400, y: 240 });
-  assert.deepEqual(deskPosition(3), { x: 850, y: 240 });
-  assert.deepEqual(deskPosition(4), { x: 400, y: 412 });
+  assert.deepEqual(deskPosition(0), { x: 524, y: 240 });
+  assert.deepEqual(deskPosition(2), { x: 824, y: 240 });
+  assert.deepEqual(deskPosition(3), { x: 524, y: 412 });
 });
 
-test('residentDeskPosition: two upright columns over two spaced rows', () => {
+test('residentDeskPosition: three upright columns over two spaced rows', () => {
   assert.deepEqual(residentDeskPosition(0), { x: 86, y: 240 });
   assert.deepEqual(residentDeskPosition(1), { x: 210, y: 240 });
-  assert.deepEqual(residentDeskPosition(2), { x: 86, y: 412 });
-  assert.deepEqual(residentDeskPosition(3), { x: 210, y: 412 });
+  assert.deepEqual(residentDeskPosition(2), { x: 334, y: 240 });
+  assert.deepEqual(residentDeskPosition(3), { x: 86, y: 412 });
+  assert.deepEqual(residentDeskPosition(4), { x: 210, y: 412 });
+  assert.deepEqual(residentDeskPosition(5), { x: 334, y: 412 });
 });
 
-test('both free-address rows line up with the resident island', () => {
+test('free-address rows line up with the resident island', () => {
   assert.equal(deskPosition(0).y, residentDeskPosition(0).y);
-  assert.equal(deskPosition(4).y, residentDeskPosition(2).y);
+  assert.equal(deskPosition(3).y, residentDeskPosition(3).y);
+});
+
+test('resident room contains every desk row including the chairs', () => {
+  const lastDesk = residentDeskPosition(5);
+  assert.ok(lastDesk.y + 36 <= RESIDENT_ROOM.y + RESIDENT_ROOM.height);
+});
+
+test('break area starts below the resident room', () => {
+  const layout = computeLayout(new Set());
+  assert.ok(layout.breakTop >= RESIDENT_ROOM.y + RESIDENT_ROOM.height);
 });
 
 test('residentDeskHitRect: covers the desk from nameplate to chair', () => {

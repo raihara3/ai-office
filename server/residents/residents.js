@@ -298,7 +298,20 @@ export function createResidents({
   }
 
   function listBoardCards() {
-    return board.listCards().map((card) => ({ ...card, working: isWorkingCard(card.id) }));
+    // `reported` marks cards a run has already reported on — the frontend
+    // badges those as needing the human when they sit in the user column,
+    // regardless of who originally filed the card.
+    const reportedTaskIds = new Set(
+      whiteboard
+        .listReports()
+        .map((report) => report.task)
+        .filter(Boolean)
+    );
+    return board.listCards().map((card) => ({
+      ...card,
+      working: isWorkingCard(card.id),
+      reported: reportedTaskIds.has(card.id),
+    }));
   }
 
   function createBoardCard({ title, body, assignee }) {

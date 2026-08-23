@@ -396,7 +396,7 @@
   function cardBadges(card) {
     const badges = [];
     if (card.working) badges.push('<span class="card-badge working">作業中</span>');
-    else if (card.assignee === 'user' && card.origin !== 'user') {
+    else if (card.assignee === 'user' && card.reported) {
       badges.push('<span class="card-badge review">要確認</span>');
     }
     if (card.orphaned) badges.push('<span class="card-badge orphaned">担当不在</span>');

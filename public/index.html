@@ -8,42 +8,41 @@
 </head>
 <body>
   <main>
-    <div id="office-wrap">
-      <canvas id="office" width="960" height="600"></canvas>
+    <header id="topbar">
+      <div id="topbar-head">
+        <h1>📋 Kanban</h1>
+        <div id="topbar-actions">
+          <button type="button" id="board-expand" title="拡大表示">⤢</button>
+          <button type="button" id="card-add" title="タスクを追加">＋</button>
+        </div>
+      </div>
+      <div id="topbar-columns"></div>
+    </header>
+    <div id="content">
+      <div id="office-wrap">
+        <canvas id="office" width="960" height="600"></canvas>
+      </div>
+      <aside id="panel">
+        <h1>📥 インボックス</h1>
+        <div id="inbox-list"></div>
+        <footer id="panel-foot">
+          <button type="button" id="cleanup-run">仕事がない人を退勤</button>
+          <span id="connection">connecting…</span>
+        </footer>
+      </aside>
     </div>
-    <aside id="panel">
-      <h1># general</h1>
-      <div id="chat"></div>
-      <form id="composer">
-        <input id="composer-input" type="text" value="@here 仕事がない人は退勤してください" readonly>
-        <button type="submit" id="composer-send">送信</button>
-      </form>
-      <footer id="connection">connecting…</footer>
-    </aside>
   </main>
   <div id="overlay" hidden>
     <section id="whiteboard-panel" class="overlay-card" hidden>
       <header>
-        <h2>📋 ホワイトボード</h2>
-        <nav id="whiteboard-tabs">
-          <button type="button" class="whiteboard-tab active" data-tab="board">ボード</button>
-          <button type="button" class="whiteboard-tab" data-tab="reports">報告</button>
-        </nav>
+        <h2>📋 Kanban</h2>
+        <button type="button" id="card-add-overlay" title="タスクを追加">＋</button>
         <button type="button" class="overlay-close">✕</button>
       </header>
       <div id="board-view">
-        <form id="card-form">
-          <input id="card-title" placeholder="タスクの件名" required>
-          <textarea id="card-body" rows="2" placeholder="内容・手順(担当のプロンプトにそのまま入ります)"></textarea>
-          <div class="form-row">
-            <select id="card-assignee"></select>
-            <button type="submit" id="card-file">起票</button>
-          </div>
-        </form>
         <div id="board-columns"></div>
       </div>
       <div id="card-detail" hidden></div>
-      <div id="report-list" hidden></div>
     </section>
     <section id="resident-panel" class="overlay-card" hidden>
       <header>
@@ -115,6 +114,22 @@
           <button type="submit" id="resident-save">保存</button>
           <button type="button" id="resident-run">今すぐ実行</button>
           <button type="button" id="resident-unassign">割り当て解除</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  <div id="card-modal" hidden>
+    <section class="overlay-card">
+      <header>
+        <h2>📝 タスクを起票</h2>
+        <button type="button" id="card-modal-close" class="overlay-close">✕</button>
+      </header>
+      <form id="card-form">
+        <input id="card-title" placeholder="タスクの件名" required>
+        <textarea id="card-body" rows="4" placeholder="内容・手順(担当のプロンプトにそのまま入ります)"></textarea>
+        <div class="form-row">
+          <select id="card-assignee"></select>
+          <button type="submit" id="card-file">起票</button>
         </div>
       </form>
     </section>

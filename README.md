@@ -87,12 +87,18 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 - Mini avatars beside the desk: running subagents (label = agent type);
   background subagent sessions get their own desk. Both wear a green-and-
   yellow beginner's mark (若葉マーク)
-- Sidebar: a Slack-like #general channel. User requests post as
-  `@Claude (repo) <request>` from 社長 (with a 🫡 reaction once the agent
-  starts), agents reply `@社長 作業が完了しました` / `確認をお願いします`,
-  and a composer pinned to `@here 仕事がない人は退勤してください` triggers
-  the HR cleanup (HR replies with the retiree count). The newest 50
-  messages are kept, sorted by time, with dates on non-today entries
+- Top bar: a compact Kanban (heading `📋 Kanban`) with one column per
+  assignee (user first, then residents in seat order), each showing a card
+  count badge and a preview of the first few cards (`+N` when more). The
+  header has an expand button (⤢) that opens the full board overlay and an
+  add button (＋) that opens the task-creation modal; clicking the columns
+  also opens the full board overlay
+- Sidebar: a report inbox (heading `📥 インボックス`) listing whiteboard
+  reports — click a report head to expand its body / mark it read, ✕ to
+  archive. Its footer holds a single 退勤ボタン (`仕事がない人を退勤`) that
+  triggers the HR cleanup, plus the connection indicator. The server still
+  keeps the newest 50 `#general` messages and a WebAudio chime fires when
+  the boss (社長) is freshly mentioned, but the chat is no longer rendered
 
 ### HR cleanup
 

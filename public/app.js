@@ -1,14 +1,8 @@
-// SSE client + Slack-like #general chat rendering.
+// SSE client: Kanban top bar, report inbox and overlay panels.
 
 (() => {
-  const chatElement = document.getElementById('chat');
-  const composerElement = document.getElementById('composer');
-  const sendButton = document.getElementById('composer-send');
   const connectionElement = document.getElementById('connection');
   const client = window.OFFICE_CLIENT.create();
-
-  const CLI_COLORS = { claude: '#d97757', codex: '#e8e8e8', gemini: '#7aa2f7' };
-  const AUTHOR_COLORS = { user: '#a9b1d6', hr: '#8a93a6' };
 
   // Soft, low-volume chime for when the boss (@社長) is freshly mentioned.
   // Synthesized with WebAudio so no audio asset is needed; peak gain is kept
@@ -123,31 +117,6 @@
       .replaceAll("'", '&#39;');
   }
 
-  // Highlight @社長 / @here / @Claude (repo) style mentions.
-  // Mentions of the user (@社長) get Slack's "you were mentioned" amber.
-  function highlightMentions(escapedText) {
-    return escapedText.replace(
-      /@(?:社長|here|(?:Claude|Codex|Gemini)(?:\s\([^)]*\))?)/g,
-      (mention) =>
-        `<span class="mention${mention === '@社長' ? ' self' : ''}">${mention}</span>`
-    );
-  }
-
-  function avatarChip(message, color) {
-    const kind =
-      message.authorKind === 'agent' ? message.cli : message.authorKind;
-    const faceUrl = window.OFFICE.faceDataUrl(kind);
-    if (!faceUrl) {
-      return `<div class="msg-avatar" style="background:${color}22;color:${color}">?</div>`;
-    }
-    return `<img class="msg-avatar face" src="${faceUrl}" alt="" style="background:${color}22">`;
-  }
-
-  function authorColor(message) {
-    if (message.authorKind === 'agent') return CLI_COLORS[message.cli] ?? '#a9b1d6';
-    return AUTHOR_COLORS[message.authorKind] ?? '#a9b1d6';
-  }
-
   function formatTime(at) {
     const date = new Date(at);
     const now = new Date();
@@ -160,54 +129,17 @@
     return sameDay ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
   }
 
-  // Keep the view pinned to the newest message unless the user scrolled up.
-  // The scrollbar only shows while actually scrolling.
-  let pinnedToBottom = true;
-  let scrollbarHideTimer = null;
-  chatElement.addEventListener('scroll', () => {
-    pinnedToBottom =
-      chatElement.scrollHeight - chatElement.scrollTop - chatElement.clientHeight < 60;
-    chatElement.classList.add('scrolling');
-    clearTimeout(scrollbarHideTimer);
-    scrollbarHideTimer = setTimeout(() => chatElement.classList.remove('scrolling'), 800);
-  });
-
-  function renderChat(snapshot) {
-    chatElement.innerHTML = (snapshot.messages ?? [])
-      .map((message) => {
-        const color = authorColor(message);
-        const reactions = message.reactions.length
-          ? `<div class="reactions">${message.reactions
-              .map((emoji) => `<span class="reaction">${emoji} 1</span>`)
-              .join('')}</div>`
-          : '';
-        return `
-          <div class="message">
-            ${avatarChip(message, color)}
-            <div class="msg-body">
-              <div class="msg-head">
-                <span class="msg-name" style="color:${color}">${escapeHtml(message.authorName)}</span>
-                <span class="msg-time">${formatTime(message.at)}</span>
-              </div>
-              <div class="msg-text">${highlightMentions(escapeHtml(message.text))}</div>
-              ${reactions}
-            </div>
-          </div>`;
-      })
-      .join('');
-    if (pinnedToBottom) chatElement.scrollTop = chatElement.scrollHeight;
-  }
-
+  // The HR cleanup, kept as a single button: retire everyone with no work
+  // left, tagged with the boss's standing directive.
+  const CLEANUP_DIRECTIVE = '@here 仕事がない人は退勤してください';
+  const cleanupButton = document.getElementById('cleanup-run');
   let cleanupInFlight = false;
-  composerElement.addEventListener('submit', async (event) => {
-    event.preventDefault();
+  cleanupButton.addEventListener('click', async () => {
     if (cleanupInFlight) return;
     cleanupInFlight = true;
-    sendButton.disabled = true;
+    cleanupButton.disabled = true;
     try {
-      const result = await client.runCleanup(
-        document.getElementById('composer-input').value
-      );
+      const result = await client.runCleanup(CLEANUP_DIRECTIVE);
       window.OFFICE.hrSay(
         result.retired.length > 0
           ? `${result.retired.length}人が退勤しました`
@@ -217,7 +149,7 @@
       window.OFFICE.hrSay('退勤処理に失敗しました');
     } finally {
       cleanupInFlight = false;
-      sendButton.disabled = false;
+      cleanupButton.disabled = false;
     }
   });
 
@@ -228,7 +160,7 @@
   const overlayElement = document.getElementById('overlay');
   const whiteboardPanel = document.getElementById('whiteboard-panel');
   const residentPanel = document.getElementById('resident-panel');
-  const reportListElement = document.getElementById('report-list');
+  const reportListElement = document.getElementById('inbox-list');
   const residentForm = document.getElementById('resident-form');
   const residentError = document.getElementById('resident-error');
 
@@ -276,7 +208,11 @@
     button.addEventListener('click', closeOverlay);
   }
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !overlayElement.hidden) closeOverlay();
+    // The card modal (its own Escape handler) sits above the overlay; let it
+    // take Escape first so one press closes only the topmost layer.
+    if (event.key === 'Escape' && cardModal.hidden && !overlayElement.hidden) {
+      closeOverlay();
+    }
   });
 
   // --- whiteboard panel -------------------------------------------------
@@ -299,7 +235,7 @@
         (report) => `
           <div class="report${report.read ? '' : ' unread'}" data-id="${escapeHtml(report.id)}">
             <div class="report-head">
-              <span class="report-level ${report.level}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
+              <span class="report-level ${escapeHtml(report.level)}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
               <span class="report-title">${escapeHtml(report.title)}</span>
               <span class="report-time">${formatTime(report.createdAt)}</span>
               <button type="button" class="report-archive" title="ボードから外す">✕</button>
@@ -345,17 +281,21 @@
     }
   }
 
-  // --- kanban board tab -------------------------------------------------
+  // --- kanban board -----------------------------------------------------
   // Columns are assignees: the user first, then the residents in seat order.
-  // Cards are dragged to reorder (top card = worked next) or to reassign.
+  // The compact top bar mirrors the board (a few cards per column); the
+  // full board lives in the overlay, where cards are dragged to reorder
+  // (top card = worked next) or to reassign.
 
   const boardView = document.getElementById('board-view');
   const boardColumnsElement = document.getElementById('board-columns');
   const cardDetailElement = document.getElementById('card-detail');
-  const cardForm = document.getElementById('card-form');
+  const topbarColumnsElement = document.getElementById('topbar-columns');
+
+  // How many cards each compact top-bar column previews before "+N more".
+  const TOPBAR_CARD_LIMIT = 3;
 
   let latestSnapshot = null;
-  let activeWhiteboardTab = 'board';
   let boardCards = [];
   let draggingCardId = null;
 
@@ -367,31 +307,64 @@
     ];
   }
 
-  function showWhiteboardTab(tab) {
-    activeWhiteboardTab = tab;
-    for (const button of document.querySelectorAll('#whiteboard-tabs button')) {
-      button.classList.toggle('active', button.dataset.tab === tab);
+  // Group the cards into their columns once; both the overlay board and the
+  // compact top bar render from this. Cards assigned to a resident that no
+  // longer exists land in the user column with a warning badge.
+  function groupedCards() {
+    const columns = boardColumns();
+    const known = new Set(columns.map((column) => column.key));
+    const grouped = new Map(columns.map((column) => [column.key, []]));
+    for (const card of boardCards) {
+      const key = known.has(card.assignee) ? card.assignee : 'user';
+      grouped.get(key).push({ ...card, orphaned: !known.has(card.assignee) });
     }
-    boardView.hidden = tab !== 'board';
-    cardDetailElement.hidden = true;
-    reportListElement.hidden = tab !== 'reports';
-    if (tab === 'board') refreshBoard();
-    else loadReports();
-  }
-  for (const button of document.querySelectorAll('#whiteboard-tabs button')) {
-    button.addEventListener('click', () => showWhiteboardTab(button.dataset.tab));
+    return { columns, grouped };
   }
 
   async function refreshBoard() {
     try {
       const { cards } = await client.listBoard();
       boardCards = cards ?? [];
-      renderBoard();
     } catch {
-      boardColumnsElement.innerHTML =
-        '<div class="report-empty">読み込みに失敗しました</div>';
+      boardCards = [];
     }
+    renderTopbar();
+    if (!whiteboardPanel.hidden && cardDetailElement.hidden) renderBoard();
   }
+
+  // The compact top bar: one column per assignee with a count badge and the
+  // first few cards. Clicking anywhere opens the full board overlay.
+  function renderTopbar() {
+    const { columns, grouped } = groupedCards();
+    topbarColumnsElement.innerHTML = columns
+      .map((column) => {
+        const cards = grouped.get(column.key);
+        const preview = cards
+          .slice(0, TOPBAR_CARD_LIMIT)
+          .map(
+            (card) => `
+              <div class="topbar-card${card.working ? ' working' : ''}">
+                <span class="topbar-card-title">${escapeHtml(card.title)}</span>
+                ${cardBadges(card)}
+              </div>`
+          )
+          .join('');
+        const overflow =
+          cards.length > TOPBAR_CARD_LIMIT
+            ? `<div class="topbar-more">+${cards.length - TOPBAR_CARD_LIMIT}</div>`
+            : '';
+        return `
+          <div class="topbar-column">
+            <div class="topbar-column-head">
+              <span class="topbar-column-name">${escapeHtml(column.label)}</span>
+              <span class="topbar-column-count">${cards.length}</span>
+            </div>
+            ${preview}${overflow}
+          </div>`;
+      })
+      .join('');
+  }
+  topbarColumnsElement.addEventListener('click', openWhiteboard);
 
   function cardBadges(card) {
     const badges = [];
@@ -404,15 +377,7 @@
   }
 
   function renderBoard() {
-    const columns = boardColumns();
-    const known = new Set(columns.map((column) => column.key));
-    const grouped = new Map(columns.map((column) => [column.key, []]));
-    // Cards assigned to a resident that no longer exists land in the user
-    // column with a warning badge instead of disappearing.
-    for (const card of boardCards) {
-      const key = known.has(card.assignee) ? card.assignee : 'user';
-      grouped.get(key).push({ ...card, orphaned: !known.has(card.assignee) });
-    }
+    const { columns, grouped } = groupedCards();
     boardColumnsElement.innerHTML = columns
       .map(
         (column) => `
@@ -516,6 +481,33 @@
     if (select.options.length > 1) select.selectedIndex = 1;
   }
 
+  // --- card creation modal ----------------------------------------------
+  // Filing a task is a standalone modal (its own backdrop above the overlay),
+  // so it opens from both the top bar and the expanded board.
+
+  const cardModal = document.getElementById('card-modal');
+  const cardForm = document.getElementById('card-form');
+
+  function openCardModal() {
+    fillCardAssignees();
+    cardModal.hidden = false;
+    field('card-title').focus();
+  }
+  function closeCardModal() {
+    cardModal.hidden = true;
+    cardForm.reset();
+  }
+  for (const id of ['card-add', 'card-add-overlay']) {
+    field(id).addEventListener('click', openCardModal);
+  }
+  field('card-modal-close').addEventListener('click', closeCardModal);
+  cardModal.addEventListener('click', (event) => {
+    if (event.target === cardModal) closeCardModal();
+  });
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !cardModal.hidden) closeCardModal();
+  });
+
   cardForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const title = field('card-title').value.trim();
@@ -526,8 +518,7 @@
         body: field('card-body').value,
         assignee: field('card-assignee').value,
       });
-      cardForm.reset();
-      fillCardAssignees();
+      closeCardModal();
     } catch {
       // Fall through: reload shows the board as it really is.
     }
@@ -602,7 +593,7 @@
           (report) => `
             <div class="report">
               <div class="report-head">
-                <span class="report-level ${report.level}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
+                <span class="report-level ${escapeHtml(report.level)}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
                 <span class="report-title">${escapeHtml(report.title)}</span>
                 <span class="report-time">${formatTime(report.createdAt)}</span>
               </div>
@@ -618,8 +609,9 @@
     }
   }
 
-  // Re-fetch the open board when a snapshot shows run/card activity, but
-  // never mid-drag or behind the detail view.
+  // Re-fetch the board when a snapshot shows run/card activity so the top bar
+  // (always visible) and the open overlay stay current — but never mid-drag or
+  // while the detail view is up front.
   let boardSignature = null;
   function maybeRefreshBoard(snapshot) {
     const signature = JSON.stringify([
@@ -628,8 +620,8 @@
     ]);
     const changed = boardSignature !== null && signature !== boardSignature;
     boardSignature = signature;
-    if (!changed || whiteboardPanel.hidden || activeWhiteboardTab !== 'board') return;
-    if (draggingCardId !== null || !cardDetailElement.hidden) return;
+    if (!changed || draggingCardId !== null) return;
+    if (!whiteboardPanel.hidden && !cardDetailElement.hidden) return;
     refreshBoard();
   }
 
@@ -637,10 +629,12 @@
     overlayElement.hidden = false;
     whiteboardPanel.hidden = false;
     residentPanel.hidden = true;
-    fillCardAssignees();
-    showWhiteboardTab(activeWhiteboardTab);
+    cardDetailElement.hidden = true;
+    boardView.hidden = false;
+    refreshBoard();
   }
   window.addEventListener('office:whiteboard-open', openWhiteboard);
+  document.getElementById('board-expand').addEventListener('click', openWhiteboard);
 
   // --- resident panel ---------------------------------------------------
 
@@ -776,13 +770,38 @@
     }
   });
 
+  // The top bar and the inbox are always on screen, so both load on the first
+  // snapshot and refresh only when their data actually changes: the board on
+  // run/card activity, the inbox when a report is added or removed (using the
+  // total, so marking one read never collapses an open report).
+  let firstSnapshot = true;
+  let inboxSignature = null;
+  function maybeRefreshInbox(snapshot) {
+    const signature = snapshot.whiteboard?.total ?? 0;
+    const changed = inboxSignature !== null && signature !== inboxSignature;
+    inboxSignature = signature;
+    if (changed) loadReports();
+  }
+
   client.connect({
     onSnapshot: (snapshot) => {
       latestSnapshot = snapshot;
       window.OFFICE.setState(snapshot);
       alertOnBossMention(snapshot);
-      renderChat(snapshot);
+      if (firstSnapshot) {
+        firstSnapshot = false;
+        refreshBoard();
+        loadReports();
+        inboxSignature = snapshot.whiteboard?.total ?? 0;
+        boardSignature = JSON.stringify([
+          snapshot.board,
+          (snapshot.residents ?? []).map((resident) => resident.busy),
+        ]);
+        return;
+      }
+      renderTopbar();
       maybeRefreshBoard(snapshot);
+      maybeRefreshInbox(snapshot);
     },
     onStatus: (status) => {
       connectionElement.textContent =

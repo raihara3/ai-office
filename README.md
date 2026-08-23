@@ -113,7 +113,9 @@ walk out the
 door; their log files are left untouched on disk and the clock-out is tracked
 in the state store, which ignores replayed log lines up to the member's last
 event so a retired session cannot resurrect from a rescan (genuinely newer
-activity brings them back). Endpoints:
+activity brings them back). The clock-out is persisted to
+`~/Library/Application Support/ai-office/dismissed-sessions.json`, so it
+survives a server restart. Endpoints:
 `GET /api/cleanup/preview`, `POST /api/cleanup`.
 
 ## Resident team

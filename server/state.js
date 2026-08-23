@@ -7,6 +7,14 @@
 // module-global state. `deriveStatus` is exported separately as a pure
 // function for the same reason.
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Clock-out tombstones live here so a dismissed member stays clocked out across
+// a server restart (the file is kept on disk now, so an in-memory tombstone
+// would be lost on restart and the log would resurface as a break).
+const DISMISSED_SESSIONS_FILE = 'dismissed-sessions.json';
+
 const WORKING_IDLE_TIMEOUT_MS = 90_000;
 const TURN_COMPLETE_GRACE_MS = 5_000;
 const SUBAGENT_EXPIRE_MS = 30 * 60_000;
@@ -150,13 +158,51 @@ function isTaskPickup(observation) {
 // runs are scheduled, not requested by the boss, so the #general request/
 // reply exchange is suppressed (the residents module posts its own report
 // notification instead).
-export function createState({ now = () => Date.now(), isResidentFile = () => false } = {}) {
+export function createState({
+  now = () => Date.now(),
+  isResidentFile = () => false,
+  dataDirectory,
+  fileSystem = fs,
+} = {}) {
   const sessions = new Map();
-  const dismissedAt = new Map();
+  const dismissedFilePath = dataDirectory
+    ? path.join(dataDirectory, DISMISSED_SESSIONS_FILE)
+    : null;
+  const dismissedAt = loadDismissed();
   const changeListeners = new Set();
   const messages = [];
   let nextMessageId = 1;
   let broadcastScheduled = false;
+
+  // Read the persisted tombstones, dropping any whose cutoff is older than a
+  // session would live anyway (SESSION_EXPIRE_MS): such entries can no longer
+  // gate a replay, so pruning them keeps the file bounded across restarts.
+  function loadDismissed() {
+    const map = new Map();
+    if (dismissedFilePath === null) return map;
+    let parsed;
+    try {
+      parsed = JSON.parse(fileSystem.readFileSync(dismissedFilePath, 'utf8'));
+    } catch {
+      return map;
+    }
+    const currentTime = now();
+    for (const [key, cutoff] of Object.entries(parsed ?? {})) {
+      if (typeof cutoff === 'number' && currentTime - cutoff <= SESSION_EXPIRE_MS) {
+        map.set(key, cutoff);
+      }
+    }
+    return map;
+  }
+
+  function persistDismissed() {
+    if (dismissedFilePath === null) return;
+    fileSystem.mkdirSync(dataDirectory, { recursive: true });
+    fileSystem.writeFileSync(
+      dismissedFilePath,
+      `${JSON.stringify(Object.fromEntries(dismissedAt), null, 2)}\n`
+    );
+  }
 
   function emit() {
     const snap = snapshot();
@@ -200,12 +246,14 @@ export function createState({ now = () => Date.now(), isResidentFile = () => fal
   // trashes it), so replayed or lingering lines at or before the cutoff must be
   // rejected or the retired member would resurrect. A genuinely newer event
   // means the CLI resumed writing — the member came back to work — so the
-  // tombstone is cleared and the session returns.
+  // tombstone is cleared and the session returns. Tombstones are persisted to
+  // disk so a clock-out survives a server restart.
   function isDismissed(key, eventAt) {
     const cutoff = dismissedAt.get(key);
     if (cutoff === undefined) return false;
     if (eventAt <= cutoff) return true;
     dismissedAt.delete(key);
+    persistDismissed();
     return false;
   }
 
@@ -304,7 +352,9 @@ export function createState({ now = () => Date.now(), isResidentFile = () => fal
     sessions.delete(key);
     // Record the clock-out cutoff (the member's last event) so replayed log
     // lines up to that point cannot bring them back, while later activity can.
+    // Persisted so the clock-out survives a server restart.
     dismissedAt.set(key, session.lastEventAt ?? now());
+    persistDismissed();
     scheduleBroadcast();
   }
 

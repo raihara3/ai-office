@@ -133,7 +133,10 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 - `applyTiming` / `applyFields` / `applyTurnState` / `applySubagents` /
   `applyMcpCall` — observation の 1 側面を変異(mutation)で適用。クロックや I/O を
   持たないため、ストアは決定的に保たれます。
-- `isDismissed` — 人事 cleanup が残す tombstone(墓標)を尊重します。
+- `isDismissed` — 人事 cleanup が残す tombstone(墓標)を尊重します。tombstone は
+  `<dataDirectory>/dismissed-sessions.json` に永続化され、起動時に読み込むため
+  退勤状態はサーバー再起動をまたいで保持されます(セッション寿命
+  `SESSION_EXPIRE_MS` を超えた古い墓標は読み込み時に破棄)。
 - `updateGeneralChannel` — 状態遷移に応じて `#general` メッセージ(依頼、🫡 の
   受領リアクション、完了 / 確認依頼の返信)を投稿します。注入された
   `isResidentFile` が真のセッション(常駐チームの実行)ではこのやり取りを
@@ -161,7 +164,8 @@ macOS でイベントを取りこぼすことがあるため)。3 つの watcher
 退勤対象から除外します。退勤時はログファイル(jsonl)を削除せずに残し、退勤
 状態は state の tombstone(退勤時点の最終イベント時刻)で管理します。以降、
 その時刻以前のログ行の再生は無視されるため再スキャンで復活せず、より新しい
-活動があった場合のみセッションが復帰します。
+活動があった場合のみセッションが復帰します。tombstone はディスクに永続化される
+ため、退勤状態はサーバー再起動をまたいで維持されます。
 
 ### `watchers/`
 

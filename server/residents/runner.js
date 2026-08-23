@@ -67,11 +67,21 @@ export function extractResultText(cli, stdout) {
 }
 
 // The shared preamble tells agents to flag reports that need a human;
-// `splitReportLevel` peels that marker off the final message.
+// `splitReportLevel` peels that marker off the final message. The rule asks
+// for the marker on the first line, but models regularly append it where the
+// decision was made — at the end — so a line consisting solely of the marker
+// counts anywhere in the message. Prose merely mentioning the marker never
+// occupies a whole line, so it cannot false-positive.
 export function splitReportLevel(text) {
-  const match = /^LEVEL:\s*(review-needed|info)\s*/i.exec(text);
-  if (!match) return { level: 'info', body: text.trim() };
-  return { level: match[1].toLowerCase(), body: text.slice(match[0].length).trim() };
+  const firstLine = /^LEVEL:\s*(review-needed|info)\s*/i.exec(text);
+  if (firstLine) {
+    return { level: firstLine[1].toLowerCase(), body: text.slice(firstLine[0].length).trim() };
+  }
+  const standaloneLine = /^[ \t]*LEVEL:[ \t]*(review-needed|info)[ \t]*$/im.exec(text);
+  if (!standaloneLine) return { level: 'info', body: text.trim() };
+  const before = text.slice(0, standaloneLine.index);
+  const after = text.slice(standaloneLine.index + standaloneLine[0].length).replace(/^\r?\n/, '');
+  return { level: standaloneLine[1].toLowerCase(), body: `${before}${after}`.trim() };
 }
 
 // Transcript roots for the CLIs that pick their own session file.

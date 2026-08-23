@@ -37,7 +37,7 @@ function buildPrompt(configuration, instructions, precheckOutput, task) {
     [
       '共通ルール:',
       '- 最後のメッセージが人間向けの報告としてそのままホワイトボードに掲示されます。日本語で簡潔にまとめてください。',
-      '- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書いてください。',
+      '- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書き、2行目以降に本文を続けてください。本文の途中や末尾には書かないでください。',
     ].join('\n'),
     `## 役割指示\n\n${instructions.trim()}`,
   ];

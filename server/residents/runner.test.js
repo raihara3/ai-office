@@ -70,3 +70,19 @@ test('splitReportLevel: peels the review marker off the first line', () => {
   });
   assert.deepEqual(splitReportLevel('異常なし'), { level: 'info', body: '異常なし' });
 });
+
+test('splitReportLevel: accepts a standalone marker line anywhere in the message', () => {
+  assert.deepEqual(splitReportLevel('作業内容の説明。\n\nLEVEL: review-needed\n確認してください'), {
+    level: 'review-needed',
+    body: '作業内容の説明。\n\n確認してください',
+  });
+  assert.deepEqual(splitReportLevel('説明。\n\nLEVEL: review-needed'), {
+    level: 'review-needed',
+    body: '説明。',
+  });
+  // Prose that merely mentions the marker inline is not a marker.
+  assert.deepEqual(splitReportLevel('review-needed で終了する場合は LEVEL: review-needed と書く'), {
+    level: 'info',
+    body: 'review-needed で終了する場合は LEVEL: review-needed と書く',
+  });
+});

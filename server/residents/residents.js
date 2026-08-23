@@ -36,7 +36,6 @@ function buildPrompt(configuration, instructions, precheckOutput) {
       '共通ルール:',
       '- 最後のメッセージが人間向けの報告としてそのままホワイトボードに掲示されます。日本語で簡潔にまとめてください。',
       '- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書いてください。',
-      '- リポジトリを変更する場合は main ブランチへ直接コミットせず、ブランチを作成して Pull Request を作り、その URL を報告に含めてください。',
     ].join('\n'),
     `## 役割指示\n\n${instructions.trim()}`,
   ];

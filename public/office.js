@@ -28,8 +28,15 @@ import { createSmallTalk } from './office/small-talk.js';
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
 
+  // Walk speeds are tuned in pixels per 60fps frame. The frame loop scales
+  // them by elapsed time (see frame()) so avatars cover the same distance per
+  // second regardless of the monitor's refresh rate.
   const WALK_SPEED = 1.6;
   const LEAVE_SPEED = 2.6;
+  const REFERENCE_FRAME_MS = 1000 / 60;
+  // Cap the per-frame step so a long pause (e.g. a backgrounded tab, where
+  // requestAnimationFrame stops firing) does not teleport avatars on return.
+  const MAX_FRAME_STEP = 3;
   const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
 
   let state = { employees: [] };
@@ -43,6 +50,9 @@ import { createSmallTalk } from './office/small-talk.js';
   const seatByKey = new Map();
   const usedSeats = new Set();
   let hrBubble = null;
+  // Timestamp of the previous animation frame, used to make movement
+  // frame-rate independent. null until the first frame runs.
+  let lastFrameTime = null;
 
   // Break-room chatter (see ./office/small-talk.js). restingKeys is refreshed
   // at the end of each frame with whoever is currently on break.
@@ -886,6 +896,14 @@ import { createSmallTalk } from './office/small-talk.js';
   }
 
   function frame(time) {
+    // Scale movement by how long the previous frame took relative to a 60fps
+    // frame, so walk speed stays constant across refresh rates.
+    const frameStep =
+      lastFrameTime === null
+        ? 1
+        : Math.min((time - lastFrameTime) / REFERENCE_FRAME_MS, MAX_FRAME_STEP);
+    lastFrameTime = time;
+
     const layout = computeLayout(usedSeats);
     if (canvas.height !== layout.height) {
       canvas.height = layout.height;
@@ -919,7 +937,7 @@ import { createSmallTalk } from './office/small-talk.js';
 
       if (entry.leaving) {
         const actor = actorFor(key, door, time);
-        moveActor(actor, door, LEAVE_SPEED);
+        moveActor(actor, door, LEAVE_SPEED * frameStep);
         if (!actor.walking) {
           presence.delete(key);
           actors.delete(key);
@@ -947,7 +965,7 @@ import { createSmallTalk } from './office/small-talk.js';
       const chairSpot = { x: desk.x, y: desk.y + 18 };
       const restSpot = breakSpot(breakIndex, layout);
       if (!atDeskStatus) breakIndex += 1;
-      moveActor(actor, atDeskStatus ? chairSpot : restSpot, WALK_SPEED);
+      moveActor(actor, atDeskStatus ? chairSpot : restSpot, WALK_SPEED * frameStep);
 
       const seated = working && !actor.walking;
       // Waiting for the user: stand in front of the desk, facing the room.

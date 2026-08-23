@@ -180,8 +180,16 @@ import { createSmallTalk } from './office/small-talk.js';
 
   // --- room ------------------------------------------------------------
 
-  // The window sky gradient is position-independent, so build it once.
-  let windowSky = null;
+  // The window sky gradients are position-independent, so build each once and
+  // pick between them by the server-reported time of day (state.sky).
+  let windowSkyDay = null;
+  let windowSkyNight = null;
+  // Fixed star field for the night windows (offsets within the 96x58 pane).
+  const WINDOW_STARS = [
+    { x: 10, y: 10 }, { x: 30, y: 22 }, { x: 52, y: 8 }, { x: 70, y: 28 },
+    { x: 86, y: 16 }, { x: 20, y: 38 }, { x: 44, y: 50 }, { x: 78, y: 46 },
+    { x: 8, y: 30 }, { x: 62, y: 40 },
+  ];
 
   // Shadow-blurred text is expensive to rasterize, so the neon sign is
   // rendered once into an offscreen sprite and stamped each frame.
@@ -212,24 +220,48 @@ import { createSmallTalk } from './office/small-talk.js';
     px(0, 0, CANVAS_WIDTH, 96, '#ece6da');
     px(0, 0, CANVAS_WIDTH, 6, '#ddd5c6');
     px(0, 86, CANVAS_WIDTH, 10, '#c9c0ae');
-    // daylight windows: slim dark frames, sky gradient, drifting clouds
-    if (!windowSky) {
-      windowSky = ctx.createLinearGradient(0, 16, 0, 74);
-      windowSky.addColorStop(0, '#8ecff0');
-      windowSky.addColorStop(1, '#cdeaf7');
+    // windows: slim dark frames, sky gradient, and either drifting daytime
+    // clouds or a twinkling night sky depending on the server's time of day.
+    const night = state.sky === 'night';
+    if (night) {
+      if (!windowSkyNight) {
+        windowSkyNight = ctx.createLinearGradient(0, 16, 0, 74);
+        windowSkyNight.addColorStop(0, '#0c1636');
+        windowSkyNight.addColorStop(1, '#28345f');
+      }
+    } else if (!windowSkyDay) {
+      windowSkyDay = ctx.createLinearGradient(0, 16, 0, 74);
+      windowSkyDay.addColorStop(0, '#8ecff0');
+      windowSkyDay.addColorStop(1, '#cdeaf7');
     }
     for (const wx of [60, 310, 560, 810]) {
       px(wx - 4, 12, 104, 66, '#3d4852');
-      ctx.fillStyle = windowSky;
+      ctx.fillStyle = night ? windowSkyNight : windowSkyDay;
       ctx.fillRect(wx, 16, 96, 58);
       ctx.save();
       ctx.beginPath();
       ctx.rect(wx, 16, 96, 58);
       ctx.clip();
-      const drift = ((time / 150 + wx) % 140) - 20;
-      px(wx + drift, 28, 26, 7, 'rgba(255, 255, 255, 0.9)');
-      px(wx + drift + 6, 23, 14, 6, 'rgba(255, 255, 255, 0.9)');
-      px(wx + ((drift + 70) % 140), 48, 20, 6, 'rgba(255, 255, 255, 0.7)');
+      if (night) {
+        // A pale moon in the first window, plus a field of twinkling stars.
+        if (wx === 60) {
+          ctx.fillStyle = 'rgba(244, 241, 214, 0.95)';
+          ctx.beginPath();
+          ctx.arc(wx + 74, 30, 8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (let index = 0; index < WINDOW_STARS.length; index += 1) {
+          const star = WINDOW_STARS[index];
+          const twinkle = 0.55 + 0.45 * Math.sin(time / 500 + index * 1.7);
+          ctx.fillStyle = `rgba(255, 255, 245, ${twinkle})`;
+          ctx.fillRect(wx + star.x, 16 + star.y, 2, 2);
+        }
+      } else {
+        const drift = ((time / 150 + wx) % 140) - 20;
+        px(wx + drift, 28, 26, 7, 'rgba(255, 255, 255, 0.9)');
+        px(wx + drift + 6, 23, 14, 6, 'rgba(255, 255, 255, 0.9)');
+        px(wx + ((drift + 70) % 140), 48, 20, 6, 'rgba(255, 255, 255, 0.7)');
+      }
       ctx.restore();
       px(wx + 46, 16, 4, 58, '#3d4852');
       px(wx, 42, 96, 3, '#3d4852');

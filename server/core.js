@@ -14,7 +14,17 @@ import { startGeminiWatcher } from './watchers/gemini.js';
 // and re-broadcast often enough that the flip lands close to the grace period.
 const REFRESH_INTERVAL_MS = 2_000;
 
+// The window scenery follows the server's local timezone: daylight runs
+// 06:00–17:59 (blue sky), the rest of the day shows a starry night sky.
+const DAYLIGHT_START_HOUR = 6;
+const DAYLIGHT_END_HOUR = 18;
+export function skyPhaseFor(timestamp) {
+  const hour = new Date(timestamp).getHours();
+  return hour >= DAYLIGHT_START_HOUR && hour < DAYLIGHT_END_HOUR ? 'day' : 'night';
+}
+
 export function createCore({ now, dataDirectory } = {}) {
+  const clock = typeof now === 'function' ? now : () => Date.now();
   // The state store asks whether a log belongs to a resident (to mute the
   // #general request/reply exchange), and the residents module posts into the
   // state — resolve the cycle by letting the closure capture `residents`.
@@ -49,6 +59,7 @@ export function createCore({ now, dataDirectory } = {}) {
       })),
       residents: residents.snapshotData(),
       whiteboard: residents.whiteboardCounts(),
+      sky: skyPhaseFor(clock()),
     };
   }
 

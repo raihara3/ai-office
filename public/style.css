@@ -158,7 +158,7 @@ main {
 }
 
 #panel {
-  width: 320px;
+  width: 520px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

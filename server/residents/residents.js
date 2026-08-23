@@ -1,9 +1,9 @@
 // Resident team orchestrator: composes the manifest store, scheduler, session
 // registry, runner, whiteboard and kanban board into one handle for the core.
 // A tick loop re-reads the manifests (so hand-edited files are picked up),
-// fires due triggers, gates interval runs on their precheck command, works
-// the top card of each idle resident's board column, and turns finished runs
-// into whiteboard reports plus a #general notification.
+// fires due triggers, gates trigger runs on both their precheck command and an
+// assigned board card, works the top card of each idle resident's board column,
+// and turns finished runs into whiteboard reports plus a #general notification.
 
 import { execFile } from 'node:child_process';
 import os from 'node:os';
@@ -152,10 +152,13 @@ export function createResidents({
     state.refresh();
   }
 
-  // Start one run. `gateOnPrecheck` is true for scheduled ticks (an empty
-  // precheck output means "nothing to do" and skips the agent entirely) and
-  // false for the panel's 今すぐ実行 button. A board card passed as `task`
-  // skips the precheck entirely — the card's existence is the trigger.
+  // Start one run. `gateOnPrecheck` is true for scheduled ticks and false for
+  // the panel's 今すぐ実行 button. A gated trigger run only starts when there is
+  // actually work to do: a card must be assigned to this resident on the board
+  // AND, if a precheck command is set, its output must be non-empty. Either
+  // gate empty means "nothing to do" and the agent is skipped entirely. A board
+  // card passed as `task` bypasses both gates — the card's existence is the
+  // trigger.
   async function launch(entry, { gateOnPrecheck, task = null }) {
     const { configuration } = entry;
     const startedAt = now();
@@ -165,6 +168,13 @@ export function createResidents({
       // trigger on the next tick.
       entry.state = { ...entry.state, lastRunAt: startedAt };
       manifestStore.saveState(entry.name, entry.state);
+
+      // A firing trigger is not enough on its own: with no assigned card the
+      // team stays quiet instead of filing a meaningless report every interval.
+      if (gateOnPrecheck && task === null && board.topCardFor(entry.name) === null) {
+        manifestStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+        return false;
+      }
 
       let precheckOutput = null;
       if (configuration.precheck && task === null) {

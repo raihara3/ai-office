@@ -35,6 +35,10 @@ uses the Node.js standard library only — no runtime dependencies.
   `interval` triggers fire when the last run started ≥ N minutes ago, inside
   the optional active window. After the PC wakes from sleep, execution
   resumes automatically on the next tick — no manual restart needed.
+  A trigger firing only starts a run when there is actually work to do: a
+  card must be assigned to the resident on the board **and**, if a precheck
+  command is set, its output must be non-empty. With no assigned card the
+  team stays quiet instead of filing a meaningless report every interval.
 - Claude residents in `edit` mode run with `--permission-mode
   bypassPermissions` because headless runs cannot answer approval prompts;
   `read-only` mode is restricted to an inspection-tool allowlist.

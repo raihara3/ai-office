@@ -254,38 +254,127 @@ test('snapshot nulls task/activity/activityKind on break, keeps them on working/
   assert.equal(employee.activityKind, null);
 });
 
-test('dismissSession removes the session and tombstone rejects immediate re-add', () => {
+test('dismissSession removes the session; the cutoff tombstone rejects replays', () => {
   const ctx = withClock();
   const key = 'claude:/log/e.jsonl';
 
+  ctx.advance(1000);
+  const clockOutAt = ctx.value;
   ctx.state.reportEvent('claude', '/log/e.jsonl', {
     project: 'demo',
     task: 'work',
     activityKind: 'tool',
-    timestamp: ctx.value,
+    timestamp: clockOutAt,
   });
   assert.ok(employeeFor(ctx.state, key), 'session should exist');
 
   ctx.state.dismissSession(key);
   assert.equal(employeeFor(ctx.state, key), undefined, 'session should be gone');
 
-  // Within the tombstone window: re-adding is ignored.
-  ctx.advance(1000);
+  // A replayed log line at or before the clock-out cutoff is rejected, however
+  // much wall-clock time has passed since (the file stays on disk now).
+  ctx.advance(20 * 60_000);
   ctx.state.reportEvent('claude', '/log/e.jsonl', {
     project: 'demo',
-    task: 'work again',
+    task: 'replayed line',
     activityKind: 'tool',
-    timestamp: ctx.value,
+    timestamp: clockOutAt,
   });
-  assert.equal(employeeFor(ctx.state, key), undefined, 'tombstone should reject re-add');
+  assert.equal(employeeFor(ctx.state, key), undefined, 'cutoff should reject replays');
 
-  // After the tombstone expires (>10min): the session can return.
-  ctx.advance(10 * 60_000 + 1);
+  // A genuinely newer event means the CLI resumed writing: the member returns.
   ctx.state.reportEvent('claude', '/log/e.jsonl', {
     project: 'demo',
     task: 'back to work',
     activityKind: 'tool',
-    timestamp: ctx.value,
+    timestamp: clockOutAt + 1,
   });
-  assert.ok(employeeFor(ctx.state, key), 'session should return after tombstone expiry');
+  assert.ok(employeeFor(ctx.state, key), 'newer activity should bring the session back');
+});
+
+function memoryFileSystem() {
+  const files = new Map();
+  return {
+    files,
+    readFileSync(filePath) {
+      if (!files.has(filePath)) throw new Error(`ENOENT: ${filePath}`);
+      return files.get(filePath);
+    },
+    writeFileSync(filePath, content) {
+      files.set(filePath, String(content));
+    },
+    mkdirSync() {},
+  };
+}
+
+test('clock-out tombstones persist across a restart', () => {
+  const fileSystem = memoryFileSystem();
+  const key = 'claude:/log/e.jsonl';
+  const clockOutAt = 1000;
+
+  const first = createState({ now: () => clockOutAt, dataDirectory: '/data', fileSystem });
+  first.reportEvent('claude', '/log/e.jsonl', {
+    project: 'demo',
+    task: 'work',
+    activityKind: 'tool',
+    timestamp: clockOutAt,
+  });
+  first.dismissSession(key);
+
+  // A fresh instance (simulating a server restart) reloads the tombstone from
+  // disk, so a replayed log line at or before the cutoff stays clocked out.
+  const restarted = createState({
+    now: () => clockOutAt + 20 * 60_000,
+    dataDirectory: '/data',
+    fileSystem,
+  });
+  restarted.reportEvent('claude', '/log/e.jsonl', {
+    project: 'demo',
+    task: 'replayed line',
+    activityKind: 'tool',
+    timestamp: clockOutAt,
+  });
+  assert.equal(
+    restarted.snapshot().employees.find((e) => e.key === key),
+    undefined,
+    'restart should keep the dismissed session clocked out'
+  );
+
+  // A genuinely newer event still brings the member back after a restart.
+  restarted.reportEvent('claude', '/log/e.jsonl', {
+    project: 'demo',
+    task: 'back to work',
+    activityKind: 'tool',
+    timestamp: clockOutAt + 1,
+  });
+  assert.ok(
+    restarted.snapshot().employees.find((e) => e.key === key),
+    'newer activity should still resurrect the session after a restart'
+  );
+});
+
+test('tombstones older than the session lifetime are pruned on load', () => {
+  const fileSystem = memoryFileSystem();
+  const SESSION_EXPIRE_MS = 3 * 24 * 60 * 60_000;
+  fileSystem.writeFileSync(
+    '/data/dismissed-sessions.json',
+    JSON.stringify({ 'claude:/log/old.jsonl': 1000 })
+  );
+
+  const state = createState({
+    now: () => 1000 + SESSION_EXPIRE_MS + 1,
+    dataDirectory: '/data',
+    fileSystem,
+  });
+  // The stale cutoff was dropped, so a fresh event is accepted normally.
+  state.reportEvent('claude', '/log/old.jsonl', {
+    project: 'demo',
+    task: 'new run',
+    activityKind: 'tool',
+    timestamp: 1000 + SESSION_EXPIRE_MS + 1,
+  });
+  assert.ok(
+    state.snapshot().employees.find((e) => e.key === 'claude:/log/old.jsonl'),
+    'a stale tombstone should not gate a brand-new event'
+  );
 });

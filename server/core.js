@@ -5,7 +5,7 @@
 
 import { createState } from './state.js';
 import { createCleanup } from './cleanup.js';
-import { createResidents } from './residents/residents.js';
+import { createResidents, DEFAULT_DATA_DIRECTORY } from './residents/residents.js';
 import { startClaudeWatcher } from './watchers/claude.js';
 import { startCodexWatcher } from './watchers/codex.js';
 import { startGeminiWatcher } from './watchers/gemini.js';
@@ -23,7 +23,7 @@ export function skyPhaseFor(timestamp) {
   return hour >= DAYLIGHT_START_HOUR && hour < DAYLIGHT_END_HOUR ? 'day' : 'night';
 }
 
-export function createCore({ now, dataDirectory } = {}) {
+export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {}) {
   const clock = typeof now === 'function' ? now : () => Date.now();
   // The state store asks whether a log belongs to a resident (to mute the
   // #general request/reply exchange), and the residents module posts into the
@@ -32,6 +32,7 @@ export function createCore({ now, dataDirectory } = {}) {
   const state = createState({
     now,
     isResidentFile: (filePath) => residents.residentForFile(filePath) !== null,
+    dataDirectory,
   });
   residents = createResidents({ state, now, dataDirectory });
   const cleanup = createCleanup({

@@ -1,7 +1,7 @@
 // Canvas rendering for the pixel-art office.
 // One CLI session = one avatar. All vendors share a single desk grid that
 // fills from the top-left as sessions appear. An HR avatar by the entrance
-// retires sessions whose CLI process has exited (logs go to the Trash).
+// retires sessions whose CLI process has exited (log files are kept on disk).
 // app.js pushes state via OFFICE.setState(); this file owns the draw loop.
 // Pure geometry, vendor specs and the break-room small talk live in the
 // ./office/ modules so this file is just the canvas rendering.

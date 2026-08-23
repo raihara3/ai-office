@@ -254,38 +254,40 @@ test('snapshot nulls task/activity/activityKind on break, keeps them on working/
   assert.equal(employee.activityKind, null);
 });
 
-test('dismissSession removes the session and tombstone rejects immediate re-add', () => {
+test('dismissSession removes the session; the cutoff tombstone rejects replays', () => {
   const ctx = withClock();
   const key = 'claude:/log/e.jsonl';
 
+  ctx.advance(1000);
+  const clockOutAt = ctx.value;
   ctx.state.reportEvent('claude', '/log/e.jsonl', {
     project: 'demo',
     task: 'work',
     activityKind: 'tool',
-    timestamp: ctx.value,
+    timestamp: clockOutAt,
   });
   assert.ok(employeeFor(ctx.state, key), 'session should exist');
 
   ctx.state.dismissSession(key);
   assert.equal(employeeFor(ctx.state, key), undefined, 'session should be gone');
 
-  // Within the tombstone window: re-adding is ignored.
-  ctx.advance(1000);
+  // A replayed log line at or before the clock-out cutoff is rejected, however
+  // much wall-clock time has passed since (the file stays on disk now).
+  ctx.advance(20 * 60_000);
   ctx.state.reportEvent('claude', '/log/e.jsonl', {
     project: 'demo',
-    task: 'work again',
+    task: 'replayed line',
     activityKind: 'tool',
-    timestamp: ctx.value,
+    timestamp: clockOutAt,
   });
-  assert.equal(employeeFor(ctx.state, key), undefined, 'tombstone should reject re-add');
+  assert.equal(employeeFor(ctx.state, key), undefined, 'cutoff should reject replays');
 
-  // After the tombstone expires (>10min): the session can return.
-  ctx.advance(10 * 60_000 + 1);
+  // A genuinely newer event means the CLI resumed writing: the member returns.
   ctx.state.reportEvent('claude', '/log/e.jsonl', {
     project: 'demo',
     task: 'back to work',
     activityKind: 'tool',
-    timestamp: ctx.value,
+    timestamp: clockOutAt + 1,
   });
-  assert.ok(employeeFor(ctx.state, key), 'session should return after tombstone expiry');
+  assert.ok(employeeFor(ctx.state, key), 'newer activity should bring the session back');
 });

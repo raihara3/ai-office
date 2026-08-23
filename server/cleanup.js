@@ -1,5 +1,6 @@
 // HR cleanup: find sessions whose CLI process is no longer running and
-// retire them (avatar leaves, log file moves to the macOS Trash).
+// retire them (the avatar leaves). The clock-out is recorded in the state
+// store as a tombstone; the CLI's log file is left untouched on disk.
 //
 // Liveness heuristic: running processes grant "seats" per (CLI, working
 // directory) — as many sessions stay alive as there are processes, most
@@ -9,9 +10,9 @@
 // dismissed, and ambiguous cases err on the side of alive.
 //
 // `createCleanup` takes the state instance plus the OS-inspection functions
-// (process list, open files, file existence, trash) as injectable
-// dependencies, so the retirement logic can be unit-tested against canned
-// `ps`/`lsof` output without touching real processes or the filesystem.
+// (process list, open files, file existence) as injectable dependencies, so
+// the retirement logic can be unit-tested against canned `ps`/`lsof` output
+// without touching real processes or the filesystem.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -85,7 +86,7 @@ function parseLockIds(lsofOutput) {
 
 // Session ids of Codex Desktop threads whose writer lock is held open right
 // now. Returns null when the check itself cannot run (e.g. lsof missing) so
-// callers can err on the side of "still alive" and never trash a live chat.
+// callers can err on the side of "still alive" and never retire a live chat.
 function defaultListLiveLockIds() {
   try {
     // +D lists open files anywhere under the directory, regardless of which
@@ -103,35 +104,12 @@ function defaultListLiveLockIds() {
   }
 }
 
-function defaultMoveToTrash(filePath) {
-  // Already gone (ghost session): nothing to move, retirement still counts.
-  if (!fs.existsSync(filePath)) return;
-  const trashDirectory = path.join(os.homedir(), '.Trash');
-  let target = path.join(trashDirectory, path.basename(filePath));
-  if (fs.existsSync(target)) {
-    const extension = path.extname(target);
-    target = path.join(
-      trashDirectory,
-      `${path.basename(target, extension)}-${Date.now()}${extension}`
-    );
-  }
-  try {
-    fs.renameSync(filePath, target);
-  } catch (error) {
-    if (error.code !== 'EXDEV') throw error;
-    // The home directory can live on another volume; fall back to copy+unlink.
-    fs.copyFileSync(filePath, target);
-    fs.unlinkSync(filePath);
-  }
-}
-
 export function createCleanup({
   state,
   runProcessList = defaultRunProcessList,
   runOpenFiles = defaultRunOpenFiles,
   listLiveLockIds = defaultListLiveLockIds,
   fileExists = fs.existsSync,
-  moveToTrash = defaultMoveToTrash,
   // Resident-team sessions are permanent staff: HR never retires them.
   isProtected = () => false,
   now = () => Date.now(),
@@ -220,9 +198,9 @@ export function createCleanup({
       // by cwd. Keep them while actively working or blocked. When idle, a Codex
       // Desktop conversation is NOT closed — it holds its per-thread writer lock
       // open for the whole thread — so a held lock means "still open" and the
-      // session must not be retired (retiring trashes the log file the app is
-      // still writing to). Only once the lock is released does it retire. Other
-      // app CLIs have no such signal and retire on idle as before.
+      // session must not be retired (retiring would clock out a conversation the
+      // app is still writing to). Only once the lock is released does it retire.
+      // Other app CLIs have no such signal and retire on idle as before.
       if (session.clientKind === 'app' && appHostRunning[session.cli]) {
         if (session.status === 'working' || session.status === 'blocked') continue;
         if (session.cli === 'codex') {
@@ -295,7 +273,6 @@ export function createCleanup({
     }
     for (const session of candidates) {
       try {
-        moveToTrash(session.filePath);
         state.dismissSession(session.key);
         retired.push({ key: session.key, cli: session.cli, project: session.project });
       } catch (error) {

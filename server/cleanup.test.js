@@ -1,6 +1,6 @@
 // Unit tests for the HR cleanup retirement logic. All OS-inspection
-// dependencies (ps/lsof/fs/trash) are injected as stubs so the tests exercise
-// the pure retirement heuristic without touching real processes or files.
+// dependencies (ps/lsof/fs) are injected as stubs so the tests exercise the
+// pure retirement heuristic without touching real processes or files.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,13 +24,17 @@ function makeSession(overrides = {}) {
 }
 
 // Hand-written state stub: full control over listSessions() output plus spies
-// for dismissSession()/postMessage().
-function makeState(sessions = []) {
+// for dismissSession()/postMessage(). `failOn` keys make dismissSession throw,
+// exercising the retirement failure path.
+function makeState(sessions = [], { failOn = new Set() } = {}) {
   const dismissed = [];
   const posted = [];
   return {
     listSessions: () => sessions,
-    dismissSession: (key) => dismissed.push(key),
+    dismissSession: (key) => {
+      if (failOn.has(key)) throw new Error('EACCES');
+      dismissed.push(key);
+    },
     postMessage: (message) => posted.push(message),
     dismissed,
     posted,
@@ -52,32 +56,25 @@ function makeLsof(entries) {
 }
 
 // A cleanup wired to fixed fake OS output. Defaults: no processes, all logs
-// present, trash is a no-op spy.
+// present. `failOn` keys make the state reject dismissal.
 function setup({
   sessions = [],
   ps = '',
   lsof = '',
   liveLockIds = new Set(),
   fileExists = () => true,
-  moveToTrash,
+  failOn = new Set(),
 } = {}) {
-  const state = makeState(sessions);
-  const trashCalls = [];
-  const trash =
-    moveToTrash ??
-    ((filePath) => {
-      trashCalls.push(filePath);
-    });
+  const state = makeState(sessions, { failOn });
   const cleanup = createCleanup({
     state,
     runProcessList: () => ps,
     runOpenFiles: () => lsof,
     listLiveLockIds: () => liveLockIds,
     fileExists,
-    moveToTrash: trash,
     now: () => 12345,
   });
-  return { cleanup, state, trashCalls };
+  return { cleanup, state };
 }
 
 function keysOf(sessions) {
@@ -276,12 +273,11 @@ test('retireSessions retires only confirmed keys and reports headcount', () => {
     makeSession({ key: 'a', filePath: '/logs/a.jsonl', status: 'break' }),
     makeSession({ key: 'b', filePath: '/logs/b.jsonl', status: 'break' }),
   ];
-  const { cleanup, state, trashCalls } = setup({ sessions });
+  const { cleanup, state } = setup({ sessions });
   const result = cleanup.retireSessions(['a']);
 
   assert.deepEqual(keysOf(result.retired), ['a']);
   assert.deepEqual(result.failed, []);
-  assert.deepEqual(trashCalls, ['/logs/a.jsonl']);
   assert.deepEqual(state.dismissed, ['a']);
   assert.equal(state.posted.length, 1);
   assert.equal(state.posted[0].authorKind, 'hr');
@@ -302,16 +298,14 @@ test('retireSessions posts the no-one-slacking message when nothing retires', ()
   assert.equal(state.posted[0].text, '@社長 サボっている人はいませんでした');
 });
 
-test('a moveToTrash failure lands the key in failed, not retired', () => {
+test('a dismissSession failure lands the key in failed, not retired', () => {
   const sessions = [
     makeSession({ key: 'ok', filePath: '/logs/ok.jsonl', status: 'break' }),
     makeSession({ key: 'boom', filePath: '/logs/boom.jsonl', status: 'break' }),
   ];
   const { cleanup, state } = setup({
     sessions,
-    moveToTrash: (filePath) => {
-      if (filePath === '/logs/boom.jsonl') throw new Error('EACCES');
-    },
+    failOn: new Set(['boom']),
   });
   const result = cleanup.retireSessions(['ok', 'boom']);
 

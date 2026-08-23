@@ -13,10 +13,6 @@ const SUBAGENT_EXPIRE_MS = 30 * 60_000;
 const MCP_BADGE_EXPIRE_MS = 60_000;
 const SESSION_EXPIRE_MS = 3 * 24 * 60 * 60_000;
 const MAX_MESSAGES = 50;
-// Keys retired by HR cleanup. The CLI may keep writing to (or recreate) the
-// log path, which would resurrect the session on the next rescan — reject
-// events for these keys for a while instead.
-const DISMISSED_TOMBSTONE_MS = 10 * 60_000;
 
 export const CLI_INFO = {
   claude: { name: 'Claude Code', vendor: 'anthropic', mention: 'Claude' },
@@ -199,12 +195,16 @@ export function createState({ now = () => Date.now(), isResidentFile = () => fal
     }
   }
 
-  // A session dismissed by HR leaves a tombstone: reject its events for a
-  // while so a lingering log write (or a recreated file) can't resurrect it.
-  function isDismissed(key) {
-    const tombstone = dismissedAt.get(key);
-    if (tombstone === undefined) return false;
-    if (now() - tombstone < DISMISSED_TOMBSTONE_MS) return true;
+  // A session dismissed by HR leaves a tombstone holding the clock-out cutoff:
+  // the member's last event time. The log file is kept on disk (HR no longer
+  // trashes it), so replayed or lingering lines at or before the cutoff must be
+  // rejected or the retired member would resurrect. A genuinely newer event
+  // means the CLI resumed writing — the member came back to work — so the
+  // tombstone is cleared and the session returns.
+  function isDismissed(key, eventAt) {
+    const cutoff = dismissedAt.get(key);
+    if (cutoff === undefined) return false;
+    if (eventAt <= cutoff) return true;
     dismissedAt.delete(key);
     return false;
   }
@@ -252,9 +252,9 @@ export function createState({ now = () => Date.now(), isResidentFile = () => fal
   function reportEvent(cli, filePath, observation) {
     if (!CLI_INFO[cli]) return;
     const key = `${cli}:${filePath}`;
-    if (isDismissed(key)) return;
-
     const eventAt = observation.timestamp ?? now();
+    if (isDismissed(key, eventAt)) return;
+
     let session = sessions.get(key);
     if (!session) {
       session = createSession(key, cli, filePath, eventAt);
@@ -299,8 +299,12 @@ export function createState({ now = () => Date.now(), isResidentFile = () => fal
   }
 
   function dismissSession(key) {
-    if (!sessions.delete(key)) return;
-    dismissedAt.set(key, now());
+    const session = sessions.get(key);
+    if (!session) return;
+    sessions.delete(key);
+    // Record the clock-out cutoff (the member's last event) so replayed log
+    // lines up to that point cannot bring them back, while later activity can.
+    dismissedAt.set(key, session.lastEventAt ?? now());
     scheduleBroadcast();
   }
 

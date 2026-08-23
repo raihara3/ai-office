@@ -110,8 +110,10 @@ signal, become retirable once idle. Sessions currently shown as working are
 never retired, resident-team sessions are permanent staff and never retire,
 and ambiguous cases err on the side of alive. Retired avatars
 walk out the
-door and their log files are
-moved to the macOS Trash (`~/.Trash`), not deleted. Endpoints:
+door; their log files are left untouched on disk and the clock-out is tracked
+in the state store, which ignores replayed log lines up to the member's last
+event so a retired session cannot resurrect from a rescan (genuinely newer
+activity brings them back). Endpoints:
 `GET /api/cleanup/preview`, `POST /api/cleanup`.
 
 ## Resident team
@@ -174,4 +176,4 @@ see [docs/architecture.md](docs/architecture.md).
 - Gemini log parsing is best-effort — the chat log format varies between
   Gemini CLI versions.
 - Codex subagent detection is heuristic (`spawn_agent` style tool names).
-- HR cleanup relies on macOS specifics (`lsof`, `~/.Trash`).
+- HR cleanup relies on macOS specifics (`lsof`).

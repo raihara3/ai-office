@@ -25,9 +25,25 @@
     <section id="whiteboard-panel" class="overlay-card" hidden>
       <header>
         <h2>📋 ホワイトボード</h2>
+        <nav id="whiteboard-tabs">
+          <button type="button" class="whiteboard-tab active" data-tab="board">ボード</button>
+          <button type="button" class="whiteboard-tab" data-tab="reports">報告</button>
+        </nav>
         <button type="button" class="overlay-close">✕</button>
       </header>
-      <div id="report-list"></div>
+      <div id="board-view">
+        <form id="card-form">
+          <input id="card-title" placeholder="タスクの件名" required>
+          <textarea id="card-body" rows="2" placeholder="内容・手順(担当のプロンプトにそのまま入ります)"></textarea>
+          <div class="form-row">
+            <select id="card-assignee"></select>
+            <button type="submit" id="card-file">起票</button>
+          </div>
+        </form>
+        <div id="board-columns"></div>
+      </div>
+      <div id="card-detail" hidden></div>
+      <div id="report-list" hidden></div>
     </section>
     <section id="resident-panel" class="overlay-card" hidden>
       <header>

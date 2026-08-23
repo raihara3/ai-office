@@ -60,6 +60,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
       })),
       residents: residents.snapshotData(),
       whiteboard: residents.whiteboardCounts(),
+      board: residents.boardCounts(),
       sky: skyPhaseFor(clock()),
     };
   }
@@ -99,5 +100,10 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     listReports: residents.listReports,
     markReportRead: residents.markReportRead,
     archiveReport: residents.archiveReport,
+    listBoard: residents.listBoardCards,
+    createBoardCard: residents.createBoardCard,
+    moveBoardCard: residents.moveBoardCard,
+    archiveBoardCard: residents.archiveBoardCard,
+    appendBoardNote: residents.appendBoardNote,
   };
 }

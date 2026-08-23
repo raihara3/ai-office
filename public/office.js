@@ -332,8 +332,9 @@ import { createSmallTalk } from './office/small-talk.js';
   }
 
   // The whiteboard on the top wall where residents post reports for the
-  // human. Unread reports show as a count badge (red when one of them needs
-  // review); clicking the board opens the report panel (see app.js).
+  // human. Unread reports plus kanban cards waiting in the user column show
+  // as a count badge (red when any of them needs the human); clicking the
+  // board opens the board panel (see app.js).
   function drawWhiteboard() {
     const board = WHITEBOARD;
     ctx.lineWidth = 2;
@@ -345,17 +346,19 @@ import { createSmallTalk } from './office/small-talk.js';
     // pen tray under the board
     px(board.x + 26, board.y + board.height + 0, 44, 4, '#b9b2a2');
     const counts = state.whiteboard;
-    if (counts && counts.unread > 0) {
+    const boardCounts = state.board;
+    const attention = (counts?.unread ?? 0) + (boardCounts?.user ?? 0);
+    if (attention > 0) {
       const badgeX = board.x + board.width - 3;
       const badgeY = board.y + 3;
-      ctx.fillStyle = counts.reviewNeeded > 0 ? '#d93a4a' : '#e0952f';
+      ctx.fillStyle = counts?.reviewNeeded > 0 || boardCounts?.user > 0 ? '#d93a4a' : '#e0952f';
       ctx.beginPath();
       ctx.arc(badgeX, badgeY, 9, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 11px "Hiragino Sans", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(String(Math.min(counts.unread, 99)), badgeX, badgeY + 4);
+      ctx.fillText(String(Math.min(attention, 99)), badgeX, badgeY + 4);
     }
   }
 

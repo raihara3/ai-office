@@ -229,6 +229,72 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
+    // The kanban board: task cards, drag ordering, archiving and follow-up
+    // notes.
+    if (urlPath === '/api/board') {
+      sendJson(response, 200, { cards: core.listBoard() });
+      return;
+    }
+    const boardAction = urlPath.match(/^\/api\/board\/(create|move|archive|note)$/)?.[1];
+    if (boardAction) {
+      if (request.method !== 'POST') {
+        response.writeHead(405).end();
+        return;
+      }
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      readJsonBody(request, 64 * 1024, (parsed) => {
+        if (parsed === null) {
+          sendJson(response, 400, { error: 'invalid JSON body' });
+          return;
+        }
+        try {
+          if (boardAction === 'create') {
+            if (
+              typeof parsed.title !== 'string' ||
+              parsed.title.trim() === '' ||
+              typeof parsed.assignee !== 'string'
+            ) {
+              sendJson(response, 400, { error: 'title and assignee are required' });
+              return;
+            }
+            const id = core.createBoardCard({
+              title: parsed.title,
+              body: typeof parsed.body === 'string' ? parsed.body : '',
+              assignee: parsed.assignee,
+            });
+            sendJson(response, 200, { ok: true, id });
+            return;
+          }
+          if (typeof parsed.id !== 'string') {
+            sendJson(response, 400, { error: 'id is required' });
+            return;
+          }
+          if (boardAction === 'move') {
+            sendJson(response, 200, {
+              ok: core.moveBoardCard(parsed.id, {
+                assignee: typeof parsed.assignee === 'string' ? parsed.assignee : undefined,
+                index: Number.isInteger(parsed.index) ? parsed.index : undefined,
+              }),
+            });
+          } else if (boardAction === 'archive') {
+            sendJson(response, 200, { ok: core.archiveBoardCard(parsed.id) });
+          } else {
+            if (typeof parsed.text !== 'string' || parsed.text.trim() === '') {
+              sendJson(response, 400, { error: 'text is required' });
+              return;
+            }
+            sendJson(response, 200, { ok: core.appendBoardNote(parsed.id, parsed.text) });
+          }
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      });
+      return;
+    }
+
     if (urlPath === '/api/state') {
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify(core.getSnapshot(), null, 2));

@@ -63,6 +63,8 @@ server/                バックエンド(Node.js 標準ライブラリのみ)
     runner.test.js     コマンド構築・出力パースのテスト
     whiteboard.js      ホワイトボード(frontmatter 付き Markdown 報告 + 既読管理)
     whiteboard.test.js frontmatter パース・既読管理のテスト
+    board.js           カンバンボード(タスクカードの Markdown ストア + 並び順)
+    board.test.js      カードの起票・並び替え・アーカイブ・追記のテスト
   watchers/
     claude.js          Claude Code トランスクリプト解析(handleLine + startWatcher)
     codex.js           Codex CLI rollout ログ解析
@@ -106,9 +108,10 @@ Electron ビルドでは `package.json` の `!**/*.test.js` によって配布�
 state ストア・人事 cleanup・3 つの CLI watcher・常駐チームを、トランスポート
 非依存の 1 つのハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、
 `postMessage`、`previewCleanup`、`runCleanup`、常駐員 CRUD / 実行、
-ホワイトボード読み出し / アーカイブ)に合成します。スナップショットには常駐チームの
+ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
 オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
-その席を常駐チームの島に配置)、常駐員名簿とホワイトボードの未読数を添付
+その席を常駐チームの島に配置)、常駐員名簿とホワイトボードの未読数と
+カンバンボードのカード数を添付
 します。リフレッシュタイマーを保持し、経過時間のみで起きる
 `working → break` の遷移もクライアントへ届くようにします。
 
@@ -119,7 +122,8 @@ Server-Sent Events(`/events`)でストリームし、人事 cleanup のエンド
 (`GET /api/cleanup/preview`、`POST /api/cleanup`)、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
 `POST /api/residents/:name/run`)、ホワイトボード(`GET /api/whiteboard`、
-`POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)を公開します。状態を変更するリクエストには
+`POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)、カンバンボード
+(`GET /api/board`、`POST /api/board/create`/`move`/`archive`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 すべて core にあり、本ファイルは配管(plumbing)に徹します。
 
@@ -197,6 +201,13 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   再読込し、期日が来たトリガーを発火します。interval トリガーは任意の
   `precheck` シェルコマンドでゲートされ(標準出力が空なら実行スキップ)、
   実行完了時にはホワイトボード報告と `#general` への報告通知を生成します。
+  トリガーが期日でないアイドルな常駐員は、自分のカンバン列の一番上の
+  カードをタスクとして実行します(precheck はスキップし、カードの本文を
+  プロンプトの「今回のタスク」節に含める)。カード実行が info で完了すると
+  カードを自動アーカイブ、review-needed または失敗ならユーザー列へ移動し、
+  トリガー起点の実行が review-needed で終わった場合はユーザー列にカードを
+  自動起票します。報告の frontmatter には `task: <カード id>` を刻印して
+  カードと紐付けます。実行中カードの移動・アーカイブはここで拒否します。
 - **`manifest.js`** — 常駐員ディレクトリの読み書きと `resident.json` の検証。
   キャッシュせず毎回ディスクへ読みに行きます。
 - **`scheduler.js`** — トリガー判定の純粋関数群。
@@ -216,6 +227,13 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   `whiteboard-state.json` に持ちます(報告ファイル自体は読んでも不変)。
   ボードから外された報告は `outbox/.archived/` へ移動され(削除はしません)、
   サイドカーの既読エントリも取り除かれます。
+- **`board.js`** — カンバンボードのカードストア。カード = frontmatter
+  (title/assignee/origin/createdAt/updatedAt)付き Markdown
+  (`<dataDirectory>/board/<id>.md`)、列 = 担当者(`user` または常駐名)。
+  並び順はサイドカーの `board-state.json` に持ち(カードファイル自体は
+  並び替えで不変)、ボードから外したカードは `board/.archived/` へ移動
+  されます(削除はしません)。ユーザーの追記はカード本文への
+  「## 追記」節として蓄積されます。
 
 ## フロントエンド(`public/`)
 
@@ -226,7 +244,7 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 
 マークアップ:`<canvas>` と `#general` サイドバー(チャット一覧・cleanup
 composer・接続インジケータ)、およびオーバーレイパネル(ホワイトボードの
-報告一覧・常駐員の割り当てフォーム)。
+ボード / 報告の 2 タブ・常駐員の割り当てフォーム)。
 
 ### `style.css`
 
@@ -240,7 +258,8 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 未割り当て(こちらを向くグレーのアバター)、割り当て済みアイドル(ベンダー
 カラーでこちらを向き、画面は消灯。稼働オフなら ⏸)、実行中(モニターに
 向かい、画面点灯 + ステータス吹き出し)。常駐員は休憩室にも出口にも
-行きません。ホワイトボード(未読バッジ付き)も描画し、ホワイトボード /
+行きません。ホワイトボード(未読報告数 + ユーザー列カード枚数の合計バッジ
+付き。ユーザー列にカードがあれば赤)も描画し、ホワイトボード /
 常駐デスクのクリックは CustomEvent(`office:whiteboard-open`、
 `office:resident-seat-open`)として `app.js` のパネルへ通知します。
 `window.OFFICE` として `setState`、`faceDataUrl`、`hrSay` を公開します。
@@ -275,8 +294,9 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 UI のトランスポート層。`connect({ onSnapshot, onStatus })` は SSE ストリーム
 (自動再接続)をラップし、`runCleanup(text)` は人事 cleanup エンドポイントを
 呼び出します。常駐チーム管理(`listResidents` / `saveResident` /
-`deleteResident` / `runResident`)とホワイトボード(`listReports` /
-`markReportRead` / `archiveReport`)の API 呼び出しもここに集約します。将来 SSE を Electron
+`deleteResident` / `runResident`)、ホワイトボード(`listReports` /
+`markReportRead` / `archiveReport`)、カンバンボード(`listBoard` /
+`createCard` / `moveCard` / `archiveCard` / `appendCardNote`)の API 呼び出しもここに集約します。将来 SSE を Electron
 IPC に差し替える際は、このファイルだけを変更すれば済みます。
 
 ### `app.js`
@@ -285,8 +305,11 @@ IPC に差し替える際は、このファイルだけを変更すれば済み�
 の描画、社長(`@社長`)が新たにメンションされた際の WebAudio チャイム再生、
 composer から人事 cleanup を起動する配線。クライアントストリームを
 `window.OFFICE.setState` へ橋渡しします。canvas からの CustomEvent を受けて
-オーバーレイパネルも担います: ホワイトボードの報告一覧(展開で既読化、
-✕ でボードから外す)と、
+オーバーレイパネルも担います: ホワイトボードの 2 タブ — カンバンボード
+(列 = ユーザー + 常駐員(席順)。起票フォーム、HTML5 drag & drop での
+並び替え・再アサイン、カード詳細に本文・紐付く報告・追記フォーム・完了
+ボタン。担当常駐が削除されたカードはユーザー列に「担当不在」バッジ付きで
+表示)と報告一覧(展開で既読化、✕ でボードから外す)— と、
 常駐員の割り当てフォーム(作成 / 編集 / 割り当て解除 / 今すぐ実行)。
 
 ## デスクトップ(`electron/`)
@@ -312,6 +335,7 @@ Electron メインプロセス。`startServer` により同一サーバをプロ
 - `createCleanup` への **OS 検査関数のスタブ** 注入。
 - 各 watcher の `handleLine` への **`report` スタブ** 注入。
 - `createSmallTalk` への **`random`** の注入。
-- `createManifestStore` / `createWhiteboard` / `createSessionRegistry` への
+- `createManifestStore` / `createWhiteboard` / `createBoard` /
+  `createSessionRegistry` への
   **ファイルシステムのスタブ** 注入。scheduler と runner のコマンド構築は
   現在時刻や設定を引数に取る純粋関数です。

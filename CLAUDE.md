@@ -22,9 +22,8 @@ uses the Node.js standard library only — no runtime dependencies.
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `whiteboard.js` (reports)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `whiteboard.js` (reports), `board.js` (kanban task cards)
 - `docs/architecture.md` — full architecture notes
-- `tasks/` — task queue markdown files consumed by the resident team (not application code)
 
 ## Resident team facts (asked repeatedly — check here first)
 
@@ -41,9 +40,12 @@ uses the Node.js standard library only — no runtime dependencies.
   `read-only` mode is restricted to an inspection-tool allowlist.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
   on its first line flags it for a human.
-- Task queue: residents pick the lowest-named `tasks/*.md` whose name does
-  not contain `-skip`, delete the file when the work is done, and rename it
-  with a `-skip` suffix when blocked on user input.
+- Task queue: the kanban board (`board.js`; cards under
+  `<dataDir>/board/*.md`, columns = assignee). An idle resident whose
+  trigger is not due works the **top card** of its column (precheck is
+  skipped — the card is the trigger). An ok run auto-archives the card; a
+  review-needed or failed run moves it to the user column. A trigger-driven
+  run ending review-needed auto-files a card in the user column.
 
 ## Git / GitHub
 

@@ -27,12 +27,15 @@ export function parseFrontmatter(text) {
   return { attributes, body: text.slice(match[0].length) };
 }
 
-export function formatReport({ title, level, resident, createdAt }, body) {
+// `task` optionally links the report to the kanban card whose run produced
+// it, so the card detail view can pull the report in.
+export function formatReport({ title, level, resident, createdAt, task }, body) {
   return [
     '---',
     `title: ${title}`,
     `level: ${level}`,
     `resident: ${resident}`,
+    ...(task ? [`task: ${task}`] : []),
     `createdAt: ${createdAt}`,
     '---',
     '',
@@ -67,13 +70,13 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
     );
   }
 
-  function saveReport(residentName, { title, level, body, createdAt }) {
+  function saveReport(residentName, { title, level, body, createdAt, task = null }) {
     const outboxDirectory = path.join(residentsDirectory, residentName, 'outbox');
     fileSystem.mkdirSync(outboxDirectory, { recursive: true });
     const fileName = `${new Date(createdAt).toISOString().replaceAll(':', '-').slice(0, 19)}.md`;
     fileSystem.writeFileSync(
       path.join(outboxDirectory, fileName),
-      formatReport({ title, level, resident: residentName, createdAt }, body)
+      formatReport({ title, level, resident: residentName, createdAt, task }, body)
     );
     countsCache = null;
     return `${residentName}/${fileName}`;
@@ -114,6 +117,7 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
           resident: residentName,
           title: attributes.title ?? fileName,
           level: attributes.level === 'review-needed' ? 'review-needed' : 'info',
+          task: attributes.task ?? null,
           createdAt: Number(attributes.createdAt) || 0,
           read: read.has(id),
           body: body.trim(),

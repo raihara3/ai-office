@@ -151,14 +151,31 @@ viewer), assigned idle (vendor-colored, screen off, ⏸ when disabled) and
 running (facing the monitor, lit screen, status bubble). Residents never go
 to the break room or walk out.
 
+A kanban board hands tasks to residents: one card per Markdown file under
+`~/Library/Application Support/ai-office/board/` (columns are assignees —
+the user or a resident; drag order lives in a `board-state.json` sidecar).
+An idle resident whose trigger is not due picks up the top card of its
+column — the precheck is skipped, the card is the trigger — and receives
+the card body in its prompt. A run that ends ok archives the card into
+`board/.archived/` (never deleted); a review-needed or failed run moves the
+card to the user column, and a trigger-driven run that ends review-needed
+files a user-column card automatically. Reports carry a `task:` frontmatter
+line linking them to their card; cards cannot be moved or archived while
+their run is in flight.
+
 Run results are saved as frontmatter Markdown reports in the resident's
-`outbox/`; the whiteboard on the top wall shows an unread badge and, when
-clicked, opens a report panel (read state lives in a `whiteboard-state.json`
-sidecar). Each report row has a ✕ button that takes it off the board — the
+`outbox/`; the whiteboard on the top wall shows a badge counting unread
+reports plus cards waiting in the user column (red when any needs the
+human) and, when clicked, opens a two-tab panel — the kanban board (file
+cards, drag to reorder or reassign, open a card for its body, linked
+reports, a follow-up note form and a done button) and the report list (read
+state lives in a `whiteboard-state.json` sidecar). Each report row has a ✕
+button that takes it off the board — the
 file is moved to the resident's `outbox/.archived/`, never deleted.
 Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
 `POST /api/residents/:name/run`, `GET /api/whiteboard`,
-`POST /api/whiteboard/read`, `POST /api/whiteboard/archive`.
+`POST /api/whiteboard/read`, `POST /api/whiteboard/archive`,
+`GET /api/board`, `POST /api/board/create`/`move`/`archive`/`note`.
 
 ## Architecture
 

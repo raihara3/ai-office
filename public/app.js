@@ -329,15 +329,12 @@
         } catch {
           // Fall through: reload so the panel reflects what is really on disk.
         }
-        openWhiteboard();
+        loadReports();
       });
     }
   }
 
-  async function openWhiteboard() {
-    overlayElement.hidden = false;
-    whiteboardPanel.hidden = false;
-    residentPanel.hidden = true;
+  async function loadReports() {
     reportListElement.innerHTML = '<div class="report-empty">読み込み中…</div>';
     try {
       const { reports } = await client.listReports();
@@ -346,6 +343,302 @@
       reportListElement.innerHTML =
         '<div class="report-empty">読み込みに失敗しました</div>';
     }
+  }
+
+  // --- kanban board tab -------------------------------------------------
+  // Columns are assignees: the user first, then the residents in seat order.
+  // Cards are dragged to reorder (top card = worked next) or to reassign.
+
+  const boardView = document.getElementById('board-view');
+  const boardColumnsElement = document.getElementById('board-columns');
+  const cardDetailElement = document.getElementById('card-detail');
+  const cardForm = document.getElementById('card-form');
+
+  let latestSnapshot = null;
+  let activeWhiteboardTab = 'board';
+  let boardCards = [];
+  let draggingCardId = null;
+
+  function boardColumns() {
+    const residents = [...(latestSnapshot?.residents ?? [])].sort((a, b) => a.seat - b.seat);
+    return [
+      { key: 'user', label: 'あなた(社長)' },
+      ...residents.map((resident) => ({ key: resident.name, label: resident.displayName })),
+    ];
+  }
+
+  function showWhiteboardTab(tab) {
+    activeWhiteboardTab = tab;
+    for (const button of document.querySelectorAll('#whiteboard-tabs button')) {
+      button.classList.toggle('active', button.dataset.tab === tab);
+    }
+    boardView.hidden = tab !== 'board';
+    cardDetailElement.hidden = true;
+    reportListElement.hidden = tab !== 'reports';
+    if (tab === 'board') refreshBoard();
+    else loadReports();
+  }
+  for (const button of document.querySelectorAll('#whiteboard-tabs button')) {
+    button.addEventListener('click', () => showWhiteboardTab(button.dataset.tab));
+  }
+
+  async function refreshBoard() {
+    try {
+      const { cards } = await client.listBoard();
+      boardCards = cards ?? [];
+      renderBoard();
+    } catch {
+      boardColumnsElement.innerHTML =
+        '<div class="report-empty">読み込みに失敗しました</div>';
+    }
+  }
+
+  function cardBadges(card) {
+    const badges = [];
+    if (card.working) badges.push('<span class="card-badge working">作業中</span>');
+    else if (card.assignee === 'user' && card.origin !== 'user') {
+      badges.push('<span class="card-badge review">要確認</span>');
+    }
+    if (card.orphaned) badges.push('<span class="card-badge orphaned">担当不在</span>');
+    return badges.join('');
+  }
+
+  function renderBoard() {
+    const columns = boardColumns();
+    const known = new Set(columns.map((column) => column.key));
+    const grouped = new Map(columns.map((column) => [column.key, []]));
+    // Cards assigned to a resident that no longer exists land in the user
+    // column with a warning badge instead of disappearing.
+    for (const card of boardCards) {
+      const key = known.has(card.assignee) ? card.assignee : 'user';
+      grouped.get(key).push({ ...card, orphaned: !known.has(card.assignee) });
+    }
+    boardColumnsElement.innerHTML = columns
+      .map(
+        (column) => `
+          <div class="board-column">
+            <div class="board-column-head">
+              <span class="board-column-name">${escapeHtml(column.label)}</span>
+              <span class="board-column-count">${grouped.get(column.key).length}</span>
+            </div>
+            <div class="board-cards" data-column="${escapeHtml(column.key)}">
+              ${grouped
+                .get(column.key)
+                .map(
+                  (card) => `
+                    <div class="board-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}" draggable="${card.working ? 'false' : 'true'}">
+                      <div class="board-card-title">${escapeHtml(card.title)}</div>
+                      <div class="board-card-meta">${cardBadges(card)}<span class="board-card-time">${formatTime(card.createdAt)}</span></div>
+                    </div>`
+                )
+                .join('')}
+            </div>
+          </div>`
+      )
+      .join('');
+    attachBoardHandlers();
+  }
+
+  function clearDropMarkers() {
+    for (const marked of boardColumnsElement.querySelectorAll('.drop-before')) {
+      marked.classList.remove('drop-before');
+    }
+  }
+
+  function attachBoardHandlers() {
+    for (const cardElement of boardColumnsElement.querySelectorAll('.board-card')) {
+      cardElement.addEventListener('click', () => openCardDetail(cardElement.dataset.id));
+      cardElement.addEventListener('dragstart', (event) => {
+        draggingCardId = cardElement.dataset.id;
+        event.dataTransfer.effectAllowed = 'move';
+      });
+      cardElement.addEventListener('dragend', () => {
+        draggingCardId = null;
+        clearDropMarkers();
+      });
+      cardElement.addEventListener('dragover', (event) => {
+        if (draggingCardId === null || draggingCardId === cardElement.dataset.id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        clearDropMarkers();
+        cardElement.classList.add('drop-before');
+      });
+      cardElement.addEventListener('drop', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dropCard(cardElement.closest('.board-cards').dataset.column, cardElement.dataset.id);
+      });
+    }
+    for (const listElement of boardColumnsElement.querySelectorAll('.board-cards')) {
+      listElement.addEventListener('dragover', (event) => {
+        if (draggingCardId !== null) event.preventDefault();
+      });
+      listElement.addEventListener('drop', (event) => {
+        event.preventDefault();
+        dropCard(listElement.dataset.column, null);
+      });
+    }
+  }
+
+  // Drop the dragged card into `column`, before `beforeId` (null = at the
+  // end). The index sent to the server counts positions in the target column
+  // with the dragged card excluded — the same list the server splices into.
+  async function dropCard(column, beforeId) {
+    const id = draggingCardId;
+    draggingCardId = null;
+    clearDropMarkers();
+    if (id === null || id === beforeId) return;
+    const columnIds = [
+      ...boardColumnsElement.querySelectorAll(
+        `.board-cards[data-column="${CSS.escape(column)}"] .board-card`
+      ),
+    ]
+      .map((element) => element.dataset.id)
+      .filter((cardId) => cardId !== id);
+    const beforeAt = beforeId === null ? -1 : columnIds.indexOf(beforeId);
+    try {
+      await client.moveCard(id, column, beforeAt === -1 ? columnIds.length : beforeAt);
+    } catch {
+      // Fall through: reload so the board reflects what is really on disk.
+    }
+    refreshBoard();
+  }
+
+  function fillCardAssignees() {
+    const select = field('card-assignee');
+    select.innerHTML = boardColumns()
+      .map(
+        (column) =>
+          `<option value="${escapeHtml(column.key)}">${escapeHtml(column.label)}</option>`
+      )
+      .join('');
+    // Default to the first resident — filing a task to yourself is the rare case.
+    if (select.options.length > 1) select.selectedIndex = 1;
+  }
+
+  cardForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const title = field('card-title').value.trim();
+    if (title === '') return;
+    try {
+      await client.createCard({
+        title,
+        body: field('card-body').value,
+        assignee: field('card-assignee').value,
+      });
+      cardForm.reset();
+      fillCardAssignees();
+    } catch {
+      // Fall through: reload shows the board as it really is.
+    }
+    refreshBoard();
+  });
+
+  async function openCardDetail(id) {
+    const card = boardCards.find((c) => c.id === id);
+    if (!card) return;
+    const assigneeLabel =
+      boardColumns().find((column) => column.key === card.assignee)?.label ?? card.assignee;
+    boardView.hidden = true;
+    cardDetailElement.hidden = false;
+    cardDetailElement.innerHTML = `
+      <button type="button" id="card-detail-back">← ボードに戻る</button>
+      <div class="card-detail-head">
+        <span class="card-detail-title">${escapeHtml(card.title)}</span>
+        <span class="card-detail-assignee">担当: ${escapeHtml(assigneeLabel)}${card.working ? ' ・作業中' : ''}</span>
+      </div>
+      <div class="card-detail-body">${linkify(escapeHtml(card.body || '(本文なし)'))}</div>
+      <div id="card-reports"><div class="report-empty">報告を読み込み中…</div></div>
+      <form id="card-note-form">
+        <textarea id="card-note-text" rows="2" placeholder="追記(次回実行のプロンプトに含まれます)"></textarea>
+        <div class="form-actions">
+          <button type="submit">追記する</button>
+          <button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>完了(ボードから外す)</button>
+        </div>
+      </form>`;
+    field('card-detail-back').addEventListener('click', () => {
+      cardDetailElement.hidden = true;
+      boardView.hidden = false;
+      refreshBoard();
+    });
+    field('card-note-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = field('card-note-text').value.trim();
+      if (text === '') return;
+      try {
+        await client.appendCardNote(id, text);
+        await refreshBoard();
+      } catch {
+        // Fall through: reopen shows the card as it really is.
+      }
+      openCardDetail(id);
+    });
+    field('card-detail-archive').addEventListener('click', async () => {
+      try {
+        await client.archiveCard(id);
+      } catch {
+        // Fall through: the board reload below shows what really happened.
+      }
+      cardDetailElement.hidden = true;
+      boardView.hidden = false;
+      refreshBoard();
+    });
+    renderCardReports(id);
+  }
+
+  // Reports whose frontmatter carries this card's id, newest first. Viewing
+  // them from the card counts as reading them.
+  async function renderCardReports(id) {
+    const container = field('card-reports');
+    try {
+      const { reports } = await client.listReports();
+      const linked = (reports ?? []).filter((report) => report.task === id);
+      if (linked.length === 0) {
+        container.innerHTML = '<div class="report-empty">このタスクの報告はまだありません</div>';
+        return;
+      }
+      container.innerHTML = linked
+        .map(
+          (report) => `
+            <div class="report">
+              <div class="report-head">
+                <span class="report-level ${report.level}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
+                <span class="report-title">${escapeHtml(report.title)}</span>
+                <span class="report-time">${formatTime(report.createdAt)}</span>
+              </div>
+              <div class="report-body">${linkify(escapeHtml(report.body))}</div>
+            </div>`
+        )
+        .join('');
+      for (const report of linked) {
+        if (!report.read) client.markReportRead(report.id).catch(() => {});
+      }
+    } catch {
+      container.innerHTML = '<div class="report-empty">報告の読み込みに失敗しました</div>';
+    }
+  }
+
+  // Re-fetch the open board when a snapshot shows run/card activity, but
+  // never mid-drag or behind the detail view.
+  let boardSignature = null;
+  function maybeRefreshBoard(snapshot) {
+    const signature = JSON.stringify([
+      snapshot.board,
+      (snapshot.residents ?? []).map((resident) => resident.busy),
+    ]);
+    const changed = boardSignature !== null && signature !== boardSignature;
+    boardSignature = signature;
+    if (!changed || whiteboardPanel.hidden || activeWhiteboardTab !== 'board') return;
+    if (draggingCardId !== null || !cardDetailElement.hidden) return;
+    refreshBoard();
+  }
+
+  function openWhiteboard() {
+    overlayElement.hidden = false;
+    whiteboardPanel.hidden = false;
+    residentPanel.hidden = true;
+    fillCardAssignees();
+    showWhiteboardTab(activeWhiteboardTab);
   }
   window.addEventListener('office:whiteboard-open', openWhiteboard);
 
@@ -485,9 +778,11 @@
 
   client.connect({
     onSnapshot: (snapshot) => {
+      latestSnapshot = snapshot;
       window.OFFICE.setState(snapshot);
       alertOnBossMention(snapshot);
       renderChat(snapshot);
+      maybeRefreshBoard(snapshot);
     },
     onStatus: (status) => {
       connectionElement.textContent =

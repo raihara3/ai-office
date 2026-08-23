@@ -67,7 +67,34 @@
           body: JSON.stringify({ id }),
         });
       },
+
+      // The kanban board: task cards, drag ordering, archiving and follow-up
+      // notes.
+      async listBoard() {
+        return (await fetch('/api/board')).json();
+      },
+      async createCard({ title, body, assignee }) {
+        return postBoardAction('create', { title, body, assignee });
+      },
+      async moveCard(id, assignee, index) {
+        return postBoardAction('move', { id, assignee, index });
+      },
+      // Takes a card off the board (the file is archived, not deleted).
+      async archiveCard(id) {
+        return postBoardAction('archive', { id });
+      },
+      async appendCardNote(id, text) {
+        return postBoardAction('note', { id, text });
+      },
     };
+  }
+
+  async function postBoardAction(action, payload) {
+    return requestJson(`/api/board/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
   }
 
   async function requestJson(url, options) {

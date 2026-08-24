@@ -46,7 +46,11 @@ uses the Node.js standard library only — no runtime dependencies.
   Gemini refuses to start headless outside a trusted folder. Skipping trust
   re-enables workspace settings (e.g. `.gemini/settings.json` MCP servers),
   so `read-only` mode also pins `--approval-mode plan`; still, point gemini
-  residents only at directories whose contents you trust.
+  residents only at directories whose contents you trust. Codex residents run
+  `codex exec` with `--skip-git-repo-check` for the same reason — without it
+  Codex refuses to start when the working directory is not a git repo
+  (`Not inside a trusted directory…`); the `--sandbox` flag
+  (`read-only`/`workspace-write`) still bounds what the run may touch.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
   on its first line flags it for a human.
 - Task queue: the kanban board (`board.js`; cards under

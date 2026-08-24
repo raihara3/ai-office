@@ -35,11 +35,11 @@ test('buildHeadlessCommand: claude edit mode bypasses permission prompts', () =>
 test('buildHeadlessCommand: codex maps mode to the sandbox flag', () => {
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'codex', mode: 'read-only', prompt: 'p', sessionId: 's' }).args,
-    ['exec', '--sandbox', 'read-only', 'p']
+    ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', 'p']
   );
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'codex', mode: 'edit', prompt: 'p', sessionId: 's' }).args,
-    ['exec', '--sandbox', 'workspace-write', 'p']
+    ['exec', '--skip-git-repo-check', '--sandbox', 'workspace-write', 'p']
   );
 });
 

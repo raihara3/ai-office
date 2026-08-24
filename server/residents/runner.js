@@ -44,8 +44,15 @@ export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
     return { command: 'claude', args };
   }
   if (cli === 'codex') {
+    // Codex refuses to run headless outside a git repo unless the check is
+    // skipped, and a headless run cannot answer the interactive trust prompt —
+    // mirror the gemini --skip-trust rationale below. The sandbox flag still
+    // bounds what the run may touch, so read-only stays read-only.
     const sandbox = mode === 'edit' ? 'workspace-write' : 'read-only';
-    return { command: 'codex', args: ['exec', '--sandbox', sandbox, prompt] };
+    return {
+      command: 'codex',
+      args: ['exec', '--skip-git-repo-check', '--sandbox', sandbox, prompt],
+    };
   }
   // Gemini refuses to start headless outside a trusted folder, and a headless
   // run cannot answer the interactive trust prompt — trust the workspace for

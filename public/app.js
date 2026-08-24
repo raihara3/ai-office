@@ -163,6 +163,8 @@
 
   const overlayElement = document.getElementById('overlay');
   const whiteboardPanel = document.getElementById('whiteboard-panel');
+  const activityPanel = document.getElementById('activity-panel');
+  const activityView = document.getElementById('activity-view');
   const residentPanel = document.getElementById('resident-panel');
   const reportListElement = document.getElementById('inbox-list');
   const residentForm = document.getElementById('resident-form');
@@ -203,7 +205,9 @@
   function closeOverlay() {
     overlayElement.hidden = true;
     whiteboardPanel.hidden = true;
+    activityPanel.hidden = true;
     residentPanel.hidden = true;
+    activityName = null;
   }
   overlayElement.addEventListener('click', (event) => {
     if (event.target === overlayElement) closeOverlay();
@@ -707,6 +711,104 @@
     residentError.hidden = false;
   }
 
+  // The activity view shows one resident's live work: what its current
+  // session is doing right now (task, running tool, subagents, MCP calls),
+  // or its idle / next-run state when no session is live. It reads the same
+  // office snapshot the canvas draws from, so tapping the monitor never hits
+  // the server — the panel just re-renders on each snapshot while it is open.
+  const ACTIVITY_STATUS_LABELS = {
+    working: '作業中',
+    blocked: '確認待ち',
+    waiting: '入力待ち',
+    break: '離席中',
+  };
+  const ACTIVITY_KIND_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
+  let activityName = null;
+
+  // The latest live session bound to a resident, or null when it is idle.
+  function residentSession(name) {
+    let latest = null;
+    for (const employee of latestSnapshot?.employees ?? []) {
+      if (employee.resident !== name) continue;
+      if (latest === null || (employee.lastEventAt ?? 0) > (latest.lastEventAt ?? 0)) {
+        latest = employee;
+      }
+    }
+    return latest;
+  }
+
+  function activityRow(label, value) {
+    return `<div class="activity-field"><span class="activity-label">${escapeHtml(label)}</span>${value}</div>`;
+  }
+
+  function activityBody(resident, session) {
+    if (resident === null) {
+      return '<p class="activity-empty">常駐員が割り当てられていません。</p>';
+    }
+    if (session === null) {
+      const state = resident.busy
+        ? '起動中…'
+        : resident.lastRunAt
+          ? `前回実行 ${formatTime(resident.lastRunAt)}(${resident.lastOutcome ?? '—'})`
+          : 'まだ実行されていません';
+      const next = resident.nextRunAt ? `次回予定 ${formatTime(resident.nextRunAt)}` : '';
+      return [
+        '<p class="activity-empty">セッションは動いていません。</p>',
+        activityRow('状態', escapeHtml(state)),
+        next ? activityRow('次回', escapeHtml(next)) : '',
+      ].join('');
+    }
+    const kind = ACTIVITY_KIND_LABELS[session.activityKind];
+    const rows = [
+      `<div class="activity-status ${escapeHtml(session.status)}">${escapeHtml(
+        ACTIVITY_STATUS_LABELS[session.status] ?? session.status
+      )}</div>`,
+    ];
+    if (session.task) rows.push(activityRow('指示', escapeHtml(session.task)));
+    if (session.activity) {
+      const prefix = kind ? `[${escapeHtml(kind)}] ` : '';
+      rows.push(activityRow('実行中', `${prefix}${escapeHtml(session.activity)}`));
+    }
+    if (session.subagents?.length) {
+      rows.push(
+        activityRow(
+          'サブエージェント',
+          session.subagents.map((sub) => escapeHtml(sub.activity ?? sub.label ?? '作業中')).join(' / ')
+        )
+      );
+    }
+    if (session.mcpCalls?.length) {
+      rows.push(
+        activityRow(
+          'MCP',
+          session.mcpCalls.map((call) => escapeHtml(`${call.server} / ${call.tool}`)).join(' / ')
+        )
+      );
+    }
+    return rows.join('');
+  }
+
+  function renderActivity() {
+    const resident =
+      (latestSnapshot?.residents ?? []).find((r) => r.name === activityName) ?? null;
+    document.getElementById('activity-panel-title').textContent = resident
+      ? `${resident.displayName} の作業状況`
+      : '作業状況';
+    activityView.innerHTML = activityBody(resident, activityName ? residentSession(activityName) : null);
+  }
+
+  function openActivityPanel(name) {
+    activityName = name;
+    overlayElement.hidden = false;
+    activityPanel.hidden = false;
+    whiteboardPanel.hidden = true;
+    residentPanel.hidden = true;
+    renderActivity();
+  }
+  window.addEventListener('office:resident-activity-open', (event) =>
+    openActivityPanel(event.detail.name)
+  );
+
   async function openResidentPanel(seat, name) {
     panelSeat = seat;
     overlayElement.hidden = false;
@@ -804,6 +906,7 @@
         return;
       }
       renderTopbar();
+      if (!activityPanel.hidden) renderActivity();
       maybeRefreshBoard(snapshot);
       maybeRefreshInbox(snapshot);
     },

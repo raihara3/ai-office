@@ -267,8 +267,10 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 向かい、画面点灯 + ステータス吹き出し)。常駐員は休憩室にも出口にも
 行きません。ホワイトボード(未読報告数 + ユーザー列カード枚数の合計バッジ
 付き。ユーザー列にカードがあれば赤)も描画し、ホワイトボード /
-常駐デスクのクリックは CustomEvent(`office:whiteboard-open`、
-`office:resident-seat-open`)として `app.js` のパネルへ通知します。
+常駐デスクのクリックは CustomEvent として `app.js` のパネルへ通知します
+(`office:whiteboard-open`。常駐デスクは上下 2 領域に分かれ、モニタ側は
+作業状況ビューを開く `office:resident-activity-open`、アバター側は設定
+パネルを開く `office:resident-seat-open`)。
 `window.OFFICE` として `setState`、`faceDataUrl`、`hrSay` を公開します。
 純粋で DOM 非依存のロジックは `office/` モジュールへ委譲しています。
 
@@ -287,8 +289,9 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 あふれます。各行の y は常駐チームの机の行と揃えています。左端の
 常駐チームエリア(壁のない床パッチ `RESIDENT_ROOM`)とその空机 6 つ
 (3 列 2 行の島)の座標 `residentDeskPosition`、常駐デスクのクリック領域
-`residentDeskHitRect`、上壁のホワイトボードのクリック領域 `WHITEBOARD` も
-ここに定義します。canvas も DOM も触れないため単体テスト可能です。
+`residentDeskHitRect`(とその上帯だけを切り出すモニタ領域
+`residentMonitorHitRect`)、上壁のホワイトボードのクリック領域 `WHITEBOARD`
+もここに定義します。canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/small-talk.js`
 

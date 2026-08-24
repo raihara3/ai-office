@@ -18,6 +18,7 @@ import {
   RESIDENT_DESK_COUNT,
   residentDeskPosition,
   residentDeskHitRect,
+  residentMonitorHitRect,
   SEAT_COUNT,
   WHITEBOARD,
 } from './office/layout.js';
@@ -867,8 +868,14 @@ import { createSmallTalk } from './office/small-talk.js';
     const seat = residentSeatAt(point);
     if (seat !== null) {
       const resident = (state.residents ?? []).find((r) => r.seat === seat);
+      // An assigned monitor opens the activity view; the avatar (and any
+      // vacant seat) opens the settings panel to add or edit the resident.
+      const eventName =
+        resident && isInside(point, residentMonitorHitRect(seat))
+          ? 'office:resident-activity-open'
+          : 'office:resident-seat-open';
       window.dispatchEvent(
-        new CustomEvent('office:resident-seat-open', {
+        new CustomEvent(eventName, {
           detail: { seat, name: resident?.name ?? null },
         })
       );

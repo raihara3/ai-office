@@ -12,6 +12,7 @@ import {
   lowestFreeSeat,
   residentDeskPosition,
   residentDeskHitRect,
+  residentMonitorHitRect,
   RESIDENT_ROOM,
   WHITEBOARD,
 } from './layout.js';
@@ -67,6 +68,21 @@ test('residentDeskHitRect: covers the desk from nameplate to chair', () => {
   const hit = residentDeskHitRect(1);
   assert.ok(hit.x <= desk.x - 56 && hit.x + hit.width >= desk.x + 56);
   assert.ok(hit.y <= desk.y - 106 && hit.y + hit.height >= desk.y + 20);
+});
+
+test('residentMonitorHitRect: caps the desk top and clears the avatar', () => {
+  const desk = residentDeskPosition(1);
+  const deskRect = residentDeskHitRect(1);
+  const monitor = residentMonitorHitRect(1);
+  // Shares the desk's top-left, so the two bands tile from a common origin.
+  assert.equal(monitor.x, deskRect.x);
+  assert.equal(monitor.y, deskRect.y);
+  assert.equal(monitor.width, deskRect.width);
+  // Covers the monitor screen (drawn down to desk.y - 50)...
+  assert.ok(monitor.y + monitor.height >= desk.y - 50);
+  // ...but stops above the avatar (drawn at desk.y + 18), leaving it to the
+  // settings target below.
+  assert.ok(monitor.y + monitor.height < desk.y + 18);
 });
 
 test('whiteboard hangs on the top wall above the resident room', () => {

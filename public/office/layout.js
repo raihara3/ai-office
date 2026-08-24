@@ -56,6 +56,16 @@ export function residentDeskHitRect(index) {
   return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 132 };
 }
 
+// The desk hit area splits into two stacked targets so a tap can tell the
+// monitor from the avatar: the upper band covers the nameplate chip and the
+// monitor (the desktop surface sits at -46), opening the activity view; the
+// lower band covers the desk, chair and avatar, opening the settings panel.
+// The split leaves no dead zone — together the bands tile residentDeskHitRect.
+export function residentMonitorHitRect(index) {
+  const desk = residentDeskPosition(index);
+  return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 62 };
+}
+
 // The lowest seat index not present in `usedSeats`. The grid fills from the
 // top-left as sessions appear, reusing seats freed when avatars leave.
 export function lowestFreeSeat(usedSeats) {

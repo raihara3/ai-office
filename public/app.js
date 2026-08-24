@@ -433,9 +433,20 @@
   }
 
   function clearDropMarkers() {
-    for (const marked of boardColumnsElement.querySelectorAll('.drop-before')) {
-      marked.classList.remove('drop-before');
+    for (const marked of boardColumnsElement.querySelectorAll('.drop-before, .drop-after')) {
+      marked.classList.remove('drop-before', 'drop-after');
     }
+  }
+
+  // Which card the dragged card lands in front of, based on whether the
+  // pointer sits over the top or bottom half of the hovered card. The bottom
+  // half targets the next card (null past the last one), so a card can be
+  // dropped into the very last slot of its column, not only above a card.
+  function insertBeforeId(cardElement, event) {
+    const rect = cardElement.getBoundingClientRect();
+    if (event.clientY <= rect.top + rect.height / 2) return cardElement.dataset.id;
+    const next = cardElement.nextElementSibling;
+    return next === null ? null : next.dataset.id;
   }
 
   function attachBoardHandlers() {
@@ -454,12 +465,15 @@
         event.preventDefault();
         event.stopPropagation();
         clearDropMarkers();
-        cardElement.classList.add('drop-before');
+        const rect = cardElement.getBoundingClientRect();
+        cardElement.classList.add(
+          event.clientY <= rect.top + rect.height / 2 ? 'drop-before' : 'drop-after'
+        );
       });
       cardElement.addEventListener('drop', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        dropCard(cardElement.closest('.board-cards').dataset.column, cardElement.dataset.id);
+        dropCard(cardElement.closest('.board-cards').dataset.column, insertBeforeId(cardElement, event));
       });
     }
     for (const listElement of boardColumnsElement.querySelectorAll('.board-cards')) {

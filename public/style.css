@@ -546,6 +546,8 @@ main {
 
 .board-card.drop-before { border-top: 2px solid #7aa2f7; }
 
+.board-card.drop-after { border-bottom: 2px solid #7aa2f7; }
+
 .board-card-title {
   color: #c8cbe0;
   font-size: 12px;

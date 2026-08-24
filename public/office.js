@@ -23,6 +23,7 @@ import {
   WHITEBOARD,
 } from './office/layout.js';
 import { createSmallTalk } from './office/small-talk.js';
+import { deskFootprint, findPath } from './office/pathfinding.js';
 
 (() => {
   const canvas = document.getElementById('office');
@@ -905,6 +906,43 @@ import { createSmallTalk } from './office/small-talk.js';
     }
   }
 
+  // The desks avatars must route around: every furnished free-address seat,
+  // any overflow seat in use, and the fixed resident island. Rebuilt each
+  // frame (cheap — a dozen rects) so freed seats stop blocking immediately.
+  function deskObstacles() {
+    const seats = new Set(usedSeats);
+    for (let seat = 0; seat < SEAT_COUNT; seat += 1) seats.add(seat);
+    const obstacles = [];
+    for (const seat of seats) obstacles.push(deskFootprint(deskPosition(seat)));
+    for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
+      obstacles.push(deskFootprint(residentDeskPosition(index)));
+    }
+    return obstacles;
+  }
+
+  // Walk the actor toward `target` along a route that skirts the desks,
+  // replanning only when the destination moves. Returns true once the final
+  // waypoint is reached so callers can tell "arrived" from "still walking"
+  // (the per-waypoint `walking` flag toggles false at every leg).
+  function walkAround(actor, target, speed, obstacles, bounds) {
+    if (
+      !actor.pathGoal ||
+      Math.abs(actor.pathGoal.x - target.x) > 1 ||
+      Math.abs(actor.pathGoal.y - target.y) > 1
+    ) {
+      actor.pathGoal = { x: target.x, y: target.y };
+      actor.path = findPath(actor, target, obstacles, bounds);
+      actor.pathIndex = 0;
+    }
+    const lastLeg = actor.path.length - 1;
+    moveActor(actor, actor.path[actor.pathIndex], speed);
+    if (!actor.walking && actor.pathIndex < lastLeg) {
+      actor.pathIndex += 1;
+      actor.walking = true;
+    }
+    return actor.pathIndex >= lastLeg && !actor.walking;
+  }
+
   function frame(time) {
     // Scale movement by how long the previous frame took relative to a 60fps
     // frame, so walk speed stays constant across refresh rates.
@@ -932,6 +970,8 @@ import { createSmallTalk } from './office/small-talk.js';
     smallTalk.update(time, restingKeys);
 
     const door = doorPosition(layout);
+    const obstacles = deskObstacles();
+    const bounds = { width: CANVAS_WIDTH, height: layout.height };
     let breakIndex = 0;
     const nowResting = [];
 
@@ -947,8 +987,8 @@ import { createSmallTalk } from './office/small-talk.js';
 
       if (entry.leaving) {
         const actor = actorFor(key, door, time);
-        moveActor(actor, door, LEAVE_SPEED * frameStep);
-        if (!actor.walking) {
+        const arrived = walkAround(actor, door, LEAVE_SPEED * frameStep, obstacles, bounds);
+        if (arrived) {
           presence.delete(key);
           actors.delete(key);
           continue;
@@ -975,17 +1015,23 @@ import { createSmallTalk } from './office/small-talk.js';
       const chairSpot = { x: desk.x, y: desk.y + 18 };
       const restSpot = breakSpot(breakIndex, layout);
       if (!atDeskStatus) breakIndex += 1;
-      moveActor(actor, atDeskStatus ? chairSpot : restSpot, WALK_SPEED * frameStep);
+      const arrived = walkAround(
+        actor,
+        atDeskStatus ? chairSpot : restSpot,
+        WALK_SPEED * frameStep,
+        obstacles,
+        bounds
+      );
 
-      const seated = working && !actor.walking;
+      const seated = working && arrived;
       // Waiting for the user: stand in front of the desk, facing the room.
-      const standing = waiting && !actor.walking;
+      const standing = waiting && arrived;
       drawAvatar(spec, actor.x, actor.y, {
         time,
         walking: actor.walking,
         typing: seated,
         facingAway: seated,
-        coffee: !atDeskStatus && !actor.walking,
+        coffee: !atDeskStatus && arrived,
       });
       if (employee.isSubagent) drawWakabaMark(actor.x + 12, actor.y - 50, 11);
 
@@ -1005,7 +1051,7 @@ import { createSmallTalk } from './office/small-talk.js';
         }
       } else if (standing) {
         drawBubble(actor.x, actor.y - 58, '🖐️');
-      } else if (!atDeskStatus && !actor.walking) {
+      } else if (!atDeskStatus && arrived) {
         nowResting.push(key);
         drawBubble(actor.x, actor.y - 56, smallTalk.bubbleFor(key) ?? '☕');
       }

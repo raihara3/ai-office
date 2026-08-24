@@ -80,6 +80,8 @@ public/                フロントエンド(静的 ES モジュールとして�
     layout.test.js     幾何のテスト
     small-talk.js      休憩室の雑談ステートマシン(random 注入可能)
     small-talk.test.js 雑談のテスト
+    pathfinding.js     デスクを避けるグリッド経路探索(空きスペースのみを歩く)
+    pathfinding.test.js 経路探索のテスト
   office-client.js     トランスポートクライアント(SSE + cleanup API), IPC へ差し替え可能
   app.js               チャット描画・メンションチャイム・サイドバー composer
 electron/              デスクトップラッパ
@@ -292,6 +294,17 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 `residentDeskHitRect`(とその上帯だけを切り出すモニタ領域
 `residentMonitorHitRect`)、上壁のホワイトボードのクリック領域 `WHITEBOARD`
 もここに定義します。canvas も DOM も触れないため単体テスト可能です。
+
+### `office/pathfinding.js`
+
+デスクを避けるグリッド経路探索。`deskFootprint(anchor)` が
+`drawDeskFurniture` に対応するデスクの障害物矩形(モニタ上端から脚まで。
+椅子はその下端の外側)を返し、`findPath(start, goal, obstacles, bounds)` が
+16px グリッド上の A*(斜め移動はコーナー抜けを禁止)で経路を求め、
+可視線で直線化した経由点(始点を除き終点を含む)を返します。到達不能なら
+`[goal]` に退避するため、描画側は従来どおり直進にフォールバックします。
+`office.js` はこれを使い、アバターがデスクやモニタの上を横切らず空きスペース
+だけを歩くようにします。canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/small-talk.js`
 

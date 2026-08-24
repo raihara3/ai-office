@@ -18,7 +18,7 @@ uses the Node.js standard library only — no runtime dependencies.
 ## Repository map
 
 - `public/office.js` — canvas rendering: office layout, avatars and walking, window/sky day-night scenery
-- `public/office/` — layout grid, small talk, sprite specs
+- `public/office/` — layout grid, small talk, sprite specs, desk-avoiding pathfinding
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)

@@ -136,9 +136,11 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 ヘルパー群の上に構築された読みやすいパイプラインです:
 
 - `createSession` — 新規セッションの雛形。
-- `applyTiming` / `applyFields` / `applyTurnState` / `applySubagents` /
-  `applyMcpCall` — observation の 1 側面を変異(mutation)で適用。クロックや I/O を
-  持たないため、ストアは決定的に保たれます。
+- `applyTiming` / `applyFields` / `applyActivityLog` / `applyTurnState` /
+  `applySubagents` / `applyMcpCall` — observation の 1 側面を変異(mutation)で
+  適用。クロックや I/O を持たないため、ストアは決定的に保たれます。
+  `applyActivityLog` は 1 ターン分の活動を配列に蓄積し(新しい指示でリセット)、
+  作業状況ビューが最新の 1 件ではなく作業の流れを表示できるようにします。
 - `isDismissed` — 人事 cleanup が残す tombstone(墓標)を尊重します。tombstone は
   `<dataDirectory>/dismissed-sessions.json` に永続化され、起動時に読み込むため
   退勤状態はサーバー再起動をまたいで保持されます(セッション寿命

@@ -436,6 +436,23 @@ main {
   font-size: 11px;
 }
 
+.activity-log {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: #a9b1d6;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.activity-log li {
+  word-break: break-word;
+}
+
+.activity-log li:last-child {
+  color: #c8cbe0;
+  font-weight: 700;
+}
+
 .activity-empty {
   padding: 8px 0 12px;
   color: #565a6e;

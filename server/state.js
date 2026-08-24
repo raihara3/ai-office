@@ -21,6 +21,9 @@ const SUBAGENT_EXPIRE_MS = 30 * 60_000;
 const MCP_BADGE_EXPIRE_MS = 60_000;
 const SESSION_EXPIRE_MS = 3 * 24 * 60 * 60_000;
 const MAX_MESSAGES = 50;
+// The activity view stocks the flow of a turn's tool calls rather than only
+// its latest one; this caps the oldest entries so a long run stays bounded.
+const MAX_ACTIVITY_LOG = 100;
 
 export const CLI_INFO = {
   claude: { name: 'Claude Code', vendor: 'anthropic', mention: 'Claude' },
@@ -59,6 +62,7 @@ function createSession(key, cli, filePath, eventAt) {
     task: null,
     activity: null,
     activityKind: null,
+    activityLog: [],
     subagents: [],
     mcpCalls: [],
     firstSeenAt: eventAt,
@@ -92,6 +96,19 @@ function applyFields(session, observation) {
   if (observation.activityKind !== undefined) session.activityKind = observation.activityKind;
   if (observation.isSubagent) session.isSubagent = true;
   if (observation.clientKind !== undefined) session.clientKind = observation.clientKind;
+}
+
+// Stock the flow of a turn so the activity view shows the sequence of steps,
+// not just the latest one. A fresh instruction starts a new flow; every
+// non-empty activity is appended, oldest entries dropped past the cap.
+function applyActivityLog(session, observation) {
+  if (observation.task !== undefined && observation.task) session.activityLog = [];
+  if (!observation.activity) return;
+  session.activityLog.push({
+    activity: observation.activity,
+    activityKind: observation.activityKind ?? null,
+  });
+  if (session.activityLog.length > MAX_ACTIVITY_LOG) session.activityLog.shift();
 }
 
 function applyTurnState(session, observation, eventAt) {
@@ -319,6 +336,7 @@ export function createState({
 
     applyTiming(session, eventAt);
     applyFields(session, observation);
+    applyActivityLog(session, observation);
     applyTurnState(session, observation, eventAt);
     applySubagents(session, observation, eventAt);
     applyMcpCall(session, observation, eventAt);
@@ -380,6 +398,7 @@ export function createState({
         task: status !== 'break' ? session.task : null,
         activity: status !== 'break' ? session.activity : null,
         activityKind: status !== 'break' ? session.activityKind : null,
+        activityLog: status !== 'break' ? session.activityLog : [],
         subagents: status === 'working' || status === 'blocked' ? session.subagents : [],
         isSubagent: session.isSubagent,
         mcpCalls: session.mcpCalls.filter((c) => currentTime - c.at < MCP_BADGE_EXPIRE_MS),

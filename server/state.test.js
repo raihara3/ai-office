@@ -254,6 +254,57 @@ test('snapshot nulls task/activity/activityKind on break, keeps them on working/
   assert.equal(employee.activityKind, null);
 });
 
+test('activityLog stocks the flow of a turn, resets on a new task, empties on break', () => {
+  const ctx = withClock();
+  const key = 'claude:/log/f.jsonl';
+
+  ctx.state.reportEvent('claude', '/log/f.jsonl', {
+    task: 'first task',
+    activity: null,
+    activityKind: 'think',
+    timestamp: ctx.value,
+  });
+  ctx.state.reportEvent('claude', '/log/f.jsonl', {
+    activity: 'Read: a.js',
+    activityKind: 'inspect',
+    timestamp: ctx.value,
+  });
+  ctx.state.reportEvent('claude', '/log/f.jsonl', {
+    activity: 'Edit: a.js',
+    activityKind: 'work',
+    timestamp: ctx.value,
+  });
+
+  // Both steps are stocked in order; the null-activity task line adds nothing.
+  let employee = employeeFor(ctx.state, key);
+  assert.deepEqual(employee.activityLog, [
+    { activity: 'Read: a.js', activityKind: 'inspect' },
+    { activity: 'Edit: a.js', activityKind: 'work' },
+  ]);
+
+  // A fresh instruction starts a new flow.
+  ctx.state.reportEvent('claude', '/log/f.jsonl', {
+    task: 'second task',
+    activity: null,
+    activityKind: 'think',
+    timestamp: ctx.value,
+  });
+  employee = employeeFor(ctx.state, key);
+  assert.deepEqual(employee.activityLog, []);
+
+  // On break the snapshot exposes an empty log, like task/activity.
+  ctx.state.reportEvent('claude', '/log/f.jsonl', {
+    activity: 'Bash: run tests',
+    activityKind: 'work',
+    timestamp: ctx.value,
+  });
+  ctx.state.reportEvent('claude', '/log/f.jsonl', { turnComplete: true, timestamp: ctx.value });
+  ctx.advance(WORKING_IDLE_TIMEOUT_MS + 1);
+  employee = employeeFor(ctx.state, key);
+  assert.equal(employee.status, 'break');
+  assert.deepEqual(employee.activityLog, []);
+});
+
 test('dismissSession removes the session; the cutoff tombstone rejects replays', () => {
   const ctx = withClock();
   const key = 'claude:/log/e.jsonl';

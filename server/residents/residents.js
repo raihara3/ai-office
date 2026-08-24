@@ -87,10 +87,12 @@ export function createResidents({
   runner = createRunner({ registry, now }),
 } = {}) {
   let tickTimer = null;
-  // Card ids currently being worked, by resident name. In-memory on purpose:
+  // Cards currently being worked, by resident name. In-memory on purpose:
   // if the server dies mid-run the card simply stays in its column and the
-  // next tick relaunches it — no recovery bookkeeping needed.
-  const activeTaskIds = new Map();
+  // next tick relaunches it — no recovery bookkeeping needed. The card (not
+  // just its id) is kept so the activity view can show the task title instead
+  // of the whole prompt the CLI actually receives.
+  const activeCards = new Map();
   // Residents whose launch() is still awaiting its precheck; keeps a slow
   // precheck from letting the same tick pick up a board card concurrently.
   const launching = new Set();
@@ -103,7 +105,7 @@ export function createResidents({
 
   function handleFinished(entry, { outcome, resultText }, task = null) {
     const { configuration } = entry;
-    activeTaskIds.delete(entry.name);
+    activeCards.delete(entry.name);
     const finishedAt = now();
     const { level, body } = splitReportLevel(resultText);
     const reportLevel = outcome === 'ok' ? level : 'review-needed';
@@ -197,7 +199,7 @@ export function createResidents({
           onFinished: (result) => handleFinished(entry, result, task),
         }
       );
-      if (started && task !== null) activeTaskIds.set(entry.name, task.id);
+      if (started && task !== null) activeCards.set(entry.name, task);
       if (started) state.refresh();
       return started;
     } finally {
@@ -245,6 +247,9 @@ export function createResidents({
       mode: entry.configuration.mode,
       enabled: entry.configuration.enabled,
       busy: runner.isRunning(entry.name),
+      // The title of the board card the resident is working, so the activity
+      // view can label it without exposing the full prompt sent to the CLI.
+      activeTask: activeCards.get(entry.name)?.title ?? null,
       lastRunAt: entry.state.lastRunAt ?? null,
       lastOutcome: entry.state.lastOutcome ?? null,
       nextRunAt: entry.configuration.enabled
@@ -302,8 +307,8 @@ export function createResidents({
   // Kanban board operations. Moving or archiving is refused while the card's
   // run is in flight, so the finishing handler never acts on a stale card.
   function isWorkingCard(id) {
-    for (const [residentName, taskId] of activeTaskIds) {
-      if (taskId === id && runner.isRunning(residentName)) return true;
+    for (const [residentName, card] of activeCards) {
+      if (card.id === id && runner.isRunning(residentName)) return true;
     }
     return false;
   }

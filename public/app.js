@@ -778,16 +778,24 @@
         next ? activityRow('次回', escapeHtml(next)) : '',
       ].join('');
     }
-    const kind = ACTIVITY_KIND_LABELS[session.activityKind];
     const rows = [
       `<div class="activity-status ${escapeHtml(session.status)}">${escapeHtml(
         ACTIVITY_STATUS_LABELS[session.status] ?? session.status
       )}</div>`,
     ];
-    if (session.task) rows.push(activityRow('指示', escapeHtml(session.task)));
-    if (session.activity) {
-      const prefix = kind ? `[${escapeHtml(kind)}] ` : '';
-      rows.push(activityRow('実行中', `${prefix}${escapeHtml(session.activity)}`));
+    // The instruction is the board card title, not the transcript's first
+    // message — a resident's prompt is mostly its role/rules, which would bury
+    // the actual task.
+    if (resident.activeTask) rows.push(activityRow('指示', escapeHtml(resident.activeTask)));
+    if (session.activityLog?.length) {
+      const items = session.activityLog
+        .map((entry) => {
+          const entryKind = ACTIVITY_KIND_LABELS[entry.activityKind];
+          const prefix = entryKind ? `[${escapeHtml(entryKind)}] ` : '';
+          return `<li>${prefix}${escapeHtml(entry.activity)}</li>`;
+        })
+        .join('');
+      rows.push(activityRow('作業ログ', `<ol class="activity-log">${items}</ol>`));
     }
     if (session.subagents?.length) {
       rows.push(

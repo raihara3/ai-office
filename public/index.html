@@ -4,59 +4,98 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Office</title>
+  <script>
+    // Applied before the stylesheet paints so a stored dark theme never
+    // flashes light on load. localStorage can throw when storage is blocked
+    // (e.g. cookies disabled); fall back to the system preference then.
+    let storedTheme = null;
+    try {
+      storedTheme = localStorage.getItem('ai-office-theme');
+    } catch {
+      // Storage unavailable; the system preference below decides.
+    }
+    document.documentElement.dataset.theme =
+      storedTheme ??
+      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <header id="topbar">
-      <div id="topbar-head">
-        <h1>📋 Kanban</h1>
-        <div id="topbar-actions">
-          <button type="button" id="board-expand" title="拡大表示">⤢</button>
-          <button type="button" id="card-add" title="タスクを追加">＋</button>
-        </div>
+    <header id="appbar">
+      <div id="brand">
+        <svg id="brand-logo" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">
+          <rect x="2" y="3" width="12" height="12" fill="#2f6fed"/>
+          <rect x="4" y="5" width="2" height="2" fill="#ffffff"/>
+          <rect x="7" y="5" width="2" height="2" fill="#ffffff"/>
+          <rect x="10" y="5" width="2" height="2" fill="#ffffff"/>
+          <rect x="4" y="8" width="2" height="2" fill="#ffffff"/>
+          <rect x="7" y="8" width="2" height="2" fill="#ffe9a8"/>
+          <rect x="10" y="8" width="2" height="2" fill="#ffffff"/>
+          <rect x="4" y="11" width="2" height="2" fill="#ffe9a8"/>
+          <rect x="10" y="11" width="2" height="2" fill="#ffffff"/>
+          <rect x="7" y="11" width="2" height="4" fill="#1b3f8f"/>
+          <rect x="6" y="1" width="4" height="2" fill="#1b3f8f"/>
+        </svg>
+        <span id="brand-word">AI OFFICE</span>
       </div>
-      <div id="topbar-columns"></div>
+      <nav id="view-tabs" role="tablist">
+        <button type="button" class="view-tab active" data-view="office" role="tab" aria-selected="true">オフィス</button>
+        <button type="button" class="view-tab" data-view="board" role="tab" aria-selected="false">ボード</button>
+      </nav>
+      <div id="appbar-actions">
+        <span id="connection" class="status-pill">接続中…</span>
+        <button type="button" id="theme-toggle" title="ダークモードに切り替え">🌙</button>
+        <button type="button" id="cleanup-run" title="セッションが終了しているアバターをオフィスから退勤させます(稼働中のセッションには影響しません)">アバター退勤</button>
+        <button type="button" id="card-add" class="primary-button">＋ タスク</button>
+      </div>
     </header>
+    <div id="kanban-strip"></div>
     <div id="content">
-      <div id="office-wrap">
+      <section id="office-wrap">
         <canvas id="office" width="960" height="600"></canvas>
-      </div>
+      </section>
+      <section id="board-view" hidden>
+        <div id="board-columns"></div>
+      </section>
       <aside id="panel">
-        <h1>📥 インボックス</h1>
+        <header id="panel-head">
+          <svg id="inbox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+            <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+          </svg>
+          <h1>インボックス</h1>
+          <span id="inbox-summary"></span>
+        </header>
         <div id="inbox-list"></div>
-        <footer id="panel-foot">
-          <button type="button" id="cleanup-run">仕事がない人を退勤</button>
-          <span id="connection">connecting…</span>
-        </footer>
       </aside>
     </div>
   </main>
-  <div id="overlay" hidden>
-    <section id="whiteboard-panel" class="overlay-card" hidden>
-      <header>
-        <h2>📋 Kanban</h2>
-        <button type="button" id="card-add-overlay" title="タスクを追加">＋</button>
-        <button type="button" class="overlay-close">✕</button>
-      </header>
-      <div id="board-view">
-        <div id="board-columns"></div>
+  <aside id="drawer" hidden>
+    <header id="drawer-head">
+      <h2 id="drawer-title"></h2>
+      <button type="button" id="drawer-close" title="閉じる">✕</button>
+    </header>
+    <div id="drawer-body">
+      <div id="card-detail" class="drawer-section" hidden></div>
+      <form id="card-form" class="drawer-section" hidden>
+        <label>件名
+          <input id="card-title" placeholder="タスクの件名" required>
+        </label>
+        <label>内容・手順(担当のプロンプトにそのまま入ります)
+          <textarea id="card-body" rows="6"></textarea>
+        </label>
+        <label>担当
+          <select id="card-assignee"></select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" id="card-file" class="primary-button">起票する</button>
+        </div>
+      </form>
+      <div id="activity-wrap" class="drawer-section" hidden>
+        <div id="activity-view"></div>
       </div>
-      <div id="card-detail" hidden></div>
-    </section>
-    <section id="activity-panel" class="overlay-card" hidden>
-      <header>
-        <h2 id="activity-panel-title">作業状況</h2>
-        <button type="button" class="overlay-close">✕</button>
-      </header>
-      <div id="activity-view"></div>
-    </section>
-    <section id="resident-panel" class="overlay-card" hidden>
-      <header>
-        <h2 id="resident-panel-title">常駐員</h2>
-        <button type="button" class="overlay-close">✕</button>
-      </header>
-      <form id="resident-form">
+      <form id="resident-form" class="drawer-section" hidden>
         <label>ID(半角英小文字・数字・ハイフン)
           <input id="resident-name" pattern="[a-z0-9][a-z0-9-]*" required>
         </label>
@@ -118,29 +157,13 @@
         </label>
         <p id="resident-error" class="form-error" hidden></p>
         <div class="form-actions">
-          <button type="submit" id="resident-save">保存</button>
+          <button type="submit" id="resident-save" class="primary-button">保存</button>
           <button type="button" id="resident-run">今すぐ実行</button>
-          <button type="button" id="resident-unassign">割り当て解除</button>
+          <button type="button" id="resident-unassign" class="danger-button">割り当て解除</button>
         </div>
       </form>
-    </section>
-  </div>
-  <div id="card-modal" hidden>
-    <section class="overlay-card">
-      <header>
-        <h2>📝 タスクを起票</h2>
-        <button type="button" id="card-modal-close" class="overlay-close">✕</button>
-      </header>
-      <form id="card-form">
-        <input id="card-title" placeholder="タスクの件名" required>
-        <textarea id="card-body" rows="4" placeholder="内容・手順(担当のプロンプトにそのまま入ります)"></textarea>
-        <div class="form-row">
-          <select id="card-assignee"></select>
-          <button type="submit" id="card-file">起票</button>
-        </div>
-      </form>
-    </section>
-  </div>
+    </div>
+  </aside>
   <script type="module" src="office.js"></script>
   <script type="module" src="office-client.js"></script>
   <script type="module" src="app.js"></script>

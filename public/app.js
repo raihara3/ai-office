@@ -1,4 +1,5 @@
-// SSE client: Kanban top bar, report inbox and overlay panels.
+// SSE client: app bar, kanban strip, report inbox, board view and the right
+// drawer (card detail / task filing / resident settings / activity).
 
 (() => {
   const connectionElement = document.getElementById('connection');
@@ -133,8 +134,31 @@
     return sameDay ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
   }
 
-  // The HR cleanup, kept as a single button: retire everyone with no work
-  // left, tagged with the boss's standing directive.
+  function field(id) {
+    return document.getElementById(id);
+  }
+
+  // Light/dark theme toggle. index.html already applied the stored (or
+  // system-preferred) theme before first paint; this only flips and persists.
+  const themeToggle = document.getElementById('theme-toggle');
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+    themeToggle.title = theme === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え';
+  }
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+  themeToggle.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try {
+      localStorage.setItem('ai-office-theme', next);
+    } catch {
+      // Storage blocked: the theme still flips, it just won't persist.
+    }
+  });
+
+  // The HR cleanup, kept as a single app-bar button: retire everyone with no
+  // work left, tagged with the boss's standing directive.
   const CLEANUP_DIRECTIVE = '@here 仕事がない人は退勤してください';
   const cleanupButton = document.getElementById('cleanup-run');
   let cleanupInFlight = false;
@@ -157,73 +181,58 @@
     }
   });
 
-  // --- overlay panels (whiteboard + resident seats) ---------------------
-  // The canvas reports clicks on the whiteboard / resident desks as window
-  // events (see office.js); the DOM panels live here.
+  // --- right drawer -------------------------------------------------------
+  // A single slide-in drawer replaces the old stacked modals. It hosts one
+  // section at a time: card detail, the task filing form, a resident's live
+  // activity, or the resident settings form.
 
-  const overlayElement = document.getElementById('overlay');
-  const whiteboardPanel = document.getElementById('whiteboard-panel');
-  const activityPanel = document.getElementById('activity-panel');
-  const activityView = document.getElementById('activity-view');
-  const residentPanel = document.getElementById('resident-panel');
-  const reportListElement = document.getElementById('inbox-list');
-  const residentForm = document.getElementById('resident-form');
-  const residentError = document.getElementById('resident-error');
+  const drawerElement = document.getElementById('drawer');
+  const drawerTitleElement = document.getElementById('drawer-title');
+  const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form'];
 
-  const WEEKDAYS = [
-    ['mon', '月'],
-    ['tue', '火'],
-    ['wed', '水'],
-    ['thu', '木'],
-    ['fri', '金'],
-    ['sat', '土'],
-    ['sun', '日'],
-  ];
-  for (const containerId of ['schedule-days', 'interval-days']) {
-    document.getElementById(containerId).innerHTML = WEEKDAYS.map(
-      ([key, label]) =>
-        `<label><input type="checkbox" value="${key}">${label}</label>`
-    ).join('');
+  function openDrawer(sectionId, title) {
+    for (const id of DRAWER_SECTION_IDS) field(id).hidden = id !== sectionId;
+    drawerTitleElement.textContent = title;
+    drawerElement.hidden = false;
   }
 
-  function checkedDays(containerId) {
-    return [...document.querySelectorAll(`#${containerId} input:checked`)].map(
-      (input) => input.value
-    );
-  }
-
-  function setCheckedDays(containerId, days) {
-    for (const input of document.querySelectorAll(`#${containerId} input`)) {
-      input.checked = (days ?? []).includes(input.value);
-    }
-  }
-
-  function field(id) {
-    return document.getElementById(id);
-  }
-
-  function closeOverlay() {
-    overlayElement.hidden = true;
-    whiteboardPanel.hidden = true;
-    activityPanel.hidden = true;
-    residentPanel.hidden = true;
+  function closeDrawer() {
+    drawerElement.hidden = true;
+    for (const id of DRAWER_SECTION_IDS) field(id).hidden = true;
+    cardForm.reset();
     activityName = null;
   }
-  overlayElement.addEventListener('click', (event) => {
-    if (event.target === overlayElement) closeOverlay();
-  });
-  for (const button of document.querySelectorAll('.overlay-close')) {
-    button.addEventListener('click', closeOverlay);
-  }
+  document.getElementById('drawer-close').addEventListener('click', closeDrawer);
   window.addEventListener('keydown', (event) => {
-    // The card modal (its own Escape handler) sits above the overlay; let it
-    // take Escape first so one press closes only the topmost layer.
-    if (event.key === 'Escape' && cardModal.hidden && !overlayElement.hidden) {
-      closeOverlay();
-    }
+    if (event.key === 'Escape' && !drawerElement.hidden) closeDrawer();
   });
 
-  // --- whiteboard panel -------------------------------------------------
+  // --- view tabs: office canvas / full board ------------------------------
+
+  const officeWrapElement = document.getElementById('office-wrap');
+  const boardViewElement = document.getElementById('board-view');
+
+  function setView(view) {
+    officeWrapElement.hidden = view !== 'office';
+    boardViewElement.hidden = view !== 'board';
+    for (const tab of document.querySelectorAll('.view-tab')) {
+      const active = tab.dataset.view === view;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (view === 'board') renderBoard();
+  }
+  for (const tab of document.querySelectorAll('.view-tab')) {
+    tab.addEventListener('click', () => setView(tab.dataset.view));
+  }
+  // Clicking the whiteboard on the canvas opens the full board in place.
+  window.addEventListener('office:whiteboard-open', () => setView('board'));
+
+  // --- inbox --------------------------------------------------------------
+
+  const reportListElement = document.getElementById('inbox-list');
+  const inboxSummaryElement = document.getElementById('inbox-summary');
+  let latestReports = [];
 
   function linkify(escapedText) {
     return escapedText.replace(
@@ -232,7 +241,21 @@
     );
   }
 
+  function renderInboxSummary() {
+    const unread = latestReports.filter((report) => !report.read).length;
+    const review = latestReports.filter(
+      (report) => report.level === 'review-needed' && !report.read
+    ).length;
+    if (review > 0) {
+      inboxSummaryElement.innerHTML = `<span class="summary-review">要確認 ${review}</span> ・ 未読 ${unread}`;
+    } else {
+      inboxSummaryElement.textContent = unread > 0 ? `未読 ${unread}` : 'すべて確認済み';
+    }
+  }
+
   function renderReports(reports) {
+    latestReports = reports;
+    renderInboxSummary();
     if (reports.length === 0) {
       reportListElement.innerHTML =
         '<div class="report-empty">報告はまだありません</div>';
@@ -259,6 +282,9 @@
         body.hidden = !body.hidden;
         if (!body.hidden && reportElement.classList.contains('unread')) {
           reportElement.classList.remove('unread');
+          const report = latestReports.find((entry) => entry.id === reportElement.dataset.id);
+          if (report) report.read = true;
+          renderInboxSummary();
           client.markReportRead(reportElement.dataset.id).catch(() => {});
         }
       });
@@ -287,6 +313,10 @@
           const { ok } = await client.archiveReport(reportElement.dataset.id);
           if (ok) {
             reportElement.remove();
+            latestReports = latestReports.filter(
+              (entry) => entry.id !== reportElement.dataset.id
+            );
+            renderInboxSummary();
             if (reportListElement.querySelector('.report') === null) renderReports([]);
             return;
           }
@@ -309,19 +339,22 @@
     }
   }
 
-  // --- kanban board -----------------------------------------------------
+  // --- kanban board -------------------------------------------------------
   // Columns are assignees: the user first, then the residents in seat order.
-  // The compact top bar mirrors the board (a few cards per column); the
-  // full board lives in the overlay, where cards are dragged to reorder
-  // (top card = worked next) or to reassign.
+  // The compact strip under the app bar mirrors the board (a few cards per
+  // column); the full board is the "ボード" view, where cards are dragged to
+  // reorder (top card = worked next) or to reassign.
 
-  const boardView = document.getElementById('board-view');
   const boardColumnsElement = document.getElementById('board-columns');
-  const cardDetailElement = document.getElementById('card-detail');
-  const topbarColumnsElement = document.getElementById('topbar-columns');
+  const stripElement = document.getElementById('kanban-strip');
 
-  // How many cards each compact top-bar column previews before "+N more".
-  const TOPBAR_CARD_LIMIT = 3;
+  // How many cards each compact strip column previews before "+N more".
+  const STRIP_CARD_LIMIT = 3;
+
+  // Assignee chips reuse the pixel avatars' vendor colors so the strip and
+  // the canvas describe the same coworker in the same hue.
+  const VENDOR_COLORS = { claude: '#d97757', codex: '#24292f', gemini: '#4285f4' };
+  const USER_COLOR = '#64748b';
 
   let latestSnapshot = null;
   let boardCards = [];
@@ -330,13 +363,22 @@
   function boardColumns() {
     const residents = [...(latestSnapshot?.residents ?? [])].sort((a, b) => a.seat - b.seat);
     return [
-      { key: 'user', label: 'あなた(社長)' },
-      ...residents.map((resident) => ({ key: resident.name, label: resident.displayName })),
+      { key: 'user', label: 'あなた(社長)', color: USER_COLOR, busy: false },
+      ...residents.map((resident) => ({
+        key: resident.name,
+        label: resident.displayName,
+        color: VENDOR_COLORS[resident.cli] ?? USER_COLOR,
+        busy: resident.busy === true,
+      })),
     ];
   }
 
-  // Group the cards into their columns once; both the overlay board and the
-  // compact top bar render from this. Cards assigned to a resident that no
+  function assigneeChip(column) {
+    return `<span class="assignee-chip" style="background:${escapeHtml(column.color)}">${escapeHtml([...column.label][0] ?? '?')}</span>`;
+  }
+
+  // Group the cards into their columns once; both the full board and the
+  // compact strip render from this. Cards assigned to a resident that no
   // longer exists land in the user column with a warning badge.
   function groupedCards() {
     const columns = boardColumns();
@@ -356,43 +398,59 @@
     } catch {
       boardCards = [];
     }
-    renderTopbar();
-    if (!whiteboardPanel.hidden && cardDetailElement.hidden) renderBoard();
+    renderStrip();
+    if (!boardViewElement.hidden) renderBoard();
   }
 
-  // The compact top bar: one column per assignee with a count badge and the
-  // first few cards. Clicking anywhere opens the full board overlay.
-  function renderTopbar() {
+  // The compact strip: one column per assignee with the count, a live
+  // "作業中" badge while the resident's run is going, the first few cards and
+  // a quick-add button that files a task to that assignee.
+  function renderStrip() {
     const { columns, grouped } = groupedCards();
-    topbarColumnsElement.innerHTML = columns
+    stripElement.innerHTML = columns
       .map((column) => {
         const cards = grouped.get(column.key);
         const preview = cards
-          .slice(0, TOPBAR_CARD_LIMIT)
+          .slice(0, STRIP_CARD_LIMIT)
           .map(
             (card) => `
-              <div class="topbar-card${card.working ? ' working' : ''}">
-                <span class="topbar-card-title">${escapeHtml(card.title)}</span>
+              <div class="strip-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}">
+                <span class="strip-card-title">${escapeHtml(card.title)}</span>
                 ${cardBadges(card)}
               </div>`
           )
           .join('');
         const overflow =
-          cards.length > TOPBAR_CARD_LIMIT
-            ? `<div class="topbar-more">+${cards.length - TOPBAR_CARD_LIMIT}</div>`
+          cards.length > STRIP_CARD_LIMIT
+            ? `<div class="strip-more">ほか ${cards.length - STRIP_CARD_LIMIT} 件</div>`
             : '';
+        const empty = cards.length === 0 ? '<div class="strip-empty">タスクなし</div>' : '';
         return `
-          <div class="topbar-column">
-            <div class="topbar-column-head">
-              <span class="topbar-column-name">${escapeHtml(column.label)}</span>
-              <span class="topbar-column-count">${cards.length}</span>
+          <div class="strip-column">
+            <div class="strip-column-head">
+              ${assigneeChip(column)}
+              <span class="strip-column-name">${escapeHtml(column.label)}</span>
+              <span class="strip-column-count">${cards.length}</span>
+              ${column.busy ? '<span class="strip-busy">作業中</span>' : ''}
+              <button type="button" class="strip-add" data-assignee="${escapeHtml(column.key)}" title="${escapeHtml(column.label)}にタスクを起票">＋</button>
             </div>
-            ${preview}${overflow}
+            ${preview}${overflow}${empty}
           </div>`;
       })
       .join('');
   }
-  topbarColumnsElement.addEventListener('click', openWhiteboard);
+
+  // One delegated listener: the strip is rebuilt on board refreshes, and
+  // per-element listeners would drop a click that spans a rebuild.
+  stripElement.addEventListener('click', (event) => {
+    const addButton = event.target.closest('.strip-add');
+    if (addButton !== null) {
+      openCardForm(addButton.dataset.assignee);
+      return;
+    }
+    const cardElement = event.target.closest('.strip-card');
+    if (cardElement !== null) openCardDetail(cardElement.dataset.id);
+  });
 
   function cardBadges(card) {
     const badges = [];
@@ -411,6 +469,7 @@
         (column) => `
           <div class="board-column">
             <div class="board-column-head">
+              ${assigneeChip(column)}
               <span class="board-column-name">${escapeHtml(column.label)}</span>
               <span class="board-column-count">${grouped.get(column.key).length}</span>
             </div>
@@ -511,44 +570,33 @@
     refreshBoard();
   }
 
-  function fillCardAssignees() {
+  // --- task filing (drawer form) ------------------------------------------
+
+  const cardForm = document.getElementById('card-form');
+
+  function fillCardAssignees(preselect) {
     const select = field('card-assignee');
-    select.innerHTML = boardColumns()
+    const columns = boardColumns();
+    select.innerHTML = columns
       .map(
         (column) =>
           `<option value="${escapeHtml(column.key)}">${escapeHtml(column.label)}</option>`
       )
       .join('');
+    if (preselect && columns.some((column) => column.key === preselect)) {
+      select.value = preselect;
+      return;
+    }
     // Default to the first resident — filing a task to yourself is the rare case.
     if (select.options.length > 1) select.selectedIndex = 1;
   }
 
-  // --- card creation modal ----------------------------------------------
-  // Filing a task is a standalone modal (its own backdrop above the overlay),
-  // so it opens from both the top bar and the expanded board.
-
-  const cardModal = document.getElementById('card-modal');
-  const cardForm = document.getElementById('card-form');
-
-  function openCardModal() {
-    fillCardAssignees();
-    cardModal.hidden = false;
+  function openCardForm(assignee) {
+    fillCardAssignees(assignee);
+    openDrawer('card-form', 'タスクを起票');
     field('card-title').focus();
   }
-  function closeCardModal() {
-    cardModal.hidden = true;
-    cardForm.reset();
-  }
-  for (const id of ['card-add', 'card-add-overlay']) {
-    field(id).addEventListener('click', openCardModal);
-  }
-  field('card-modal-close').addEventListener('click', closeCardModal);
-  cardModal.addEventListener('click', (event) => {
-    if (event.target === cardModal) closeCardModal();
-  });
-  window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !cardModal.hidden) closeCardModal();
-  });
+  document.getElementById('card-add').addEventListener('click', () => openCardForm(null));
 
   cardForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -560,40 +608,38 @@
         body: field('card-body').value,
         assignee: field('card-assignee').value,
       });
-      closeCardModal();
+      closeDrawer();
     } catch {
       // Fall through: reload shows the board as it really is.
     }
     refreshBoard();
   });
 
-  async function openCardDetail(id) {
+  // --- card detail (drawer) -----------------------------------------------
+
+  const cardDetailElement = document.getElementById('card-detail');
+
+  function openCardDetail(id) {
     const card = boardCards.find((c) => c.id === id);
     if (!card) return;
-    const assigneeLabel =
-      boardColumns().find((column) => column.key === card.assignee)?.label ?? card.assignee;
-    boardView.hidden = true;
-    cardDetailElement.hidden = false;
+    const column =
+      boardColumns().find((entry) => entry.key === card.assignee) ??
+      { key: card.assignee, label: card.assignee, color: USER_COLOR };
     cardDetailElement.innerHTML = `
-      <button type="button" id="card-detail-back">← ボードに戻る</button>
       <div class="card-detail-head">
         <span class="card-detail-title">${escapeHtml(card.title)}</span>
-        <span class="card-detail-assignee">担当: ${escapeHtml(assigneeLabel)}${card.working ? ' ・作業中' : ''}</span>
+        <span class="card-detail-assignee">${assigneeChip(column)} ${escapeHtml(column.label)}${card.working ? ' <span class="card-badge working">作業中</span>' : ''}</span>
       </div>
       <div class="card-detail-body">${linkify(escapeHtml(card.body || '(本文なし)'))}</div>
       <div id="card-reports"><div class="report-empty">報告を読み込み中…</div></div>
       <form id="card-note-form">
         <textarea id="card-note-text" rows="2" placeholder="追記(次回実行のプロンプトに含まれます)"></textarea>
         <div class="form-actions">
-          <button type="submit">追記する</button>
+          <button type="submit" class="primary-button">追記する</button>
           <button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>完了(ボードから外す)</button>
         </div>
       </form>`;
-    field('card-detail-back').addEventListener('click', () => {
-      cardDetailElement.hidden = true;
-      boardView.hidden = false;
-      refreshBoard();
-    });
+    openDrawer('card-detail', 'タスク詳細');
     field('card-note-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const text = field('card-note-text').value.trim();
@@ -612,8 +658,7 @@
       } catch {
         // Fall through: the board reload below shows what really happened.
       }
-      cardDetailElement.hidden = true;
-      boardView.hidden = false;
+      closeDrawer();
       refreshBoard();
     });
     renderCardReports(id);
@@ -651,9 +696,8 @@
     }
   }
 
-  // Re-fetch the board when a snapshot shows run/card activity so the top bar
-  // (always visible) and the open overlay stay current — but never mid-drag or
-  // while the detail view is up front.
+  // Re-fetch the board when a snapshot shows run/card activity so the strip
+  // (always visible) and the board view stay current — but never mid-drag.
   let boardSignature = null;
   function maybeRefreshBoard(snapshot) {
     const signature = JSON.stringify([
@@ -662,26 +706,43 @@
     ]);
     const changed = boardSignature !== null && signature !== boardSignature;
     boardSignature = signature;
-    if (!changed || draggingCardId !== null) return;
-    if (!whiteboardPanel.hidden && !cardDetailElement.hidden) return;
-    refreshBoard();
+    if (changed && draggingCardId === null) refreshBoard();
   }
 
-  function openWhiteboard() {
-    overlayElement.hidden = false;
-    whiteboardPanel.hidden = false;
-    residentPanel.hidden = true;
-    cardDetailElement.hidden = true;
-    boardView.hidden = false;
-    refreshBoard();
-  }
-  window.addEventListener('office:whiteboard-open', openWhiteboard);
-  document.getElementById('board-expand').addEventListener('click', openWhiteboard);
+  // --- resident settings (drawer) -----------------------------------------
 
-  // --- resident panel ---------------------------------------------------
+  const residentForm = document.getElementById('resident-form');
+  const residentError = document.getElementById('resident-error');
+
+  const WEEKDAYS = [
+    ['mon', '月'],
+    ['tue', '火'],
+    ['wed', '水'],
+    ['thu', '木'],
+    ['fri', '金'],
+    ['sat', '土'],
+    ['sun', '日'],
+  ];
+  for (const containerId of ['schedule-days', 'interval-days']) {
+    document.getElementById(containerId).innerHTML = WEEKDAYS.map(
+      ([key, label]) =>
+        `<label><input type="checkbox" value="${key}">${label}</label>`
+    ).join('');
+  }
+
+  function checkedDays(containerId) {
+    return [...document.querySelectorAll(`#${containerId} input:checked`)].map(
+      (input) => input.value
+    );
+  }
+
+  function setCheckedDays(containerId, days) {
+    for (const input of document.querySelectorAll(`#${containerId} input`)) {
+      input.checked = (days ?? []).includes(input.value);
+    }
+  }
 
   let panelSeat = null;
-  let panelIsNew = true;
 
   function showTriggerSection(type) {
     document.getElementById('trigger-schedule').hidden = type !== 'schedule';
@@ -745,11 +806,78 @@
     residentError.hidden = false;
   }
 
-  // The activity view shows one resident's live work: what its current
-  // session is doing right now (task, running tool, subagents, MCP calls),
-  // or its idle / next-run state when no session is live. It reads the same
-  // office snapshot the canvas draws from, so tapping the monitor never hits
-  // the server — the panel just re-renders on each snapshot while it is open.
+  async function openResidentPanel(seat, name) {
+    panelSeat = seat;
+    let entry = null;
+    if (name) {
+      try {
+        const { residents } = await client.listResidents();
+        entry = residents.find((r) => r.name === name) ?? null;
+      } catch {
+        // Treat as a new assignment if the fetch fails.
+      }
+    }
+    fillResidentForm(entry);
+    openDrawer(
+      'resident-form',
+      entry === null
+        ? `常駐員を追加(席 ${seat + 1})`
+        : `${entry.configuration.displayName}(席 ${seat + 1})`
+    );
+  }
+  window.addEventListener('office:resident-seat-open', (event) =>
+    openResidentPanel(event.detail.seat, event.detail.name)
+  );
+
+  residentForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = field('resident-name').value.trim();
+    try {
+      await client.saveResident(name, {
+        configuration: {
+          displayName: field('resident-display-name').value.trim(),
+          seat: panelSeat,
+          cli: field('resident-cli').value,
+          mode: field('resident-mode').value,
+          workingDirectory: field('resident-working-directory').value.trim(),
+          trigger: collectTrigger(),
+          precheck: field('resident-precheck').value.trim() || null,
+          enabled: field('resident-enabled').checked,
+        },
+        instructions: field('resident-instructions').value,
+      });
+      closeDrawer();
+    } catch (error) {
+      showResidentError(error.message);
+    }
+  });
+
+  field('resident-run').addEventListener('click', async () => {
+    try {
+      await client.runResident(field('resident-name').value.trim());
+      closeDrawer();
+    } catch (error) {
+      showResidentError(error.message);
+    }
+  });
+
+  field('resident-unassign').addEventListener('click', async () => {
+    const name = field('resident-name').value.trim();
+    if (!window.confirm(`${name} の割り当てを解除しますか?(設定と報告はアーカイブされます)`)) return;
+    try {
+      await client.deleteResident(name);
+      closeDrawer();
+    } catch (error) {
+      showResidentError(error.message);
+    }
+  });
+
+  // --- activity view (drawer) ---------------------------------------------
+  // Shows one resident's live work: what its current session is doing right
+  // now (task, running tool, subagents, MCP calls), or its idle / next-run
+  // state when no session is live. It reads the same office snapshot the
+  // canvas draws from, so opening it never hits the server — the section just
+  // re-renders on each snapshot while it is open.
   const ACTIVITY_STATUS_LABELS = {
     working: '作業中',
     blocked: '確認待ち',
@@ -757,6 +885,7 @@
     break: '離席中',
   };
   const ACTIVITY_KIND_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
+  const activityView = document.getElementById('activity-view');
   let activityName = null;
 
   // The latest live session bound to a resident, or null when it is idle.
@@ -833,7 +962,7 @@
   function renderActivity() {
     const resident =
       (latestSnapshot?.residents ?? []).find((r) => r.name === activityName) ?? null;
-    document.getElementById('activity-panel-title').textContent = resident
+    drawerTitleElement.textContent = resident
       ? `${resident.displayName} の作業状況`
       : '作業状況';
     activityView.innerHTML = activityBody(resident, activityName ? residentSession(activityName) : null);
@@ -841,84 +970,14 @@
 
   function openActivityPanel(name) {
     activityName = name;
-    overlayElement.hidden = false;
-    activityPanel.hidden = false;
-    whiteboardPanel.hidden = true;
-    residentPanel.hidden = true;
+    openDrawer('activity-wrap', '作業状況');
     renderActivity();
   }
   window.addEventListener('office:resident-activity-open', (event) =>
     openActivityPanel(event.detail.name)
   );
 
-  async function openResidentPanel(seat, name) {
-    panelSeat = seat;
-    overlayElement.hidden = false;
-    residentPanel.hidden = false;
-    whiteboardPanel.hidden = true;
-    let entry = null;
-    if (name) {
-      try {
-        const { residents } = await client.listResidents();
-        entry = residents.find((r) => r.name === name) ?? null;
-      } catch {
-        // Treat as a new assignment if the fetch fails.
-      }
-    }
-    panelIsNew = entry === null;
-    document.getElementById('resident-panel-title').textContent = panelIsNew
-      ? `常駐員を追加(席 ${seat + 1})`
-      : `${entry.configuration.displayName}(席 ${seat + 1})`;
-    fillResidentForm(entry);
-  }
-  window.addEventListener('office:resident-seat-open', (event) =>
-    openResidentPanel(event.detail.seat, event.detail.name)
-  );
-
-  residentForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const name = field('resident-name').value.trim();
-    try {
-      await client.saveResident(name, {
-        configuration: {
-          displayName: field('resident-display-name').value.trim(),
-          seat: panelSeat,
-          cli: field('resident-cli').value,
-          mode: field('resident-mode').value,
-          workingDirectory: field('resident-working-directory').value.trim(),
-          trigger: collectTrigger(),
-          precheck: field('resident-precheck').value.trim() || null,
-          enabled: field('resident-enabled').checked,
-        },
-        instructions: field('resident-instructions').value,
-      });
-      closeOverlay();
-    } catch (error) {
-      showResidentError(error.message);
-    }
-  });
-
-  field('resident-run').addEventListener('click', async () => {
-    try {
-      await client.runResident(field('resident-name').value.trim());
-      closeOverlay();
-    } catch (error) {
-      showResidentError(error.message);
-    }
-  });
-
-  field('resident-unassign').addEventListener('click', async () => {
-    const name = field('resident-name').value.trim();
-    if (!window.confirm(`${name} の割り当てを解除しますか?(設定と報告はアーカイブされます)`)) return;
-    try {
-      await client.deleteResident(name);
-      closeOverlay();
-    } catch (error) {
-      showResidentError(error.message);
-    }
-  });
-
-  // The top bar and the inbox are always on screen, so both load on the first
+  // The strip and the inbox are always on screen, so both load on the first
   // snapshot and refresh only when their data actually changes: the board on
   // run/card activity, the inbox when a report is added or removed (using the
   // total, so marking one read never collapses an open report).
@@ -947,14 +1006,13 @@
         ]);
         return;
       }
-      renderTopbar();
-      if (!activityPanel.hidden) renderActivity();
+      if (activityName !== null && !field('activity-wrap').hidden) renderActivity();
       maybeRefreshBoard(snapshot);
       maybeRefreshInbox(snapshot);
     },
     onStatus: (status) => {
-      connectionElement.textContent =
-        status === 'connected' ? '● 接続中' : '○ 再接続待ち…';
+      connectionElement.textContent = status === 'connected' ? '接続中' : '再接続待ち…';
+      connectionElement.classList.toggle('connected', status === 'connected');
     },
   });
 })();

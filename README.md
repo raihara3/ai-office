@@ -87,16 +87,21 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 - Mini avatars beside the desk: running subagents (label = agent type);
   background subagent sessions get their own desk. Both wear a green-and-
   yellow beginner's mark (若葉マーク)
-- Top bar: a compact Kanban (heading `📋 Kanban`) with one column per
-  assignee (user first, then residents in seat order), each showing a card
-  count badge and a preview of the first few cards (`+N` when more). The
-  header has an expand button (⤢) that opens the full board overlay and an
-  add button (＋) that opens the task-creation modal; clicking the columns
-  also opens the full board overlay
-- Sidebar: a report inbox (heading `📥 インボックス`) listing whiteboard
-  reports — click a report head to expand its body / mark it read, ✕ to
-  archive. Its footer holds a single 退勤ボタン (`仕事がない人を退勤`) that
-  triggers the HR cleanup, plus the connection indicator. The server still
+- App bar: the AI OFFICE brand, view tabs (オフィス / ボード) that switch
+  between the office canvas and the in-place full board, the connection
+  status pill, a 🌙/☀️ light/dark theme toggle (the choice is remembered in
+  the browser and defaults to the OS scheme), an アバター退勤 button that
+  triggers the HR cleanup and a ＋ タスク button that opens the task-filing
+  form in the drawer
+- Kanban strip: below the app bar, one column per assignee (user first,
+  then residents in seat order) with a vendor-colored assignee chip
+  matching the pixel avatars, a card count, a live 作業中 badge while a
+  run is going, a preview of the first few cards (`ほか N 件` when more)
+  and a per-column ＋ button that files a task with that assignee
+  pre-selected
+- Sidebar: a report inbox (tray icon + heading `インボックス`) with unread / 要確認
+  counts in its header, listing whiteboard reports — click a report head to
+  expand its body inline / mark it read, ✕ to archive. The server still
   keeps the newest 50 `#general` messages and a WebAudio chime fires when
   the boss (社長) is freshly mentioned, but the chat is no longer rendered
 
@@ -133,8 +138,8 @@ configured declaratively under
 `resident.json` (display name, seat, CLI, read-only/edit mode, working
 directory, trigger, optional precheck, enabled), `INSTRUCTIONS.md` (the role
 prompt), `state.json` (run bookkeeping) and `outbox/` (reports). The files
-are the source of truth; clicking a resident desk opens an in-app panel with
-the same fields (create, edit, unassign, run now).
+are the source of truth; clicking a resident desk opens an in-app drawer
+with the same fields (create, edit, unassign, run now).
 
 Triggers are `{type: "schedule", days, times}` (fixed weekday/time slots;
 occurrences still fire up to one hour late, older ones are skipped) or
@@ -172,10 +177,11 @@ their run is in flight.
 Run results are saved as frontmatter Markdown reports in the resident's
 `outbox/`; the whiteboard on the top wall shows a badge counting unread
 reports plus cards waiting in the user column (red when any needs the
-human) and, when clicked, opens a two-tab panel — the kanban board (file
-cards, drag to reorder or reassign, open a card for its body, linked
-reports, a follow-up note form and a done button) and the report list (read
-state lives in a `whiteboard-state.json` sidecar). Each report row has a ✕
+human) and, when clicked, switches to the in-place board view (file cards,
+drag to reorder or reassign, open a card in the drawer for its body, linked
+reports, a follow-up note form and a done button); reports are listed in
+the inbox sidebar (read state lives in a `whiteboard-state.json` sidecar).
+Each report row has a ✕
 button that takes it off the board — the
 file is moved to the resident's `outbox/.archived/`, never deleted.
 Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,

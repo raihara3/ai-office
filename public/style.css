@@ -354,6 +354,19 @@ main {
   font-size: 11px;
 }
 
+.report-favorite {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #565a6e;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.report-favorite:hover { color: #f5c877; }
+
+.report.favorite .report-favorite { color: #f5c877; }
+
 .report-archive {
   flex-shrink: 0;
   border: none;
@@ -364,6 +377,11 @@ main {
 }
 
 .report-archive:hover { color: #e0707a; }
+
+.report-archive:disabled {
+  color: #33343f;
+  cursor: not-allowed;
+}
 
 .report-body {
   margin-top: 8px;

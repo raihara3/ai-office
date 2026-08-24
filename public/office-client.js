@@ -59,6 +59,14 @@
           body: JSON.stringify({ id }),
         });
       },
+      // Pins/unpins a report; the response carries the resulting favorite flag.
+      async toggleReportFavorite(id) {
+        return requestJson('/api/whiteboard/favorite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+      },
       // Takes a report off the board (the file is archived, not deleted).
       async archiveReport(id) {
         return requestJson('/api/whiteboard/archive', {

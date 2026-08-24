@@ -287,6 +287,12 @@ export function createResidents({
     return changed;
   }
 
+  function toggleReportFavorite(id) {
+    const favorite = whiteboard.toggleFavorite(id);
+    if (favorite !== null) state.refresh();
+    return favorite;
+  }
+
   function archiveReport(id) {
     const changed = whiteboard.archiveReport(id);
     if (changed) state.refresh();
@@ -364,6 +370,7 @@ export function createResidents({
     residentForFile: registry.residentForFile,
     listReports: whiteboard.listReports,
     markReportRead,
+    toggleReportFavorite,
     archiveReport,
     whiteboardCounts: whiteboard.counts,
     listBoardCards,

@@ -241,12 +241,13 @@
     reportListElement.innerHTML = reports
       .map(
         (report) => `
-          <div class="report${report.read ? '' : ' unread'}" data-id="${escapeHtml(report.id)}">
+          <div class="report${report.read ? '' : ' unread'}${report.favorite ? ' favorite' : ''}" data-id="${escapeHtml(report.id)}">
             <div class="report-head">
               <span class="report-level ${escapeHtml(report.level)}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
               <span class="report-title">${escapeHtml(report.title)}</span>
               <span class="report-time">${formatTime(report.createdAt)}</span>
-              <button type="button" class="report-archive" title="ボードから外す">✕</button>
+              <button type="button" class="report-favorite" title="お気に入り" aria-pressed="${report.favorite ? 'true' : 'false'}">${report.favorite ? '★' : '☆'}</button>
+              <button type="button" class="report-archive" title="ボードから外す"${report.favorite ? ' disabled' : ''}>✕</button>
             </div>
             <div class="report-body" hidden>${linkify(escapeHtml(report.body))}</div>
           </div>`
@@ -261,8 +262,27 @@
           client.markReportRead(reportElement.dataset.id).catch(() => {});
         }
       });
+      reportElement.querySelector('.report-favorite').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const favoriteButton = event.currentTarget;
+        try {
+          const { favorite } = await client.toggleReportFavorite(reportElement.dataset.id);
+          if (typeof favorite === 'boolean') {
+            reportElement.classList.toggle('favorite', favorite);
+            favoriteButton.textContent = favorite ? '★' : '☆';
+            favoriteButton.setAttribute('aria-pressed', favorite ? 'true' : 'false');
+            // A favorited report is pinned: its archive button is disabled.
+            reportElement.querySelector('.report-archive').disabled = favorite;
+            return;
+          }
+        } catch {
+          // Fall through: reload so the panel reflects what is really on disk.
+        }
+        loadReports();
+      });
       reportElement.querySelector('.report-archive').addEventListener('click', async (event) => {
         event.stopPropagation();
+        if (event.currentTarget.disabled) return;
         try {
           const { ok } = await client.archiveReport(reportElement.dataset.id);
           if (ok) {

@@ -117,3 +117,29 @@ test('whiteboard: archiveReport takes the report off the board but keeps the fil
   assert.equal(board.archiveReport(id), false); // already gone
   assert.equal(board.archiveReport('../etc/passwd.md'), false);
 });
+
+test('whiteboard: a favorited report is pinned and cannot be archived', () => {
+  const board = createWhiteboard({ dataDirectory: '/data', fileSystem: memoryFileSystem() });
+  const id = board.saveReport('log-analyst', {
+    title: 'レポート',
+    level: 'info',
+    body: '本文',
+    createdAt: 1_000_000,
+  });
+
+  // Favoriting flips the flag and reflects in the listing.
+  assert.equal(board.toggleFavorite(id), true);
+  assert.equal(board.listReports().find((r) => r.id === id).favorite, true);
+  // While favorited, archiving is refused and the report stays on the board.
+  assert.equal(board.archiveReport(id), false);
+  assert.equal(board.listReports().length, 1);
+
+  // Unfavoriting lets it be archived again.
+  assert.equal(board.toggleFavorite(id), false);
+  assert.equal(board.listReports().find((r) => r.id === id).favorite, false);
+  assert.equal(board.archiveReport(id), true);
+  assert.equal(board.listReports().length, 0);
+
+  // Traversal-looking ids are rejected outright.
+  assert.equal(board.toggleFavorite('../etc/passwd.md'), null);
+});

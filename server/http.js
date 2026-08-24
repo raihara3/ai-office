@@ -228,6 +228,26 @@ export function createHttpServer(core, { publicDirectory }) {
       });
       return;
     }
+    // Pinning a report favorites it, protecting it from archiving. The
+    // response carries the resulting favorite flag so the panel can reflect it.
+    if (urlPath === '/api/whiteboard/favorite') {
+      if (request.method !== 'POST') {
+        response.writeHead(405).end();
+        return;
+      }
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      readJsonBody(request, 4 * 1024, (parsed) => {
+        if (parsed === null || typeof parsed.id !== 'string') {
+          sendJson(response, 400, { error: 'invalid JSON body' });
+          return;
+        }
+        sendJson(response, 200, { favorite: core.toggleReportFavorite(parsed.id) });
+      });
+      return;
+    }
 
     // The kanban board: task cards, drag ordering, archiving and follow-up
     // notes.

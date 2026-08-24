@@ -99,6 +99,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     runResident: residents.runNow,
     listReports: residents.listReports,
     markReportRead: residents.markReportRead,
+    toggleReportFavorite: residents.toggleReportFavorite,
     archiveReport: residents.archiveReport,
     listBoard: residents.listBoardCards,
     createBoardCard: residents.createBoardCard,

@@ -1,9 +1,9 @@
 // The whiteboard: reports from resident team members to the human. Each
 // report is a Markdown file with a small frontmatter block, stored in the
 // resident's own outbox/ directory so a plain text editor sees the same thing
-// the in-app panel does. Read state lives in a sidecar JSON next to the
-// residents directory — the report files themselves are never moved or
-// mutated by reading them.
+// the in-app panel does. Read and favorite (pinned) state live in a sidecar
+// JSON next to the residents directory — the report files themselves are never
+// moved or mutated by reading or favoriting them.
 //
 // Frontmatter parsing/formatting are exported as pure functions; the store
 // takes the filesystem as an injectable dependency for tests.
@@ -53,20 +53,26 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
   const COUNTS_CACHE_TTL_MS = 5_000;
   let countsCache = null;
 
-  function readIds() {
+  // The sidecar tracks two per-report flags: which reports are read and which
+  // are favorited (pinned). Both are read and written together so persisting
+  // one never clobbers the other.
+  function readState() {
     try {
       const parsed = JSON.parse(fileSystem.readFileSync(stateFilePath, 'utf8'));
-      return new Set(Array.isArray(parsed.readIds) ? parsed.readIds : []);
+      return {
+        readIds: new Set(Array.isArray(parsed.readIds) ? parsed.readIds : []),
+        favoriteIds: new Set(Array.isArray(parsed.favoriteIds) ? parsed.favoriteIds : []),
+      };
     } catch {
-      return new Set();
+      return { readIds: new Set(), favoriteIds: new Set() };
     }
   }
 
-  function persistReadIds(ids) {
+  function persistState({ readIds, favoriteIds }) {
     fileSystem.mkdirSync(dataDirectory, { recursive: true });
     fileSystem.writeFileSync(
       stateFilePath,
-      `${JSON.stringify({ readIds: [...ids] }, null, 2)}\n`
+      `${JSON.stringify({ readIds: [...readIds], favoriteIds: [...favoriteIds] }, null, 2)}\n`
     );
   }
 
@@ -92,7 +98,7 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
     } catch {
       return [];
     }
-    const read = readIds();
+    const { readIds: read, favoriteIds: favorites } = readState();
     const reports = [];
     for (const residentName of residentNames) {
       const outboxDirectory = path.join(residentsDirectory, residentName, 'outbox');
@@ -120,6 +126,7 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
           task: attributes.task ?? null,
           createdAt: Number(attributes.createdAt) || 0,
           read: read.has(id),
+          favorite: favorites.has(id),
           body: body.trim(),
         });
       }
@@ -130,12 +137,25 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
 
   function markRead(id) {
     if (!REPORT_ID_PATTERN.test(id)) return false;
-    const ids = readIds();
-    if (ids.has(id)) return true;
-    ids.add(id);
-    persistReadIds(ids);
+    const state = readState();
+    if (state.readIds.has(id)) return true;
+    state.readIds.add(id);
+    persistState(state);
     countsCache = null;
     return true;
+  }
+
+  // Pin/unpin a report. A favorited report is protected from archiving so a
+  // ✕ mis-click cannot take it off the board. Returns the resulting favorite
+  // flag, or null when the id is malformed.
+  function toggleFavorite(id) {
+    if (!REPORT_ID_PATTERN.test(id)) return null;
+    const state = readState();
+    const favorite = !state.favoriteIds.has(id);
+    if (favorite) state.favoriteIds.add(id);
+    else state.favoriteIds.delete(id);
+    persistState(state);
+    return favorite;
   }
 
   // Taking a report off the board moves the file into the outbox's .archived/
@@ -143,6 +163,9 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
   // a mis-click never loses a report. The read sidecar entry goes with it.
   function archiveReport(id) {
     if (!REPORT_ID_PATTERN.test(id)) return false;
+    // Favorited reports are pinned to the board and cannot be archived.
+    const state = readState();
+    if (state.favoriteIds.has(id)) return false;
     const [residentName, fileName] = id.split('/');
     const outboxDirectory = path.join(residentsDirectory, residentName, 'outbox');
     const archiveDirectory = path.join(outboxDirectory, '.archived');
@@ -160,8 +183,7 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
     }
     countsCache = null;
     try {
-      const ids = readIds();
-      if (ids.delete(id)) persistReadIds(ids);
+      if (state.readIds.delete(id)) persistState(state);
     } catch {
       // The report is already off the board; a stale read id is harmless.
     }
@@ -184,5 +206,5 @@ export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => D
     return value;
   }
 
-  return { saveReport, listReports, markRead, archiveReport, counts };
+  return { saveReport, listReports, markRead, toggleFavorite, archiveReport, counts };
 }

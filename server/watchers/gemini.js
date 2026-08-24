@@ -60,11 +60,15 @@ function collectFunctionCalls(value, found) {
     return;
   }
   if (value === null || typeof value !== 'object') return;
+  // Stop at a matched call: descending further would count the same call
+  // again via the bare name+args branch below.
   if (value.functionCall && typeof value.functionCall.name === 'string') {
     found.push(value.functionCall);
+    return;
   }
   if (typeof value.name === 'string' && (value.args !== undefined || value.arguments !== undefined)) {
     found.push(value);
+    return;
   }
   for (const nested of Object.values(value)) collectFunctionCalls(nested, found);
 }

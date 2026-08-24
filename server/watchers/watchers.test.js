@@ -310,6 +310,23 @@ test('gemini', async (t) => {
     assert.equal(calls[0].observation.activityKind, 'inspect');
   });
 
+  await t.test('functionCall with args is reported once, not twice', () => {
+    const { report, calls } = makeReport();
+    geminiHandleLine(
+      {
+        $set: {
+          messages: [
+            { type: 'gemini', content: [{ functionCall: { name: 'read_file', args: { path: 'a' } } }] },
+          ],
+        },
+      },
+      geminiPath,
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].observation.activity, 'read_file');
+  });
+
   await t.test('toolCalls array (CLI 0.54 format) -> activity per call', () => {
     const { report, calls } = makeReport();
     geminiHandleLine(

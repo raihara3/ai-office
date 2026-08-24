@@ -189,9 +189,11 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   開始/完了イベント、ユーザーメッセージ、`function_call` のツールアクション
   (MCP ツールを含む)。
 - **`gemini.js`** — Gemini チャットログ
-  (`~/.gemini/tmp/<project>/chats/session-*.jsonl`): メタデータと `$set` 状態
-  パッチ。メッセージ形状はバージョン間で変わるため、JSON を汎用的に走査する
-  ベストエフォート実装です。
+  (`~/.gemini/tmp/<project>/chats/session-*.jsonl`、サブエージェントは 1 階層
+  深い `chats/<id>/<uuid>.jsonl`): メタデータと `$set` 状態パッチ、CLI 0.54
+  以降はメッセージ直接追記(ツール呼び出しは `content` ではなくメッセージ
+  直下の `toolCalls` 配列)。メッセージ形状はバージョン間で変わるため、JSON
+  を汎用的に走査するベストエフォート実装です。
 
 ### `residents/`
 

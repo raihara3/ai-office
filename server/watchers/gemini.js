@@ -1,7 +1,9 @@
-// Watches Gemini CLI chat logs (~/.gemini/tmp/<project>/chats/session-*.jsonl).
+// Watches Gemini CLI chat logs (~/.gemini/tmp/<project>/chats/session-*.jsonl,
+// plus subagent transcripts one level deeper at chats/<id>/<uuid>.jsonl).
 // The first line is session metadata; later lines are state patches such as
-// {"$set": {"messages": [...]}}. Message shapes vary between versions, so we
-// walk the JSON generically looking for message-like objects.
+// {"$set": {"messages": [...]}} or, since CLI 0.54, bare message objects
+// appended directly. Message shapes vary between versions, so we walk the
+// JSON generically looking for message-like objects.
 //
 // `handleLine` takes an injected `report` (the state's reportEvent) so it can
 // be unit-tested with a stub; `startGeminiWatcher` wires it to the real store.
@@ -80,10 +82,15 @@ export function handleLine(entry, filePath, report) {
   if (messages.length === 0) return;
 
   const project = projectFromPath(filePath);
+  // Subagent transcripts live one directory deeper than the main session
+  // (chats/<id>/<uuid>.jsonl); their metadata line says kind "subagent", but
+  // the path is the only signal available on every line.
+  const isSubagentFile = path.basename(path.dirname(filePath)) !== 'chats';
 
   for (const message of messages) {
     const timestamp = message.timestamp ? Date.parse(message.timestamp) : Date.now();
     const observation = { timestamp, project };
+    if (isSubagentFile) observation.isSubagent = true;
     const text = extractText(message.content);
 
     if (message.type === 'choice') {
@@ -106,6 +113,13 @@ export function handleLine(entry, filePath, report) {
     // message.type === 'gemini'
     const functionCalls = [];
     collectFunctionCalls(message.content, functionCalls);
+    // Since CLI 0.54 tool calls no longer appear inside `content` (then an
+    // empty string) but in a top-level `toolCalls` array on the message.
+    if (Array.isArray(message.toolCalls)) {
+      for (const call of message.toolCalls) {
+        if (call && typeof call.name === 'string') functionCalls.push(call);
+      }
+    }
     if (functionCalls.length > 0) {
       for (const call of functionCalls) {
         if (!NATIVE_TOOL_NAMES.has(call.name) && call.name.includes('__')) {
@@ -135,7 +149,7 @@ export function handleLine(entry, filePath, report) {
 export function startGeminiWatcher({ report }) {
   watchJsonl({
     rootDirectory: path.join(os.homedir(), '.gemini', 'tmp'),
-    filePattern: /^session-.*\.jsonl$/,
+    filePattern: /^(?:session-.*|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/,
     maxDepth: 3,
     onLine: (entry, { filePath }) => handleLine(entry, filePath, report),
   });

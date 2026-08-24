@@ -310,6 +310,45 @@ test('gemini', async (t) => {
     assert.equal(calls[0].observation.activityKind, 'inspect');
   });
 
+  await t.test('toolCalls array (CLI 0.54 format) -> activity per call', () => {
+    const { report, calls } = makeReport();
+    geminiHandleLine(
+      {
+        id: '1',
+        type: 'gemini',
+        content: '',
+        thoughts: [],
+        toolCalls: [
+          { id: 'list_directory__call_1', name: 'list_directory', args: {}, status: 'success' },
+          { id: 'replace__call_2', name: 'replace', args: {}, status: 'success' },
+        ],
+      },
+      geminiPath,
+      report,
+    );
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].observation.activity, 'list_directory');
+    assert.equal(calls[0].observation.activityKind, 'inspect');
+    assert.equal(calls[1].observation.activity, 'replace');
+    assert.equal(calls[1].observation.activityKind, 'work');
+  });
+
+  await t.test('subagent transcript under chats/<id>/ -> isSubagent', () => {
+    const subagentPath = [
+      '/home/user/.gemini/tmp/myproject', 'chats', 'group-1', 'a1b2c3d4.jsonl',
+    ].join(path.sep);
+    const { report, calls } = makeReport();
+    geminiHandleLine(
+      { type: 'gemini', content: 'done answering', thoughts: [] },
+      subagentPath,
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].observation.isSubagent, true);
+    assert.equal(calls[0].observation.project, 'myproject');
+    assert.equal(calls[0].observation.turnComplete, true);
+  });
+
   await t.test('choice message -> waitingForUser', () => {
     const { report, calls } = makeReport();
     geminiHandleLine(

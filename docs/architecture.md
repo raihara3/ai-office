@@ -227,7 +227,7 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   生むセッションログを常駐員に紐付けて永続化し、その席をフリーアドレスの
   グリッドではなく常駐チームの島に固定します。
 - **`runner.js`** — ヘッドレス CLI 実行(`claude -p --session-id <uuid>`、
-  `codex exec --sandbox …`、`gemini -p`)。read-only / edit のモードを各 CLI の
+  `codex exec --sandbox …`、`gemini --skip-trust -p`)。read-only / edit のモードを各 CLI の
   権限フラグにマップし、30 分のタイムアウトと常駐員ごとの同時 1 実行を
   強制します。コマンド構築と出力パースは純粋関数として export されます。
 - **`whiteboard.js`** — 常駐員から人間への報告。frontmatter 付き Markdown を

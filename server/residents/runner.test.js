@@ -43,14 +43,14 @@ test('buildHeadlessCommand: codex maps mode to the sandbox flag', () => {
   );
 });
 
-test('buildHeadlessCommand: gemini stays read-only unless edit mode is chosen', () => {
+test('buildHeadlessCommand: gemini trusts the workspace and maps mode to the approval flag', () => {
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'gemini', mode: 'read-only', prompt: 'p', sessionId: 's' }).args,
-    ['-p', 'p']
+    ['--approval-mode', 'plan', '--skip-trust', '-p', 'p']
   );
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'gemini', mode: 'edit', prompt: 'p', sessionId: 's' }).args,
-    ['--approval-mode', 'yolo', '-p', 'p']
+    ['--approval-mode', 'yolo', '--skip-trust', '-p', 'p']
   );
 });
 

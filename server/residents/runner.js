@@ -47,8 +47,15 @@ export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
     const sandbox = mode === 'edit' ? 'workspace-write' : 'read-only';
     return { command: 'codex', args: ['exec', '--sandbox', sandbox, prompt] };
   }
-  const args = mode === 'edit' ? ['--approval-mode', 'yolo', '-p', prompt] : ['-p', prompt];
-  return { command: 'gemini', args };
+  // Gemini refuses to start headless outside a trusted folder, and a headless
+  // run cannot answer the interactive trust prompt — trust the workspace for
+  // the session, mirroring the Claude bypassPermissions rationale above.
+  // Skipping trust also re-enables workspace settings (e.g. MCP servers), so
+  // read-only mode pins the CLI's own read-only approval mode as the guard.
+  return {
+    command: 'gemini',
+    args: ['--approval-mode', mode === 'edit' ? 'yolo' : 'plan', '--skip-trust', '-p', prompt],
+  };
 }
 
 // The agent's final message from captured stdout. Claude's JSON output format
@@ -177,10 +184,27 @@ export function createRunner({
       sessionId,
     });
 
+    // A missing working directory would surface as a misleading
+    // `spawn <cli> ENOENT` from Node; name the real problem instead.
+    const workingDirectory = expandHomeDirectory(resident.workingDirectory);
+    let workingDirectoryExists = false;
+    try {
+      workingDirectoryExists = fs.statSync(workingDirectory).isDirectory();
+    } catch {
+      // Missing path; reported below.
+    }
+    if (!workingDirectoryExists) {
+      onFinished({
+        outcome: 'error',
+        resultText: `作業ディレクトリが存在しません: ${resident.workingDirectory}`,
+      });
+      return true;
+    }
+
     let child;
     try {
       child = spawnProcess(command, args, {
-        cwd: expandHomeDirectory(resident.workingDirectory),
+        cwd: workingDirectory,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {

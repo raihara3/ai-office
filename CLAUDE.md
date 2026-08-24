@@ -41,7 +41,12 @@ uses the Node.js standard library only — no runtime dependencies.
   team stays quiet instead of filing a meaningless report every interval.
 - Claude residents in `edit` mode run with `--permission-mode
   bypassPermissions` because headless runs cannot answer approval prompts;
-  `read-only` mode is restricted to an inspection-tool allowlist.
+  `read-only` mode is restricted to an inspection-tool allowlist. Gemini
+  residents always run with `--skip-trust` for the same reason — without it
+  Gemini refuses to start headless outside a trusted folder. Skipping trust
+  re-enables workspace settings (e.g. `.gemini/settings.json` MCP servers),
+  so `read-only` mode also pins `--approval-mode plan`; still, point gemini
+  residents only at directories whose contents you trust.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
   on its first line flags it for a human.
 - Task queue: the kanban board (`board.js`; cards under

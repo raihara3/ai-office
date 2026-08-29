@@ -1,209 +1,101 @@
-// The whiteboard: reports from resident team members to the human. Each
-// report is a Markdown file with a small frontmatter block, stored in the
-// resident's own outbox/ directory so a plain text editor sees the same thing
-// the in-app panel does. Read and favorite (pinned) state live in a sidecar
-// JSON next to the residents directory — the report files themselves are never
-// moved or mutated by reading or favoriting them.
-//
-// Frontmatter parsing/formatting are exported as pure functions; the store
-// takes the filesystem as an injectable dependency for tests.
+// The whiteboard: reports from resident team members to the human, stored in
+// the reports table of office.db. Read and favorite (pinned) are plain
+// columns; archiving sets archived_at instead of deleting, so a mis-click
+// never loses a report and archived rows stay queryable. The store takes the
+// database handle as an injectable dependency — tests open ':memory:'.
 
-import fs from 'node:fs';
-import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const MAX_REPORTS = 100;
-const REPORT_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\/[A-Za-z0-9._-]+\.md$/;
 
-// A minimal "key: value" frontmatter block — no YAML nesting, by design.
-export function parseFrontmatter(text) {
-  const match = /^---\n([\s\S]*?)\n---\n?/.exec(text);
-  if (!match) return { attributes: {}, body: text };
-  const attributes = {};
-  for (const line of match[1].split('\n')) {
-    const separator = line.indexOf(':');
-    if (separator === -1) continue;
-    attributes[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-  }
-  return { attributes, body: text.slice(match[0].length) };
-}
+export function createWhiteboard({ database, now = () => Date.now() }) {
+  const statements = {
+    insert: database.prepare(
+      `INSERT INTO reports (id, resident, title, level, task, body, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ),
+    listActive: database.prepare(
+      `SELECT id, resident, title, level, task, body, created_at, "read", favorite
+       FROM reports WHERE archived_at IS NULL
+       ORDER BY created_at DESC, id LIMIT ${MAX_REPORTS}`
+    ),
+    markRead: database.prepare(
+      'UPDATE reports SET "read" = 1 WHERE id = ? AND archived_at IS NULL'
+    ),
+    getFavorite: database.prepare(
+      'SELECT favorite FROM reports WHERE id = ? AND archived_at IS NULL'
+    ),
+    setFavorite: database.prepare('UPDATE reports SET favorite = ? WHERE id = ?'),
+    // Favorited reports are pinned to the board and cannot be archived — the
+    // WHERE clause simply refuses them. Archiving also clears the read flag,
+    // like the sidecar entry used to go with the archived file.
+    archive: database.prepare(
+      `UPDATE reports SET archived_at = ?, "read" = 0
+       WHERE id = ? AND archived_at IS NULL AND favorite = 0`
+    ),
+    // Counted over the same capped window the listing shows, so the badge
+    // never reports unread rows the panel cannot display.
+    counts: database.prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM("read" = 0), 0) AS unread,
+              COALESCE(SUM("read" = 0 AND level = 'review-needed'), 0) AS reviewNeeded
+       FROM (SELECT "read", level FROM reports WHERE archived_at IS NULL
+             ORDER BY created_at DESC, id LIMIT ${MAX_REPORTS})`
+    ),
+  };
 
-// `task` optionally links the report to the kanban card whose run produced
-// it, so the card detail view can pull the report in.
-export function formatReport({ title, level, resident, createdAt, task }, body) {
-  return [
-    '---',
-    `title: ${title}`,
-    `level: ${level}`,
-    `resident: ${resident}`,
-    ...(task ? [`task: ${task}`] : []),
-    `createdAt: ${createdAt}`,
-    '---',
-    '',
-    body,
-    '',
-  ].join('\n');
-}
-
-export function createWhiteboard({ dataDirectory, fileSystem = fs, now = () => Date.now() }) {
-  const residentsDirectory = path.join(dataDirectory, 'residents');
-  const stateFilePath = path.join(dataDirectory, 'whiteboard-state.json');
-  // counts() runs on every snapshot broadcast; a short cache keeps the badge
-  // from re-reading every report file at the refresh rate, while still
-  // picking up reports written directly to an outbox within a few seconds.
-  const COUNTS_CACHE_TTL_MS = 5_000;
-  let countsCache = null;
-
-  // The sidecar tracks two per-report flags: which reports are read and which
-  // are favorited (pinned). Both are read and written together so persisting
-  // one never clobbers the other.
-  function readState() {
-    try {
-      const parsed = JSON.parse(fileSystem.readFileSync(stateFilePath, 'utf8'));
-      return {
-        readIds: new Set(Array.isArray(parsed.readIds) ? parsed.readIds : []),
-        favoriteIds: new Set(Array.isArray(parsed.favoriteIds) ? parsed.favoriteIds : []),
-      };
-    } catch {
-      return { readIds: new Set(), favoriteIds: new Set() };
-    }
-  }
-
-  function persistState({ readIds, favoriteIds }) {
-    fileSystem.mkdirSync(dataDirectory, { recursive: true });
-    fileSystem.writeFileSync(
-      stateFilePath,
-      `${JSON.stringify({ readIds: [...readIds], favoriteIds: [...favoriteIds] }, null, 2)}\n`
-    );
-  }
-
+  // `task` optionally links the report to the kanban card whose run produced
+  // it, so the card detail view can pull the report in.
   function saveReport(residentName, { title, level, body, createdAt, task = null }) {
-    const outboxDirectory = path.join(residentsDirectory, residentName, 'outbox');
-    fileSystem.mkdirSync(outboxDirectory, { recursive: true });
-    const fileName = `${new Date(createdAt).toISOString().replaceAll(':', '-').slice(0, 19)}.md`;
-    fileSystem.writeFileSync(
-      path.join(outboxDirectory, fileName),
-      formatReport({ title, level, resident: residentName, createdAt, task }, body)
+    const id = randomUUID();
+    statements.insert.run(
+      id,
+      residentName,
+      title,
+      level === 'review-needed' ? 'review-needed' : 'info',
+      task,
+      String(body ?? '').trim(),
+      createdAt
     );
-    countsCache = null;
-    return `${residentName}/${fileName}`;
+    return id;
   }
 
   function listReports() {
-    let residentNames;
-    try {
-      residentNames = fileSystem
-        .readdirSync(residentsDirectory, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map((entry) => entry.name);
-    } catch {
-      return [];
-    }
-    const { readIds: read, favoriteIds: favorites } = readState();
-    const reports = [];
-    for (const residentName of residentNames) {
-      const outboxDirectory = path.join(residentsDirectory, residentName, 'outbox');
-      let fileNames;
-      try {
-        fileNames = fileSystem.readdirSync(outboxDirectory).filter((name) => name.endsWith('.md'));
-      } catch {
-        continue;
-      }
-      for (const fileName of fileNames) {
-        const filePath = path.join(outboxDirectory, fileName);
-        let text;
-        try {
-          text = fileSystem.readFileSync(filePath, 'utf8');
-        } catch {
-          continue;
-        }
-        const { attributes, body } = parseFrontmatter(text);
-        const id = `${residentName}/${fileName}`;
-        reports.push({
-          id,
-          resident: residentName,
-          title: attributes.title ?? fileName,
-          level: attributes.level === 'review-needed' ? 'review-needed' : 'info',
-          task: attributes.task ?? null,
-          createdAt: Number(attributes.createdAt) || 0,
-          read: read.has(id),
-          favorite: favorites.has(id),
-          body: body.trim(),
-        });
-      }
-    }
-    reports.sort((a, b) => b.createdAt - a.createdAt);
-    return reports.slice(0, MAX_REPORTS);
+    return statements.listActive.all().map((row) => ({
+      id: row.id,
+      resident: row.resident,
+      title: row.title,
+      level: row.level,
+      task: row.task,
+      createdAt: row.created_at,
+      read: row.read === 1,
+      favorite: row.favorite === 1,
+      body: row.body,
+    }));
   }
 
   function markRead(id) {
-    if (!REPORT_ID_PATTERN.test(id)) return false;
-    const state = readState();
-    if (state.readIds.has(id)) return true;
-    state.readIds.add(id);
-    persistState(state);
-    countsCache = null;
-    return true;
+    return statements.markRead.run(id).changes > 0;
   }
 
-  // Pin/unpin a report. A favorited report is protected from archiving so a
-  // ✕ mis-click cannot take it off the board. Returns the resulting favorite
-  // flag, or null when the id is malformed.
+  // Pin/unpin a report. Returns the resulting favorite flag, or null when
+  // there is no such report.
   function toggleFavorite(id) {
-    if (!REPORT_ID_PATTERN.test(id)) return null;
-    const state = readState();
-    const favorite = !state.favoriteIds.has(id);
-    if (favorite) state.favoriteIds.add(id);
-    else state.favoriteIds.delete(id);
-    persistState(state);
+    const row = statements.getFavorite.get(id);
+    if (row === undefined) return null;
+    const favorite = row.favorite === 0;
+    statements.setFavorite.run(favorite ? 1 : 0, id);
     return favorite;
   }
 
-  // Taking a report off the board moves the file into the outbox's .archived/
-  // subdirectory (listing only scans outbox/*.md) rather than deleting it, so
-  // a mis-click never loses a report. The read sidecar entry goes with it.
   function archiveReport(id) {
-    if (!REPORT_ID_PATTERN.test(id)) return false;
-    // Favorited reports are pinned to the board and cannot be archived.
-    const state = readState();
-    if (state.favoriteIds.has(id)) return false;
-    const [residentName, fileName] = id.split('/');
-    const outboxDirectory = path.join(residentsDirectory, residentName, 'outbox');
-    const archiveDirectory = path.join(outboxDirectory, '.archived');
-    try {
-      fileSystem.mkdirSync(archiveDirectory, { recursive: true });
-      // A same-named file already archived earlier (report restored and
-      // archived again) must not be overwritten — suffix the new one.
-      let target = path.join(archiveDirectory, fileName);
-      if (fileSystem.existsSync(target)) {
-        target = path.join(archiveDirectory, `${fileName.slice(0, -'.md'.length)}-${now()}.md`);
-      }
-      fileSystem.renameSync(path.join(outboxDirectory, fileName), target);
-    } catch {
-      return false;
-    }
-    countsCache = null;
-    try {
-      if (state.readIds.delete(id)) persistState(state);
-    } catch {
-      // The report is already off the board; a stale read id is harmless.
-    }
-    return true;
+    return statements.archive.run(now(), id).changes > 0;
   }
 
   // Unread totals for the canvas badge; pushed with every snapshot.
   function counts() {
-    if (countsCache !== null && now() - countsCache.at < COUNTS_CACHE_TTL_MS) {
-      return countsCache.value;
-    }
-    const reports = listReports();
-    const unreadReports = reports.filter((report) => !report.read);
-    const value = {
-      total: reports.length,
-      unread: unreadReports.length,
-      reviewNeeded: unreadReports.filter((report) => report.level === 'review-needed').length,
-    };
-    countsCache = { at: now(), value };
-    return value;
+    const row = statements.counts.get();
+    return { total: row.total, unread: row.unread, reviewNeeded: row.reviewNeeded };
   }
 
   return { saveReport, listReports, markRead, toggleFavorite, archiveReport, counts };

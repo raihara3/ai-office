@@ -1,71 +1,19 @@
-// Unit tests for the kanban card store (board.js): frontmatter round-trip,
-// column ordering via the sidecar, moving/archiving cards and follow-up
-// notes, over an in-memory filesystem stub.
+// Unit tests for the kanban card store (board.js): column ordering, moving
+// and archiving cards and follow-up notes, over an in-memory SQLite database.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
 
-import { createBoard, formatCard } from './board.js';
-import { parseFrontmatter } from './whiteboard.js';
-
-test('parseFrontmatter round-trips what formatCard writes', () => {
-  const text = formatCard(
-    { title: 'READMEを更新', assignee: 'task-runner', origin: 'user', createdAt: 1234, updatedAt: 5678 },
-    '手順は https://example.com を参照'
-  );
-  const { attributes, body } = parseFrontmatter(text);
-  assert.equal(attributes.title, 'READMEを更新');
-  assert.equal(attributes.assignee, 'task-runner');
-  assert.equal(attributes.origin, 'user');
-  assert.equal(attributes.createdAt, '1234');
-  assert.equal(attributes.updatedAt, '5678');
-  assert.equal(body.trim(), '手順は https://example.com を参照');
-});
-
-function memoryFileSystem() {
-  const files = new Map();
-  return {
-    files,
-    readFileSync(filePath) {
-      if (!files.has(filePath)) throw new Error(`ENOENT: ${filePath}`);
-      return files.get(filePath);
-    },
-    writeFileSync(filePath, content) {
-      files.set(filePath, String(content));
-    },
-    mkdirSync() {},
-    existsSync(filePath) {
-      return files.has(filePath);
-    },
-    renameSync(from, to) {
-      if (!files.has(from)) throw new Error(`ENOENT: ${from}`);
-      files.set(to, files.get(from));
-      files.delete(from);
-    },
-    readdirSync(directory) {
-      const names = new Set();
-      for (const filePath of files.keys()) {
-        if (filePath.startsWith(directory + path.sep)) {
-          names.add(filePath.slice(directory.length + 1).split(path.sep)[0]);
-        }
-      }
-      if (names.size === 0) throw new Error(`ENOENT: ${directory}`);
-      return [...names];
-    },
-  };
-}
+import { openDatabase } from './database.js';
+import { createBoard } from './board.js';
 
 function boardWith(nowValue = 10_000_000) {
-  return createBoard({
-    dataDirectory: '/data',
-    fileSystem: memoryFileSystem(),
-    now: () => nowValue,
-  });
+  const database = openDatabase({ location: ':memory:' });
+  return { database, board: createBoard({ database, now: () => nowValue }) };
 }
 
 test('board: create → list keeps filing order, new cards at the bottom', () => {
-  const board = boardWith();
+  const { board } = boardWith();
   const first = board.createCard({
     title: 'タスク1',
     body: '本文1',
@@ -96,7 +44,7 @@ test('board: create → list keeps filing order, new cards at the bottom', () =>
 });
 
 test('board: same-second createdAt yields distinct card ids', () => {
-  const board = boardWith();
+  const { board } = boardWith();
   const payload = { title: 'A', body: '', assignee: 'user', origin: 'user', createdAt: 1_000_000 };
   const first = board.createCard(payload);
   const second = board.createCard(payload);
@@ -106,11 +54,7 @@ test('board: same-second createdAt yields distinct card ids', () => {
 
 test('board: moveCard reorders within a column and reassigns across columns', () => {
   const nowValue = 9_000_000;
-  const board = createBoard({
-    dataDirectory: '/data',
-    fileSystem: memoryFileSystem(),
-    now: () => nowValue,
-  });
+  const { board } = boardWith(nowValue);
   const first = board.createCard({
     title: '1',
     body: '',
@@ -137,13 +81,11 @@ test('board: moveCard reorders within a column and reassigns across columns', ()
   assert.equal(moved.updatedAt, nowValue);
   assert.equal(board.topCardFor('task-runner').id, first);
 
-  assert.equal(board.moveCard('../etc/passwd.md', { assignee: 'user' }), false);
-  assert.equal(board.moveCard('missing.md', { assignee: 'user' }), false);
+  assert.equal(board.moveCard('no-such-card', { assignee: 'user' }), false);
 });
 
-test('board: archiveCard takes the card off the board but keeps the file', () => {
-  const fileSystem = memoryFileSystem();
-  const board = createBoard({ dataDirectory: '/data', fileSystem, now: () => 5_000_000 });
+test('board: archiveCard takes the card off the board but keeps the row', () => {
+  const { database, board } = boardWith(5_000_000);
   const id = board.createCard({
     title: 'タスク',
     body: '本文',
@@ -156,15 +98,15 @@ test('board: archiveCard takes the card off the board but keeps the file', () =>
   assert.equal(board.archiveCard(id), true);
   assert.equal(board.listCards().length, 0);
   assert.deepEqual(board.counts(), { total: 0, user: 0 });
-  assert.ok([...fileSystem.files.keys()].some((filePath) => filePath.includes('/.archived/')));
-  assert.ok(!fileSystem.files.get('/data/board-state.json').includes(id));
+  // The row still exists, flagged archived.
+  assert.equal(database.prepare('SELECT archived_at FROM cards WHERE id = ?').get(id).archived_at, 5_000_000);
 
   assert.equal(board.archiveCard(id), false); // already gone
-  assert.equal(board.archiveCard('../etc/passwd.md'), false);
+  assert.equal(board.archiveCard('no-such-card'), false);
 });
 
 test('board: appendNote accumulates 追記 sections in the body', () => {
-  const board = boardWith();
+  const { board } = boardWith();
   const id = board.createCard({
     title: 'タスク',
     body: '最初の依頼',
@@ -180,5 +122,5 @@ test('board: appendNote accumulates 追記 sections in the body', () => {
   assert.ok(card.body.endsWith('ここを直してほしい'));
 
   assert.equal(board.appendNote(id, '   '), false);
-  assert.equal(board.appendNote('missing.md', 'x'), false);
+  assert.equal(board.appendNote('no-such-card', 'x'), false);
 });

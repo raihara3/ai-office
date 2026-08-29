@@ -9,6 +9,8 @@ import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createBoard, USER_COLUMN } from './board.js';
+import { openDatabase } from './database.js';
+import { importLegacyData } from './legacy-import.js';
 import { createManifestStore } from './manifest.js';
 import { createSessionRegistry } from './registry.js';
 import { createRunner, expandHomeDirectory, splitReportLevel } from './runner.js';
@@ -82,10 +84,20 @@ export function createResidents({
     filePath: path.join(dataDirectory, 'session-registry.json'),
     now,
   }),
-  whiteboard = createWhiteboard({ dataDirectory }),
-  board = createBoard({ dataDirectory, now }),
+  whiteboard = null,
+  board = null,
   runner = createRunner({ registry, now }),
 } = {}) {
+  // The database only opens when a store actually needs it, so tests that
+  // inject both stubs never touch the disk. The one-time legacy Markdown
+  // import runs right after the first open.
+  let database = null;
+  if (whiteboard === null || board === null) {
+    database = openDatabase({ location: path.join(dataDirectory, 'office.db') });
+    importLegacyData(database, { dataDirectory, now });
+    whiteboard ??= createWhiteboard({ database, now });
+    board ??= createBoard({ database, now });
+  }
   let tickTimer = null;
   // Cards currently being worked, by resident name. In-memory on purpose:
   // if the server dies mid-run the card simply stays in its column and the
@@ -233,6 +245,16 @@ export function createResidents({
     if (tickTimer !== null) {
       clearInterval(tickTimer);
       tickTimer = null;
+    }
+    // Closing checkpoints the WAL; only a database this module opened is ours
+    // to close.
+    if (database !== null) {
+      try {
+        database.close();
+      } catch {
+        // Already closed — stop() must stay idempotent.
+      }
+      database = null;
     }
   }
 

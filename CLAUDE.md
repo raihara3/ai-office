@@ -7,7 +7,9 @@ working in this repository.
 
 A Gather-like virtual office that visualizes local AI coding agent sessions
 (Claude Code / Codex CLI / Gemini CLI) as pixel-art coworkers. The server
-uses the Node.js standard library only — no runtime dependencies.
+has no npm runtime dependencies; persistence is SQLite via the built-in
+`node:sqlite` (npm scripts pass `--experimental-sqlite` for Node 22,
+Electron's Node 24 needs no flag).
 
 ## Commands
 
@@ -22,8 +24,9 @@ uses the Node.js standard library only — no runtime dependencies.
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `whiteboard.js` (reports), `board.js` (kanban task cards)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `whiteboard.js` (reports), `board.js` (kanban task cards), `legacy-import.js` (one-time Markdown-store import)
 - `docs/architecture.md` — full architecture notes
+- `docs/database.md` — office.db schema (ER diagram, indexes, conventions)
 
 ## Resident team facts (asked repeatedly — check here first)
 
@@ -53,8 +56,11 @@ uses the Node.js standard library only — no runtime dependencies.
   (`read-only`/`workspace-write`) still bounds what the run may touch.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
   on its first line flags it for a human.
-- Task queue: the kanban board (`board.js`; cards under
-  `<dataDir>/board/*.md`, columns = assignee). An idle resident whose
+- Reports and cards live in `<dataDir>/office.db` (`reports`/`cards` tables,
+  opened by `database.js`). Archiving sets `archived_at` — rows are never
+  deleted, and listings filter to active rows.
+- Task queue: the kanban board (`board.js`; rows in the `cards` table,
+  columns = assignee). An idle resident whose
   trigger is not due works the **top card** of its column (precheck is
   skipped — the card is the trigger). An ok run auto-archives the card; a
   review-needed or failed run moves it to the user column. A trigger-driven

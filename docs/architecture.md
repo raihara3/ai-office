@@ -43,7 +43,7 @@ tail → watcher → state の流れがそのまま実行を可視化します�
 ## ファイルツリー
 
 ```
-server/                バックエンド(Node.js 標準ライブラリのみ)
+server/                バックエンド(npm 依存なし。永続化は node:sqlite)
   index.js             エントリポイント + startServer()(Electron 埋め込み契約も兼ねる)
   core.js              state + watchers + cleanup を合成; ライフサイクル(start/stop)
   http.js              HTTP 静的配信 + SSE + /api/* を core に橋渡しするアダプタ
@@ -61,10 +61,14 @@ server/                バックエンド(Node.js 標準ライブラリのみ)
     registry.js        セッションレジストリ(セッションログ ↔ 常駐員の紐付け)
     runner.js          ヘッドレス CLI 実行(コマンド構築 + タイムアウト)
     runner.test.js     コマンド構築・出力パースのテスト
-    whiteboard.js      ホワイトボード(frontmatter 付き Markdown 報告 + 既読管理)
-    whiteboard.test.js frontmatter パース・既読管理のテスト
-    board.js           カンバンボード(タスクカードの Markdown ストア + 並び順)
+    database.js        office.db のオープンとスキーマ移行(node:sqlite / WAL)
+    database.test.js   スキーマ移行・再オープン・新版 DB 拒否のテスト
+    whiteboard.js      ホワイトボード(reports テーブルの報告 + 既読・ピン管理)
+    whiteboard.test.js 報告の掲示・既読・アーカイブ・ピンのテスト
+    board.js           カンバンボード(cards テーブルのカードストア + 並び順)
     board.test.js      カードの起票・並び替え・アーカイブ・追記のテスト
+    legacy-import.js   旧 Markdown ストアからの一回限りのインポート
+    legacy-import.test.js インポートとクリーンアップのテスト
   watchers/
     claude.js          Claude Code トランスクリプト解析(handleLine + startWatcher)
     codex.js           Codex CLI rollout ログ解析
@@ -199,9 +203,10 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
 
 常駐チーム: 左上のデスク島に常駐する最大 6 人のエージェント(1 人 = 1 役割)。
 設定は `~/Library/Application Support/ai-office/residents/<name>/` 配下の
-ファイル(`resident.json`・`INSTRUCTIONS.md`・`state.json`・`outbox/`)が
-単一の真実の源で、アプリ内パネルとテキストエディタのどちらで編集しても
-同じ場所に行き着きます。
+ファイル(`resident.json`・`INSTRUCTIONS.md`・`state.json`)が単一の真実の
+源で、アプリ内パネルとテキストエディタのどちらで編集しても同じ場所に
+行き着きます。報告とカンバンカードは同ディレクトリ直下の `office.db`
+(SQLite)に永続化されます。
 
 - **`residents.js`** — オーケストレータ。30 秒ごとの tick でマニフェストを
   再読込し、期日が来たトリガーを発火します。トリガー起点の実行は「実際に
@@ -216,8 +221,8 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   プロンプトの「今回のタスク」節に含める)。カード実行が info で完了すると
   カードを自動アーカイブ、review-needed または失敗ならユーザー列へ移動し、
   トリガー起点の実行が review-needed で終わった場合はユーザー列にカードを
-  自動起票します。報告の frontmatter には `task: <カード id>` を刻印して
-  カードと紐付けます。実行中カードの移動・アーカイブはここで拒否します。
+  自動起票します。報告の `task` 列には カード id を刻印してカードと
+  紐付けます。実行中カードの移動・アーカイブはここで拒否します。
 - **`manifest.js`** — 常駐員ディレクトリの読み書きと `resident.json` の検証。
   キャッシュせず毎回ディスクへ読みに行きます。
 - **`scheduler.js`** — トリガー判定の純粋関数群。
@@ -232,18 +237,24 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   `codex exec --sandbox …`、`gemini --skip-trust -p`)。read-only / edit のモードを各 CLI の
   権限フラグにマップし、30 分のタイムアウトと常駐員ごとの同時 1 実行を
   強制します。コマンド構築と出力パースは純粋関数として export されます。
-- **`whiteboard.js`** — 常駐員から人間への報告。frontmatter 付き Markdown を
-  各常駐員の `outbox/` に保存し、既読状態はサイドカーの
-  `whiteboard-state.json` に持ちます(報告ファイル自体は読んでも不変)。
-  ボードから外された報告は `outbox/.archived/` へ移動され(削除はしません)、
-  サイドカーの既読エントリも取り除かれます。
-- **`board.js`** — カンバンボードのカードストア。カード = frontmatter
-  (title/assignee/origin/createdAt/updatedAt)付き Markdown
-  (`<dataDirectory>/board/<id>.md`)、列 = 担当者(`user` または常駐名)。
-  並び順はサイドカーの `board-state.json` に持ち(カードファイル自体は
-  並び替えで不変)、ボードから外したカードは `board/.archived/` へ移動
-  されます(削除はしません)。ユーザーの追記はカード本文への
-  「## 追記」節として蓄積されます。
+- **`database.js`** — `<dataDirectory>/office.db` を `node:sqlite` の
+  `DatabaseSync` で同期的に開き、WAL と `PRAGMA user_version` ベースの
+  スキーマ移行を適用します。アプリより新しいバージョンの DB は推測せず
+  起動を拒否します。スキーマの全体像(ER 図)は
+  [database.md](database.md) を参照してください。
+- **`whiteboard.js`** — 常駐員から人間への報告。`reports` テーブルの行で、
+  既読・お気に入り(ピン)はカラム、ボードから外す操作は `archived_at` の
+  刻印です(行は削除しません)。ピン中の報告はアーカイブを拒否します。
+- **`board.js`** — カンバンボードのカードストア。カード = `cards` テーブル
+  の行、列 = 担当者(`user` または常駐名)。列内の並び順は `position`
+  カラムで、ドラッグのたびに対象列を密に振り直します。ボードから外した
+  カードは `archived_at` を刻印します(行は削除しません)。ユーザーの
+  追記はカード本文への「## 追記」節として蓄積されます。
+- **`legacy-import.js`** — SQLite 移行前の Markdown ストア
+  (`outbox/*.md`・`board/*.md` とサイドカー JSON)を初回オープン時に一度
+  だけ `office.db` へ取り込みます。取り込みは単一トランザクションで、
+  コミット後にのみ元ファイルを削除し、完了マーカーを `meta` テーブルに
+  残して再実行を防ぎます。
 
 ## フロントエンド(`public/`)
 
@@ -378,7 +389,8 @@ Electron メインプロセス。`startServer` により同一サーバをプロ
 - `createCleanup` への **OS 検査関数のスタブ** 注入。
 - 各 watcher の `handleLine` への **`report` スタブ** 注入。
 - `createSmallTalk` への **`random`** の注入。
-- `createManifestStore` / `createWhiteboard` / `createBoard` /
-  `createSessionRegistry` への
-  **ファイルシステムのスタブ** 注入。scheduler と runner のコマンド構築は
+- `createManifestStore` / `createSessionRegistry` への
+  **ファイルシステムのスタブ** 注入。`createWhiteboard` / `createBoard` へは
+  `openDatabase({ location: ':memory:' })` の **インメモリ SQLite** を注入。
+  scheduler と runner のコマンド構築は
   現在時刻や設定を引数に取る純粋関数です。

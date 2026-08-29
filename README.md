@@ -39,8 +39,11 @@ npm run dist      # optional: build a macOS .dmg/.zip via electron-builder
 ```
 
 The Electron main process embeds the same server in-process and points a
-window at it, so the browser and desktop paths share all logic. (Don't run
-`npm start` and `npm run electron` at once — they would fight over the port.)
+window at it, so the browser and desktop paths share all logic. Exactly one
+server core runs per data directory: launching the desktop app while a
+standalone `npm start` owns the port attaches a window to that server
+instead of starting a second core (two cores would double-run board cards),
+and a second desktop launch just focuses the existing window.
 
 ### Tests
 

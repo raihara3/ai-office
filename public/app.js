@@ -858,6 +858,17 @@
 
   const cardDetailElement = document.getElementById('card-detail');
 
+  // In the office tab, clicking outside the open task-detail drawer closes it.
+  // The board card that opens it is excluded so the opening click does not
+  // immediately dismiss the drawer; other drawer sections and views are left
+  // untouched (the strip-add and canvas openers swap the visible section first,
+  // so card-detail is already hidden by the time this listener runs).
+  document.addEventListener('click', (event) => {
+    if (cardDetailElement.hidden || officeWrapElement.hidden) return;
+    if (event.target.closest('#drawer, .board-card')) return;
+    closeDrawer();
+  });
+
   function openCardDetail(id) {
     const card = boardCards.find((c) => c.id === id);
     if (!card) return;

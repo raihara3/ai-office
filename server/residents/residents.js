@@ -407,7 +407,13 @@ export function createResidents({
   function archiveBoardCard(id) {
     if (isWorkingCard(id)) return false;
     const changed = board.archiveCard(id);
-    if (changed) state.refresh();
+    // Reports stay on the board until the human archives them or the card they
+    // belong to is archived; do the latter here so an archived card takes its
+    // reports with it.
+    if (changed) {
+      whiteboard.archiveReportsForTask(id);
+      state.refresh();
+    }
     return changed;
   }
 

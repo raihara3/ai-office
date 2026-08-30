@@ -55,7 +55,9 @@ Electron's Node 24 needs no flag).
   (`Not inside a trusted directory…`); the `--sandbox` flag
   (`read-only`/`workspace-write`) still bounds what the run may touch.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
-  on its first line flags it for a human.
+  on its first line flags it for a human. A report stays on the board until
+  the human archives it or the card it links to is archived — archiving a
+  card archives its un-pinned reports too (pinned reports stay).
 - Everything the resident team persists lives in `<dataDir>/office.db`
   (opened by `database.js`): resident configuration + instructions + run
   state (`residents` table, edited in-app), teams (`teams`, 1:N — every

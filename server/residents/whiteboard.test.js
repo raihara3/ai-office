@@ -113,6 +113,43 @@ test('whiteboard: a favorited report is pinned and cannot be archived', () => {
   assert.equal(whiteboard.toggleFavorite('no-such-report'), null);
 });
 
+test('whiteboard: archiveReportsForTask takes a card\'s reports off the board, keeping pinned ones', () => {
+  const { database, whiteboard } = whiteboardWith(7_000_000);
+  const linked = whiteboard.saveReport('log-analyst', {
+    title: '紐づく報告',
+    level: 'info',
+    body: '本文',
+    createdAt: 1_000_000,
+    task: 'card-1',
+  });
+  const pinned = whiteboard.saveReport('log-analyst', {
+    title: 'ピン留めの報告',
+    level: 'info',
+    body: '本文',
+    createdAt: 1_500_000,
+    task: 'card-1',
+  });
+  whiteboard.toggleFavorite(pinned);
+  const other = whiteboard.saveReport('issue-watcher', {
+    title: '別タスクの報告',
+    level: 'info',
+    body: '本文',
+    createdAt: 2_000_000,
+    task: 'card-2',
+  });
+
+  // Only the un-pinned report for card-1 comes off the board.
+  assert.equal(whiteboard.archiveReportsForTask('card-1'), 1);
+  const remaining = whiteboard.listReports().map((r) => r.id);
+  assert.deepEqual(remaining.sort(), [other, pinned].sort());
+  // The archived row is kept, flagged archived with its read state cleared.
+  const row = database.prepare('SELECT archived_at, "read" FROM reports WHERE id = ?').get(linked);
+  assert.equal(row.archived_at, 7_000_000);
+
+  // A task with no un-pinned reports left archives nothing.
+  assert.equal(whiteboard.archiveReportsForTask('card-1'), 0);
+});
+
 test('whiteboard: reports keep their author name after the resident is archived', () => {
   const { whiteboard, residentStore } = whiteboardWith();
   whiteboard.saveReport('log-analyst', {

@@ -101,7 +101,9 @@ erDiagram
   kanban column, `origin_id IS NULL` marks human-filed cards.
 - **reports.task → cards.id stays a soft link** (no FK): the card may be
   long archived and imported ids may not resolve; rows are never deleted so
-  referential cleanup is unnecessary.
+  referential cleanup is unnecessary. A report stays on the board until the
+  human archives it or the card it links to is archived — archiving a card
+  archives its un-pinned reports too (pinned reports stay).
 - **Name reuse**: archiving frees the name (uniqueness is a partial index on
   active rows). A successor with the same name is a fresh id; the
   predecessor's leftover cards display under the name but are never worked.

@@ -44,6 +44,12 @@ export function createWhiteboard({ database, now = () => Date.now() }) {
       `UPDATE reports SET archived_at = ?, "read" = 0
        WHERE id = ? AND archived_at IS NULL AND favorite = 0`
     ),
+    // Archiving a card takes its reports off the board with it; favorited
+    // (pinned) reports are left in place, like a single-report archive.
+    archiveByTask: database.prepare(
+      `UPDATE reports SET archived_at = ?, "read" = 0
+       WHERE task = ? AND archived_at IS NULL AND favorite = 0`
+    ),
     // Counted over the same capped window the listing shows, so the badge
     // never reports unread rows the panel cannot display.
     counts: database.prepare(
@@ -105,11 +111,25 @@ export function createWhiteboard({ database, now = () => Date.now() }) {
     return statements.archive.run(now(), id).changes > 0;
   }
 
+  // Archive every report linked to a card, called when the card itself is
+  // archived. Returns the number of reports taken off the board.
+  function archiveReportsForTask(taskId) {
+    return statements.archiveByTask.run(now(), taskId).changes;
+  }
+
   // Unread totals for the canvas badge; pushed with every snapshot.
   function counts() {
     const row = statements.counts.get();
     return { total: row.total, unread: row.unread, reviewNeeded: row.reviewNeeded };
   }
 
-  return { saveReport, listReports, markRead, toggleFavorite, archiveReport, counts };
+  return {
+    saveReport,
+    listReports,
+    markRead,
+    toggleFavorite,
+    archiveReport,
+    archiveReportsForTask,
+    counts,
+  };
 }

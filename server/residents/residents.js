@@ -5,18 +5,22 @@
 // top card of each idle resident's board column, and turns finished runs into
 // whiteboard reports plus a #general notification.
 
-import { execFile } from 'node:child_process';
-import os from 'node:os';
-import path from 'node:path';
-import { createBoard, USER_COLUMN } from './board.js';
-import { openDatabase } from './database.js';
-import { importLegacyData } from './legacy-import.js';
-import { importResidents } from './resident-import.js';
-import { createResidentStore } from './resident-store.js';
-import { createSessionRegistry } from './registry.js';
-import { createRunner, expandHomeDirectory, splitReportLevel } from './runner.js';
-import { createWhiteboard } from './whiteboard.js';
-import { isDue, nextRunAt } from './scheduler.js';
+import { execFile } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import { createBoard, USER_COLUMN } from "./board.js";
+import { openDatabase } from "./database.js";
+import { importLegacyData } from "./legacy-import.js";
+import { importResidents } from "./resident-import.js";
+import { createResidentStore } from "./resident-store.js";
+import { createSessionRegistry } from "./registry.js";
+import {
+  createRunner,
+  expandHomeDirectory,
+  splitReportLevel,
+} from "./runner.js";
+import { createWhiteboard } from "./whiteboard.js";
+import { isDue, nextRunAt } from "./scheduler.js";
 
 const TICK_INTERVAL_MS = 30_000;
 const PRECHECK_TIMEOUT_MS = 30_000;
@@ -27,9 +31,9 @@ const PRECHECK_OUTPUT_CAP = 16 * 1024;
 // one resident team.
 export const DEFAULT_DATA_DIRECTORY = path.join(
   os.homedir(),
-  'Library',
-  'Application Support',
-  'ai-office'
+  "Library",
+  "Application Support",
+  "ai-office",
 );
 
 // Rules every resident follows regardless of role; the role-specific
@@ -38,39 +42,41 @@ function buildPrompt(configuration, instructions, precheckOutput, task) {
   const sections = [
     `あなたは AI Office の常駐チームの一員「${configuration.displayName}」です。以下のルールと役割指示に従って作業してください。`,
     [
-      '共通ルール:',
-      '- 最後のメッセージが人間向けの報告としてそのままホワイトボードに掲示されます。日本語で簡潔にまとめてください。',
-      '- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書き、2行目以降に本文を続けてください。本文の途中や末尾には書かないでください。',
-    ].join('\n'),
+      "共通ルール:",
+      "- 最後のメッセージが人間向けの報告として利用されます。日本語で簡潔にまとめてください。",
+      "- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書き、2行目以降に本文を続けてください。本文の途中や末尾には書かないでください。",
+    ].join("\n"),
     `## 役割指示\n\n${instructions.trim()}`,
   ];
   if (task) {
     sections.push(
-      `## 今回のタスク(カンバンボードより)\n\n### ${task.title}\n\n${task.body}`.trim()
+      `## 今回のタスク(カンバンボードより)\n\n### ${task.title}\n\n${task.body}`.trim(),
     );
   }
   if (precheckOutput) {
-    sections.push(`## 事前チェックの出力\n\n\`\`\`\n${precheckOutput.trim()}\n\`\`\``);
+    sections.push(
+      `## 事前チェックの出力\n\n\`\`\`\n${precheckOutput.trim()}\n\`\`\``,
+    );
   }
-  return sections.join('\n\n');
+  return sections.join("\n\n");
 }
 
 function defaultRunPrecheck(command, workingDirectory) {
   return new Promise((resolve) => {
     execFile(
-      '/bin/sh',
-      ['-c', command],
+      "/bin/sh",
+      ["-c", command],
       {
         cwd: expandHomeDirectory(workingDirectory),
         timeout: PRECHECK_TIMEOUT_MS,
         maxBuffer: PRECHECK_OUTPUT_CAP,
-        encoding: 'utf8',
+        encoding: "utf8",
       },
       (error, stdout) => {
         // A failing precheck means "no work found" — the agent run is simply
         // skipped rather than surfacing an error every interval.
-        resolve(error ? '' : stdout);
-      }
+        resolve(error ? "" : stdout);
+      },
     );
   });
 }
@@ -92,9 +98,16 @@ export function createResidents({
   // the first open: resident files first, so the legacy Markdown import's
   // foreign keys can resolve.
   let ownedDatabase = null;
-  if (residentStore === null || registry === null || whiteboard === null || board === null) {
+  if (
+    residentStore === null ||
+    registry === null ||
+    whiteboard === null ||
+    board === null
+  ) {
     if (database === null) {
-      database = openDatabase({ location: path.join(dataDirectory, 'office.db') });
+      database = openDatabase({
+        location: path.join(dataDirectory, "office.db"),
+      });
       ownedDatabase = database;
     }
     importResidents(database, { dataDirectory, now });
@@ -118,7 +131,7 @@ export function createResidents({
 
   function formatRunDate(at) {
     const date = new Date(at);
-    const pad = (n) => String(n).padStart(2, '0');
+    const pad = (n) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
@@ -127,18 +140,20 @@ export function createResidents({
     activeCards.delete(entry.name);
     const finishedAt = now();
     const { level, body } = splitReportLevel(resultText);
-    const reportLevel = outcome === 'ok' ? level : 'review-needed';
+    const reportLevel = outcome === "ok" ? level : "review-needed";
     const reportBody =
-      outcome === 'ok' ? body : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
+      outcome === "ok"
+        ? body
+        : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
     const title = `${configuration.displayName} ${formatRunDate(finishedAt)}`;
     // A trigger-driven run that needs a human joins the board as a card in
     // the user column, so follow-up is tracked like any other task. Filed
     // before the report so the report can carry the card id.
     let taskId = task?.id ?? null;
-    if (taskId === null && reportLevel === 'review-needed') {
+    if (taskId === null && reportLevel === "review-needed") {
       taskId = board.createCard({
         title,
-        body: '定期実行が要確認で終了しました。リンクされた報告を確認してください。',
+        body: "定期実行が要確認で終了しました。リンクされた報告を確認してください。",
         assignee: USER_COLUMN,
         origin: entry.name,
         createdAt: finishedAt,
@@ -154,7 +169,7 @@ export function createResidents({
     if (task !== null) {
       // An ok run moves the card into the 完了 column (it stays on the board
       // until the human archives it); a review-needed run hands it back.
-      if (reportLevel === 'info') board.markCardDone(task.id);
+      if (reportLevel === "info") board.markCardDone(task.id);
       else board.moveCard(task.id, { assignee: USER_COLUMN });
     }
     residentStore.saveState(entry.name, {
@@ -163,13 +178,13 @@ export function createResidents({
       lastOutcome: outcome,
     });
     state.postMessage({
-      authorKind: 'agent',
+      authorKind: "agent",
       authorName: configuration.displayName,
       cli: configuration.cli,
       text:
-        reportLevel === 'review-needed'
-          ? '@社長 確認をお願いします(ホワイトボードに報告を掲示しました)'
-          : `@社長 ${task !== null ? `タスク「${task.title}」` : '作業'}が完了しました(ホワイトボードに報告を掲示しました)`,
+        reportLevel === "review-needed"
+          ? "@社長 確認をお願いします(ホワイトボードに報告を掲示しました)"
+          : `@社長 ${task !== null ? `タスク「${task.title}」` : "作業"}が完了しました(ホワイトボードに報告を掲示しました)`,
       at: finishedAt,
     });
     state.refresh();
@@ -194,16 +209,29 @@ export function createResidents({
 
       // A firing trigger is not enough on its own: with no assigned card the
       // team stays quiet instead of filing a meaningless report every interval.
-      if (gateOnPrecheck && task === null && board.topCardFor(entry.name) === null) {
-        residentStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+      if (
+        gateOnPrecheck &&
+        task === null &&
+        board.topCardFor(entry.name) === null
+      ) {
+        residentStore.saveState(entry.name, {
+          ...entry.state,
+          lastOutcome: "skipped",
+        });
         return false;
       }
 
       let precheckOutput = null;
       if (configuration.precheck && task === null) {
-        precheckOutput = await runPrecheck(configuration.precheck, configuration.workingDirectory);
-        if (gateOnPrecheck && precheckOutput.trim() === '') {
-          residentStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+        precheckOutput = await runPrecheck(
+          configuration.precheck,
+          configuration.workingDirectory,
+        );
+        if (gateOnPrecheck && precheckOutput.trim() === "") {
+          residentStore.saveState(entry.name, {
+            ...entry.state,
+            lastOutcome: "skipped",
+          });
           return false;
         }
       }
@@ -216,9 +244,14 @@ export function createResidents({
           workingDirectory: configuration.workingDirectory,
         },
         {
-          prompt: buildPrompt(configuration, entry.instructions, precheckOutput, task),
+          prompt: buildPrompt(
+            configuration,
+            entry.instructions,
+            precheckOutput,
+            task,
+          ),
           onFinished: (result) => handleFinished(entry, result, task),
-        }
+        },
       );
       if (started && task !== null) activeCards.set(entry.name, task);
       if (started) state.refresh();
@@ -232,7 +265,9 @@ export function createResidents({
     for (const entry of residentStore.list()) {
       if (!entry.configuration.enabled) continue;
       if (runner.isRunning(entry.name) || launching.has(entry.name)) continue;
-      if (isDue(entry.configuration.trigger, entry.state.lastRunAt ?? null, now())) {
+      if (
+        isDue(entry.configuration.trigger, entry.state.lastRunAt ?? null, now())
+      ) {
         launch(entry, { gateOnPrecheck: true });
         continue;
       }
@@ -285,7 +320,11 @@ export function createResidents({
       lastRunAt: entry.state.lastRunAt ?? null,
       lastOutcome: entry.state.lastOutcome ?? null,
       nextRunAt: entry.configuration.enabled
-        ? nextRunAt(entry.configuration.trigger, entry.state.lastRunAt ?? null, currentTime)
+        ? nextRunAt(
+            entry.configuration.trigger,
+            entry.state.lastRunAt ?? null,
+            currentTime,
+          )
         : null,
     }));
   }
@@ -327,7 +366,7 @@ export function createResidents({
   function runNow(name) {
     const entry = residentStore.read(name);
     if (entry === null) throw new Error(`unknown resident: ${name}`);
-    if (runner.isRunning(name)) throw new Error('already running');
+    if (runner.isRunning(name)) throw new Error("already running");
     return launch(entry, { gateOnPrecheck: false });
   }
 
@@ -373,7 +412,7 @@ export function createResidents({
       whiteboard
         .listReports()
         .map((report) => report.task)
-        .filter(Boolean)
+        .filter(Boolean),
     );
     return board.listCards().map((card) => ({
       ...card,
@@ -384,7 +423,13 @@ export function createResidents({
 
   function createBoardCard({ title, body, assignee }) {
     assertAssignee(assignee);
-    const id = board.createCard({ title, body, assignee, origin: USER_COLUMN, createdAt: now() });
+    const id = board.createCard({
+      title,
+      body,
+      assignee,
+      origin: USER_COLUMN,
+      createdAt: now(),
+    });
     state.refresh();
     return id;
   }

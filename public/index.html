@@ -42,18 +42,27 @@
       <nav id="view-tabs" role="tablist">
         <button type="button" class="view-tab active" data-view="office" role="tab" aria-selected="true">オフィス</button>
         <button type="button" class="view-tab" data-view="board" role="tab" aria-selected="false">ボード</button>
+        <button type="button" class="view-tab" data-view="inbox" role="tab" aria-selected="false">インボックス<span id="inbox-tab-badge" class="tab-badge" hidden></span></button>
       </nav>
       <div id="appbar-actions">
         <span id="connection" class="status-pill">接続中…</span>
         <button type="button" id="theme-toggle" title="ダークモードに切り替え">🌙</button>
         <button type="button" id="cleanup-run" title="セッションが終了しているアバターをオフィスから退勤させます(稼働中のセッションには影響しません)">アバター退勤</button>
+        <button type="button" id="team-add" title="新しいチームを追加します">＋ チーム</button>
         <button type="button" id="card-add" class="primary-button">＋ タスク</button>
       </div>
     </header>
     <div id="kanban-strip"></div>
     <div id="content">
       <section id="office-wrap">
-        <canvas id="office" width="960" height="600"></canvas>
+        <div id="office-scroll">
+          <canvas id="office" width="960" height="600"></canvas>
+        </div>
+        <div id="office-zoom" role="group" aria-label="ズーム">
+          <button type="button" id="office-zoom-out" title="縮小">−</button>
+          <button type="button" id="office-zoom-fit" title="全体表示に戻す">⤢</button>
+          <button type="button" id="office-zoom-in" title="拡大">＋</button>
+        </div>
       </section>
       <section id="board-view" hidden>
         <div id="board-columns"></div>
@@ -160,6 +169,19 @@
           <button type="submit" id="resident-save" class="primary-button">保存</button>
           <button type="button" id="resident-run">今すぐ実行</button>
           <button type="button" id="resident-unassign" class="danger-button">割り当て解除</button>
+        </div>
+      </form>
+      <form id="team-form" class="drawer-section" hidden>
+        <label>チーム名
+          <input id="team-name" required maxlength="40" placeholder="開発チーム">
+        </label>
+        <label>席数(1〜12)
+          <input id="team-seat-count" type="number" min="1" max="12" value="6" required>
+        </label>
+        <p id="team-error" class="form-error" hidden></p>
+        <div class="form-actions">
+          <button type="submit" id="team-save" class="primary-button">保存</button>
+          <button type="button" id="team-delete" class="danger-button">チームを削除</button>
         </div>
       </form>
     </div>

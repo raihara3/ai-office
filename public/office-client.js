@@ -48,6 +48,25 @@
         return requestJson(`/api/residents/${encodeURIComponent(name)}/run`, { method: 'POST' });
       },
 
+      // Team management: create, rename/resize and delete.
+      async createTeam(payload) {
+        return requestJson('/api/teams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      },
+      async saveTeam(id, payload) {
+        return requestJson(`/api/teams/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      },
+      async deleteTeam(id) {
+        return requestJson(`/api/teams/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      },
+
       // The whiteboard: full reports (bodies included) and read receipts.
       async listReports() {
         return (await fetch('/api/whiteboard')).json();
@@ -86,6 +105,10 @@
       },
       async moveCard(id, assignee, index) {
         return postBoardAction('move', { id, assignee, index });
+      },
+      // Moves a card into the 完了 column; it stays on the board until archived.
+      async markCardDone(id) {
+        return postBoardAction('done', { id });
       },
       // Takes a card off the board (the file is archived, not deleted).
       async archiveCard(id) {

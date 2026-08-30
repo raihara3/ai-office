@@ -1,71 +1,37 @@
-// Unit tests for the kanban card store (board.js): frontmatter round-trip,
-// column ordering via the sidecar, moving/archiving cards and follow-up
-// notes, over an in-memory filesystem stub.
+// Unit tests for the kanban card store (board.js): column ordering, moving
+// and archiving cards and follow-up notes, over an in-memory SQLite database
+// with resident fixtures created through the resident store.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
 
-import { createBoard, formatCard } from './board.js';
-import { parseFrontmatter } from './whiteboard.js';
-
-test('parseFrontmatter round-trips what formatCard writes', () => {
-  const text = formatCard(
-    { title: 'READMEを更新', assignee: 'task-runner', origin: 'user', createdAt: 1234, updatedAt: 5678 },
-    '手順は https://example.com を参照'
-  );
-  const { attributes, body } = parseFrontmatter(text);
-  assert.equal(attributes.title, 'READMEを更新');
-  assert.equal(attributes.assignee, 'task-runner');
-  assert.equal(attributes.origin, 'user');
-  assert.equal(attributes.createdAt, '1234');
-  assert.equal(attributes.updatedAt, '5678');
-  assert.equal(body.trim(), '手順は https://example.com を参照');
-});
-
-function memoryFileSystem() {
-  const files = new Map();
-  return {
-    files,
-    readFileSync(filePath) {
-      if (!files.has(filePath)) throw new Error(`ENOENT: ${filePath}`);
-      return files.get(filePath);
-    },
-    writeFileSync(filePath, content) {
-      files.set(filePath, String(content));
-    },
-    mkdirSync() {},
-    existsSync(filePath) {
-      return files.has(filePath);
-    },
-    renameSync(from, to) {
-      if (!files.has(from)) throw new Error(`ENOENT: ${from}`);
-      files.set(to, files.get(from));
-      files.delete(from);
-    },
-    readdirSync(directory) {
-      const names = new Set();
-      for (const filePath of files.keys()) {
-        if (filePath.startsWith(directory + path.sep)) {
-          names.add(filePath.slice(directory.length + 1).split(path.sep)[0]);
-        }
-      }
-      if (names.size === 0) throw new Error(`ENOENT: ${directory}`);
-      return [...names];
-    },
-  };
-}
+import { openDatabase } from './database.js';
+import { createBoard } from './board.js';
+import { createResidentStore } from './resident-store.js';
 
 function boardWith(nowValue = 10_000_000) {
-  return createBoard({
-    dataDirectory: '/data',
-    fileSystem: memoryFileSystem(),
-    now: () => nowValue,
-  });
+  const database = openDatabase({ location: ':memory:' });
+  const residentStore = createResidentStore({ database, now: () => nowValue });
+  for (const [index, name] of ['task-runner', 'issue-watcher', 'log-analyst'].entries()) {
+    residentStore.save(name, {
+      configuration: {
+        displayName: name,
+        seat: index,
+        cli: 'claude',
+        mode: 'read-only',
+        workingDirectory: '~',
+        trigger: { type: 'interval', minutes: 10 },
+        precheck: null,
+        enabled: true,
+      },
+      instructions: '',
+    });
+  }
+  return { database, residentStore, board: createBoard({ database, now: () => nowValue }) };
 }
 
 test('board: create → list keeps filing order, new cards at the bottom', () => {
-  const board = boardWith();
+  const { board } = boardWith();
   const first = board.createCard({
     title: 'タスク1',
     body: '本文1',
@@ -92,11 +58,21 @@ test('board: create → list keeps filing order, new cards at the bottom', () =>
   assert.deepEqual(column.map((card) => card.id), [first, second]);
   assert.equal(column[0].title, 'タスク1');
   assert.equal(board.topCardFor('task-runner').id, first);
+  const userCard = board.listCards().find((card) => card.assignee === 'user');
+  assert.equal(userCard.origin, 'log-analyst');
   assert.deepEqual(board.counts(), { total: 3, user: 1 });
+
+  assert.throws(() => board.createCard({
+    title: 'x',
+    body: '',
+    assignee: 'nobody',
+    origin: 'user',
+    createdAt: 1,
+  }), /unknown assignee/);
 });
 
 test('board: same-second createdAt yields distinct card ids', () => {
-  const board = boardWith();
+  const { board } = boardWith();
   const payload = { title: 'A', body: '', assignee: 'user', origin: 'user', createdAt: 1_000_000 };
   const first = board.createCard(payload);
   const second = board.createCard(payload);
@@ -106,11 +82,7 @@ test('board: same-second createdAt yields distinct card ids', () => {
 
 test('board: moveCard reorders within a column and reassigns across columns', () => {
   const nowValue = 9_000_000;
-  const board = createBoard({
-    dataDirectory: '/data',
-    fileSystem: memoryFileSystem(),
-    now: () => nowValue,
-  });
+  const { board } = boardWith(nowValue);
   const first = board.createCard({
     title: '1',
     body: '',
@@ -137,13 +109,16 @@ test('board: moveCard reorders within a column and reassigns across columns', ()
   assert.equal(moved.updatedAt, nowValue);
   assert.equal(board.topCardFor('task-runner').id, first);
 
-  assert.equal(board.moveCard('../etc/passwd.md', { assignee: 'user' }), false);
-  assert.equal(board.moveCard('missing.md', { assignee: 'user' }), false);
+  // And into the user column, then back out by index only.
+  assert.equal(board.moveCard(second, { assignee: 'user', index: 0 }), true);
+  assert.equal(board.listCards().find((card) => card.id === second).assignee, 'user');
+  assert.equal(board.moveCard(second, { index: 0 }), true);
+
+  assert.equal(board.moveCard('no-such-card', { assignee: 'user' }), false);
 });
 
-test('board: archiveCard takes the card off the board but keeps the file', () => {
-  const fileSystem = memoryFileSystem();
-  const board = createBoard({ dataDirectory: '/data', fileSystem, now: () => 5_000_000 });
+test('board: archiveCard takes the card off the board but keeps the row', () => {
+  const { database, board } = boardWith(5_000_000);
   const id = board.createCard({
     title: 'タスク',
     body: '本文',
@@ -156,15 +131,46 @@ test('board: archiveCard takes the card off the board but keeps the file', () =>
   assert.equal(board.archiveCard(id), true);
   assert.equal(board.listCards().length, 0);
   assert.deepEqual(board.counts(), { total: 0, user: 0 });
-  assert.ok([...fileSystem.files.keys()].some((filePath) => filePath.includes('/.archived/')));
-  assert.ok(!fileSystem.files.get('/data/board-state.json').includes(id));
+  // The row still exists, flagged archived.
+  assert.equal(database.prepare('SELECT archived_at FROM cards WHERE id = ?').get(id).archived_at, 5_000_000);
 
   assert.equal(board.archiveCard(id), false); // already gone
-  assert.equal(board.archiveCard('../etc/passwd.md'), false);
+  assert.equal(board.archiveCard('no-such-card'), false);
+});
+
+test('board: markCardDone keeps the card on the board but out of the work queue', () => {
+  const { board } = boardWith(5_000_000);
+  const first = board.createCard({
+    title: 'タスク1',
+    body: '',
+    assignee: 'task-runner',
+    origin: 'user',
+    createdAt: 1_000_000,
+  });
+  const second = board.createCard({
+    title: 'タスク2',
+    body: '',
+    assignee: 'task-runner',
+    origin: 'user',
+    createdAt: 2_000_000,
+  });
+
+  assert.equal(board.markCardDone(first), true);
+  const doneCard = board.listCards().find((card) => card.id === first);
+  assert.equal(doneCard.done, true); // still listed, now in the 完了 column
+  assert.deepEqual(board.counts(), { total: 1, user: 0 }); // done cards drop out of the count
+  // The next card is worked, never the done one.
+  assert.equal(board.topCardFor('task-runner').id, second);
+  assert.equal(board.markCardDone(first), false); // already done
+
+  // Moving a done card back onto a column clears the done state.
+  assert.equal(board.moveCard(first, { assignee: 'issue-watcher', index: 0 }), true);
+  assert.equal(board.listCards().find((card) => card.id === first).done, false);
+  assert.equal(board.topCardFor('issue-watcher').id, first);
 });
 
 test('board: appendNote accumulates 追記 sections in the body', () => {
-  const board = boardWith();
+  const { board } = boardWith();
   const id = board.createCard({
     title: 'タスク',
     body: '最初の依頼',
@@ -180,5 +186,35 @@ test('board: appendNote accumulates 追記 sections in the body', () => {
   assert.ok(card.body.endsWith('ここを直してほしい'));
 
   assert.equal(board.appendNote(id, '   '), false);
-  assert.equal(board.appendNote('missing.md', 'x'), false);
+  assert.equal(board.appendNote('no-such-card', 'x'), false);
+});
+
+test('board: an archived resident keeps naming its leftover cards but never works them', () => {
+  const { board, residentStore } = boardWith();
+  const id = board.createCard({
+    title: '残タスク',
+    body: '',
+    assignee: 'task-runner',
+    origin: 'user',
+    createdAt: 1_000_000,
+  });
+  residentStore.remove('task-runner');
+
+  // The listing still resolves the archived resident's name (the frontend
+  // folds unknown assignees into the user column with an orphaned badge)...
+  assert.equal(board.listCards().find((card) => card.id === id).assignee, 'task-runner');
+  // ...but the name no longer resolves for work or new assignments.
+  assert.equal(board.topCardFor('task-runner'), null);
+  assert.throws(() => board.moveCard(id, { assignee: 'task-runner' }), /unknown assignee/);
+
+  // Origin resolution stays lenient: a run finishing just after its resident
+  // was unassigned still files its review card without crashing.
+  const filed = board.createCard({
+    title: '滑り込み起票',
+    body: '',
+    assignee: 'user',
+    origin: 'task-runner',
+    createdAt: 2_000_000,
+  });
+  assert.equal(board.listCards().find((card) => card.id === filed).origin, 'task-runner');
 });

@@ -6,74 +6,116 @@ import assert from 'node:assert/strict';
 
 import {
   computeLayout,
-  deskPosition,
-  breakSpot,
-  doorPosition,
-  lowestFreeSeat,
-  residentDeskPosition,
-  residentDeskHitRect,
-  residentMonitorHitRect,
-  RESIDENT_ROOM,
+  elevatorPosition,
+  entranceObstacles,
+  entranceSpot,
+  roomDeskPosition,
+  roomDeskHitRect,
+  roomMonitorHitRect,
+  teamLabelHitRect,
+  teamRooms,
+  ENTRANCE_HEIGHT,
+  PARTITION_HEIGHT,
   WHITEBOARD,
 } from './layout.js';
 
-test('lowestFreeSeat: empty -> 0, contiguous -> next, gap -> fills gap', () => {
-  assert.equal(lowestFreeSeat(new Set()), 0);
-  assert.equal(lowestFreeSeat(new Set([0, 1, 2])), 3);
-  assert.equal(lowestFreeSeat(new Set([0, 2, 3])), 1);
+const DEFAULT_TEAMS = [{ id: 'default', name: '常駐チーム', seatCount: 6 }];
+
+test('teamRooms: a 6-seat team reproduces the pre-teams room pixel for pixel', () => {
+  const [room] = teamRooms(DEFAULT_TEAMS);
+  assert.deepEqual(
+    { x: room.x, y: room.y, width: room.width, height: room.height },
+    { x: 8, y: 104, width: 404, height: 344 }
+  );
 });
 
-test('computeLayout: an empty room still sizes for the pre-placed seats', () => {
-  // SEAT_COUNT (6) seats over GRID_COLUMNS (3) columns = two rows up front.
-  assert.deepEqual(computeLayout(new Set()), { height: 692, breakTop: 542 });
+test('teamRooms: rooms line up left to right, rows follow seat count', () => {
+  const rooms = teamRooms([
+    { id: 'a', name: 'A', seatCount: 6 },
+    { id: 'b', name: 'B', seatCount: 12 },
+    { id: 'c', name: 'C', seatCount: 1 },
+  ]);
+  assert.equal(rooms[1].x, 452); // 8 + 404 + 40
+  assert.equal(rooms[2].x, 896);
+  assert.equal(rooms[1].rows, 4);
+  assert.equal(rooms[1].height, 688);
+  assert.equal(rooms[2].rows, 1);
+  assert.equal(rooms[2].height, 172);
 });
 
-test('computeLayout: overflowing the pre-placed rows grows the room', () => {
-  // Seat 6 sits on row index 2, beyond the two pre-placed rows.
-  assert.deepEqual(computeLayout(new Set([6])), { height: 864, breakTop: 714 });
+test('teamRooms: a fourth room wraps to a new band below the first', () => {
+  const rooms = teamRooms([
+    { id: 'a', name: 'A', seatCount: 6 }, // 2 rows, height 344
+    { id: 'b', name: 'B', seatCount: 3 },
+    { id: 'c', name: 'C', seatCount: 3 },
+    { id: 'd', name: 'D', seatCount: 3 },
+  ]);
+  // First three stay in the top band, wrapping back to x=8 on the fourth.
+  assert.equal(rooms[3].x, 8);
+  // Band drops below the tallest top-band room (344) plus the 64 air gap.
+  assert.equal(rooms[3].y, 104 + 344 + 64);
+  // Desks track the wrapped room down.
+  assert.equal(roomDeskPosition(rooms[3], 0).y, rooms[3].y + 136);
 });
 
-test('deskPosition: fills columns then wraps to the next row', () => {
-  assert.deepEqual(deskPosition(0), { x: 524, y: 240 });
-  assert.deepEqual(deskPosition(2), { x: 824, y: 240 });
-  assert.deepEqual(deskPosition(3), { x: 524, y: 412 });
+test('roomDeskPosition: three upright columns over spaced rows', () => {
+  const [room] = teamRooms(DEFAULT_TEAMS);
+  assert.deepEqual(roomDeskPosition(room, 0), { x: 86, y: 240 });
+  assert.deepEqual(roomDeskPosition(room, 1), { x: 210, y: 240 });
+  assert.deepEqual(roomDeskPosition(room, 2), { x: 334, y: 240 });
+  assert.deepEqual(roomDeskPosition(room, 3), { x: 86, y: 412 });
+  assert.deepEqual(roomDeskPosition(room, 5), { x: 334, y: 412 });
+  // A second room's desks shift with the room.
+  const second = teamRooms([...DEFAULT_TEAMS, { id: 'b', name: 'B', seatCount: 3 }])[1];
+  assert.deepEqual(roomDeskPosition(second, 0), { x: 530, y: 240 });
 });
 
-test('residentDeskPosition: three upright columns over two spaced rows', () => {
-  assert.deepEqual(residentDeskPosition(0), { x: 86, y: 240 });
-  assert.deepEqual(residentDeskPosition(1), { x: 210, y: 240 });
-  assert.deepEqual(residentDeskPosition(2), { x: 334, y: 240 });
-  assert.deepEqual(residentDeskPosition(3), { x: 86, y: 412 });
-  assert.deepEqual(residentDeskPosition(4), { x: 210, y: 412 });
-  assert.deepEqual(residentDeskPosition(5), { x: 334, y: 412 });
+test('computeLayout: one 6-seat team reproduces the classic scene heights', () => {
+  const layout = computeLayout(DEFAULT_TEAMS);
+  assert.equal(layout.height, 692);
+  assert.equal(layout.entranceTop, 692 - ENTRANCE_HEIGHT);
+  assert.equal(layout.width, 960); // rooms end at 412, floored to MIN_WIDTH
 });
 
-test('free-address rows line up with the resident island', () => {
-  assert.equal(deskPosition(0).y, residentDeskPosition(0).y);
-  assert.equal(deskPosition(3).y, residentDeskPosition(3).y);
+test('computeLayout: a tall team room grows the world above the entrance', () => {
+  const layout = computeLayout([{ id: 'a', name: 'A', seatCount: 12 }]);
+  assert.equal(layout.height, 1036);
+  assert.equal(layout.entranceTop, 1036 - ENTRANCE_HEIGHT);
+  const [room] = layout.rooms;
+  assert.ok(room.y + room.height <= layout.entranceTop);
 });
 
-test('resident room contains every desk row including the chairs', () => {
-  const lastDesk = residentDeskPosition(5);
-  assert.ok(lastDesk.y + 36 <= RESIDENT_ROOM.y + RESIDENT_ROOM.height);
+test('computeLayout: a full band of rooms widens the world past MIN_WIDTH', () => {
+  const layout = computeLayout([
+    { id: 'a', name: 'A', seatCount: 3 },
+    { id: 'b', name: 'B', seatCount: 3 },
+    { id: 'c', name: 'C', seatCount: 3 },
+  ]);
+  // Third room ends at 896 + 404; the right margin clears the wall plants.
+  assert.equal(layout.width, 896 + 404 + 136);
 });
 
-test('break area starts below the resident room', () => {
-  const layout = computeLayout(new Set());
-  assert.ok(layout.breakTop >= RESIDENT_ROOM.y + RESIDENT_ROOM.height);
+test('a room contains every desk row including the chairs', () => {
+  for (const seatCount of [1, 6, 12]) {
+    const [room] = teamRooms([{ id: 'a', name: 'A', seatCount }]);
+    const lastDesk = roomDeskPosition(room, seatCount - 1);
+    assert.ok(lastDesk.y + 36 <= room.y + room.height);
+  }
 });
 
-test('residentDeskHitRect: covers the desk from nameplate to chair', () => {
-  const desk = residentDeskPosition(1);
-  const hit = residentDeskHitRect(1);
+test('roomDeskHitRect: covers the desk from nameplate to chair', () => {
+  const [room] = teamRooms(DEFAULT_TEAMS);
+  const desk = roomDeskPosition(room, 1);
+  const hit = roomDeskHitRect(room, 1);
   assert.ok(hit.x <= desk.x - 56 && hit.x + hit.width >= desk.x + 56);
   assert.ok(hit.y <= desk.y - 106 && hit.y + hit.height >= desk.y + 20);
 });
 
-test('residentMonitorHitRect: caps the desk top and clears the avatar', () => {
-  const desk = residentDeskPosition(1);
-  const deskRect = residentDeskHitRect(1);
-  const monitor = residentMonitorHitRect(1);
+test('roomMonitorHitRect: caps the desk top and clears the avatar', () => {
+  const [room] = teamRooms(DEFAULT_TEAMS);
+  const desk = roomDeskPosition(room, 1);
+  const deskRect = roomDeskHitRect(room, 1);
+  const monitor = roomMonitorHitRect(room, 1);
   // Shares the desk's top-left, so the two bands tile from a common origin.
   assert.equal(monitor.x, deskRect.x);
   assert.equal(monitor.y, deskRect.y);
@@ -85,18 +127,57 @@ test('residentMonitorHitRect: caps the desk top and clears the avatar', () => {
   assert.ok(monitor.y + monitor.height < desk.y + 18);
 });
 
-test('whiteboard hangs on the top wall above the resident room', () => {
-  // Inside the wall band (0..96) and horizontally clear of the resident sign.
+test('teamLabelHitRect: sits in the room top band, clear of desk targets', () => {
+  const [room] = teamRooms(DEFAULT_TEAMS);
+  const label = teamLabelHitRect(room);
+  assert.ok(label.x >= room.x && label.y >= room.y);
+  // Row 0's desk hit rects start at 240 - 106 = 134; the label band ends above.
+  assert.ok(label.y + label.height <= roomDeskHitRect(room, 0).y);
+});
+
+test('whiteboard hangs on the top wall above the first room', () => {
+  const [room] = teamRooms(DEFAULT_TEAMS);
   assert.ok(WHITEBOARD.y + WHITEBOARD.height <= 96);
-  assert.ok(WHITEBOARD.x + WHITEBOARD.width <= RESIDENT_ROOM.x + RESIDENT_ROOM.width);
+  assert.ok(WHITEBOARD.x + WHITEBOARD.width <= room.x + room.width);
 });
 
-test('breakSpot: fixed furniture first, then an overflow back row', () => {
-  const layout = { breakTop: 490, height: 640 };
-  assert.deepEqual(breakSpot(0, layout), { x: 268, y: 582 });
-  assert.deepEqual(breakSpot(6, layout), { x: 180, y: 530 });
+test('entranceSpot: fixed lobby spots first, then an overflow back row', () => {
+  const layout = computeLayout(DEFAULT_TEAMS);
+  const top = layout.entranceTop;
+  assert.deepEqual(entranceSpot(0, layout), { x: 360, y: top + 128 });
+  assert.deepEqual(entranceSpot(5, layout), { x: 704, y: top + 132 });
+  assert.deepEqual(entranceSpot(6, layout), { x: 340, y: top + 172 });
+  // Every spot stays inside the lobby, below the partition wall.
+  for (let index = 0; index < 14; index += 1) {
+    const spot = entranceSpot(index, layout);
+    assert.ok(spot.y > top + PARTITION_HEIGHT && spot.y < layout.height);
+  }
 });
 
-test('doorPosition: anchored to the break-area band', () => {
-  assert.deepEqual(doorPosition({ breakTop: 490, height: 640 }), { x: 46, y: 582 });
+test('no waiting spot or the elevator stop lands inside a blocked rect', () => {
+  // Mirrors OBSTACLE_MARGIN in pathfinding.js: a walk target inside an
+  // obstacle grown by this margin could strand an avatar outside its goal.
+  const margin = 4;
+  const clearOf = (point, rect) =>
+    point.x < rect.x - margin ||
+    point.x > rect.x + rect.width + margin ||
+    point.y < rect.y - margin ||
+    point.y > rect.y + rect.height + margin;
+  const layout = computeLayout(DEFAULT_TEAMS);
+  const obstacles = entranceObstacles(layout);
+  const targets = [elevatorPosition(layout)];
+  for (let index = 0; index < 14; index += 1) targets.push(entranceSpot(index, layout));
+  for (const target of targets) {
+    for (const rect of obstacles) {
+      assert.ok(clearOf(target, rect), `(${target.x}, ${target.y}) blocked`);
+    }
+  }
+});
+
+test('elevatorPosition: anchored in front of the lobby elevator doors', () => {
+  const layout = computeLayout(DEFAULT_TEAMS);
+  const elevator = elevatorPosition(layout);
+  assert.deepEqual(elevator, { x: 48, y: layout.entranceTop + 158 });
+  assert.ok(elevator.y > layout.entranceTop + PARTITION_HEIGHT);
+  assert.ok(elevator.y < layout.height);
 });

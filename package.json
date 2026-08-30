@@ -6,13 +6,13 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "start": "node server/index.js",
-    "test": "node --test",
+    "start": "node --experimental-sqlite server/index.js",
+    "test": "node --experimental-sqlite --test",
     "electron": "electron .",
     "dist": "electron-builder"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "devDependencies": {
     "electron": "^41.7.1",

@@ -1,60 +1,106 @@
-// The kanban board: one task card per Markdown file with a small frontmatter
-// block, stored under <dataDirectory>/board/. Columns are assignees ('user'
-// or a resident name). Drag ordering lives in a sidecar JSON next to the
-// board directory so reordering never rewrites the card files; cards missing
-// from the sidecar sort after the listed ones by creation time, which is what
-// makes a freshly filed card land at the bottom of its column. Archiving a
-// card moves the file into board/.archived/ — never deletes it — mirroring
-// the whiteboard's conventions.
+// The kanban board: one row per task card in the cards table of office.db.
+// Columns are foreign-keyed resident ids — NULL is the human user's column —
+// but the public API speaks names ('user' or a resident name): writes resolve
+// a name to an active resident's id, listings join the name back, including
+// for archived residents so an unassigned resident's leftover cards still
+// show who they belonged to. Display order within a column is the position
+// column, dense-renumbered on every move. A new card takes MAX(position)+1
+// and lands at the bottom of its column. Archiving sets archived_at instead
+// of deleting — never a delete — mirroring the whiteboard's conventions.
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { parseFrontmatter } from './whiteboard.js';
+import { randomUUID } from 'node:crypto';
 
 const MAX_CARDS = 100;
-const CARD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
 
 export const USER_COLUMN = 'user';
 
-export function formatCard({ title, assignee, origin, createdAt, updatedAt }, body) {
-  return [
-    '---',
-    `title: ${title}`,
-    `assignee: ${assignee}`,
-    `origin: ${origin}`,
-    `createdAt: ${createdAt}`,
-    `updatedAt: ${updatedAt}`,
-    '---',
-    '',
-    body,
-    '',
-  ].join('\n');
-}
+export function createBoard({ database, now = () => Date.now() }) {
+  const statements = {
+    residentIdByName: database.prepare(
+      'SELECT id FROM residents WHERE name = ? AND archived_at IS NULL'
+    ),
+    // Active preferred, archived accepted — origin records provenance, and a
+    // resident unassigned while its run was still in flight must not crash
+    // the finish handler that files its card.
+    anyResidentIdByName: database.prepare(
+      'SELECT id FROM residents WHERE name = ? ORDER BY (archived_at IS NULL) DESC LIMIT 1'
+    ),
+    insert: database.prepare(
+      `INSERT INTO cards (id, title, assignee_id, origin_id, body, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?,
+               COALESCE((SELECT MAX(position) + 1 FROM cards WHERE assignee_id IS ? AND archived_at IS NULL), 0),
+               ?, ?)`
+    ),
+    listActive: database.prepare(
+      `SELECT c.id, c.title, COALESCE(a.name, '${USER_COLUMN}') AS assignee,
+              COALESCE(o.name, '${USER_COLUMN}') AS origin,
+              c.body, c.created_at, c.updated_at, c.done_at
+       FROM cards c
+       LEFT JOIN residents a ON a.id = c.assignee_id
+       LEFT JOIN residents o ON o.id = c.origin_id
+       WHERE c.archived_at IS NULL
+       ORDER BY assignee, c.position, c.created_at LIMIT ${MAX_CARDS}`
+    ),
+    getActive: database.prepare(
+      'SELECT id, assignee_id, body FROM cards WHERE id = ? AND archived_at IS NULL'
+    ),
+    // The whole column, no LIMIT: renumbering must never depend on what the
+    // capped listing happens to show. NULL columns need IS, not =.
+    columnIdsExcept: database.prepare(
+      `SELECT id FROM cards WHERE assignee_id IS ? AND archived_at IS NULL AND id <> ?
+       ORDER BY position, created_at`
+    ),
+    setAssignee: database.prepare('UPDATE cards SET assignee_id = ?, updated_at = ? WHERE id = ?'),
+    setPosition: database.prepare('UPDATE cards SET position = ? WHERE id = ?'),
+    setBody: database.prepare('UPDATE cards SET body = ?, updated_at = ? WHERE id = ?'),
+    // Moving a card back onto an active column clears any done state; marking
+    // done sets it. Both leave assignee/position alone.
+    clearDone: database.prepare('UPDATE cards SET done_at = NULL WHERE id = ?'),
+    markDone: database.prepare(
+      'UPDATE cards SET done_at = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL AND done_at IS NULL'
+    ),
+    archive: database.prepare(
+      'UPDATE cards SET archived_at = ? WHERE id = ? AND archived_at IS NULL'
+    ),
+    // The next task for a resident skips done cards — a completed card sits in
+    // the 完了 column until the human archives it, and must never be reworked.
+    top: database.prepare(
+      `SELECT c.id, c.title, COALESCE(a.name, '${USER_COLUMN}') AS assignee,
+              COALESCE(o.name, '${USER_COLUMN}') AS origin,
+              c.body, c.created_at, c.updated_at, c.done_at
+       FROM cards c
+       LEFT JOIN residents a ON a.id = c.assignee_id
+       LEFT JOIN residents o ON o.id = c.origin_id
+       WHERE c.assignee_id IS ? AND c.archived_at IS NULL AND c.done_at IS NULL
+       ORDER BY c.position, c.created_at LIMIT 1`
+    ),
+    // Counted over the same capped window the listing shows, mirroring the
+    // whiteboard's badge behavior.
+    counts: database.prepare(
+      `SELECT COUNT(*) AS total, COALESCE(SUM(assignee_id IS NULL), 0) AS "user"
+       FROM (SELECT c.assignee_id FROM cards c
+             LEFT JOIN residents a ON a.id = c.assignee_id
+             WHERE c.archived_at IS NULL AND c.done_at IS NULL
+             ORDER BY COALESCE(a.name, '${USER_COLUMN}'), c.position, c.created_at LIMIT ${MAX_CARDS})`
+    ),
+  };
 
-export function createBoard({ dataDirectory, fileSystem = fs, now = () => Date.now() }) {
-  const boardDirectory = path.join(dataDirectory, 'board');
-  const stateFilePath = path.join(dataDirectory, 'board-state.json');
-  // counts() runs on every snapshot broadcast; the same short cache the
-  // whiteboard uses keeps the badge from re-reading every card file.
-  const COUNTS_CACHE_TTL_MS = 5_000;
-  let countsCache = null;
-
-  function readOrder() {
-    try {
-      const parsed = JSON.parse(fileSystem.readFileSync(stateFilePath, 'utf8'));
-      const order = {};
-      for (const [column, ids] of Object.entries(parsed.order ?? {})) {
-        if (Array.isArray(ids)) order[column] = ids.filter((id) => typeof id === 'string');
-      }
-      return order;
-    } catch {
-      return {};
-    }
+  // The column id for a public assignee value: NULL for the user column,
+  // otherwise the active resident's id. Unknown names throw — a second guard
+  // behind residents.js's assertAssignee.
+  function toColumnId(assignee) {
+    if (assignee === USER_COLUMN) return null;
+    const row = statements.residentIdByName.get(assignee);
+    if (row === undefined) throw new Error(`unknown assignee: ${assignee}`);
+    return row.id;
   }
 
-  function persistOrder(order) {
-    fileSystem.mkdirSync(dataDirectory, { recursive: true });
-    fileSystem.writeFileSync(stateFilePath, `${JSON.stringify({ order }, null, 2)}\n`);
+  // Same, but archived residents resolve too — used for origin only.
+  function toOriginId(origin) {
+    if (origin === USER_COLUMN) return null;
+    const row = statements.anyResidentIdByName.get(origin);
+    if (row === undefined) throw new Error(`unknown origin: ${origin}`);
+    return row.id;
   }
 
   function formatNoteDate(at) {
@@ -63,183 +109,116 @@ export function createBoard({ dataDirectory, fileSystem = fs, now = () => Date.n
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
-  function cardFromAttributes(id, attributes, body) {
+  function cardFromRow(row) {
     return {
-      id,
-      title: attributes.title || id,
-      assignee: attributes.assignee || USER_COLUMN,
-      origin: attributes.origin || USER_COLUMN,
-      createdAt: Number(attributes.createdAt) || 0,
-      updatedAt: Number(attributes.updatedAt) || Number(attributes.createdAt) || 0,
-      body: body.trim(),
+      id: row.id,
+      title: row.title,
+      assignee: row.assignee,
+      origin: row.origin,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      body: row.body,
+      done: row.done_at !== null,
     };
   }
 
-  function readCardFile(id) {
-    try {
-      return parseFrontmatter(fileSystem.readFileSync(path.join(boardDirectory, id), 'utf8'));
-    } catch {
-      return null;
-    }
-  }
-
-  // Cards listed in the sidecar come first (in that order); the rest follow
-  // by creation time, so untouched columns read oldest-at-top and a new card
-  // appends at the bottom.
-  function sortColumn(cards, orderedIds) {
-    const position = new Map(orderedIds.map((id, index) => [id, index]));
-    return [...cards].sort((a, b) => {
-      const positionA = position.has(a.id) ? position.get(a.id) : Infinity;
-      const positionB = position.has(b.id) ? position.get(b.id) : Infinity;
-      if (positionA !== positionB) return positionA - positionB;
-      return a.createdAt - b.createdAt;
-    });
+  function createCard({ title, body, assignee, origin, createdAt }) {
+    const id = randomUUID();
+    // The title renders on one line everywhere; collapse any newlines.
+    const cleanTitle = String(title).replace(/\s+/g, ' ').trim();
+    const assigneeId = toColumnId(assignee);
+    statements.insert.run(
+      id,
+      cleanTitle,
+      assigneeId,
+      toOriginId(origin),
+      String(body ?? '').trim(),
+      assigneeId,
+      createdAt,
+      createdAt
+    );
+    return id;
   }
 
   function listCards() {
-    let fileNames;
-    try {
-      fileNames = fileSystem.readdirSync(boardDirectory).filter((name) => name.endsWith('.md'));
-    } catch {
-      return [];
-    }
-    const byColumn = new Map();
-    for (const fileName of fileNames) {
-      const parsed = readCardFile(fileName);
-      if (parsed === null) continue;
-      const card = cardFromAttributes(fileName, parsed.attributes, parsed.body);
-      if (!byColumn.has(card.assignee)) byColumn.set(card.assignee, []);
-      byColumn.get(card.assignee).push(card);
-    }
-    const order = readOrder();
-    const cards = [];
-    for (const [column, columnCards] of byColumn) {
-      cards.push(...sortColumn(columnCards, order[column] ?? []));
-    }
-    return cards.slice(0, MAX_CARDS);
-  }
-
-  function createCard({ title, body, assignee, origin, createdAt }) {
-    fileSystem.mkdirSync(boardDirectory, { recursive: true });
-    const base = new Date(createdAt).toISOString().replaceAll(':', '-').slice(0, 19);
-    let fileName = `${base}.md`;
-    for (let suffix = 2; fileSystem.existsSync(path.join(boardDirectory, fileName)); suffix += 1) {
-      fileName = `${base}-${suffix}.md`;
-    }
-    // The title lives on one frontmatter line; collapse any newlines.
-    const cleanTitle = String(title).replace(/\s+/g, ' ').trim();
-    fileSystem.writeFileSync(
-      path.join(boardDirectory, fileName),
-      formatCard(
-        { title: cleanTitle, assignee, origin, createdAt, updatedAt: createdAt },
-        String(body ?? '').trim()
-      )
-    );
-    countsCache = null;
-    return fileName;
+    return statements.listActive.all().map(cardFromRow);
   }
 
   // Reassign and/or reorder one card. `index` is the target position within
-  // the column as displayed; the sidecar is rebuilt from the displayed order
-  // of every column so the index stays meaningful even for cards that were
-  // never dragged before.
+  // the column as displayed; the whole target column is renumbered densely so
+  // the index stays meaningful even after cross-column moves.
   function moveCard(id, { assignee, index } = {}) {
-    if (!CARD_ID_PATTERN.test(id)) return false;
-    const parsed = readCardFile(id);
-    if (parsed === null) return false;
-    const card = cardFromAttributes(id, parsed.attributes, parsed.body);
-    const targetColumn = assignee ?? card.assignee;
-    if (targetColumn !== card.assignee) {
-      fileSystem.writeFileSync(
-        path.join(boardDirectory, id),
-        formatCard({ ...card, assignee: targetColumn, updatedAt: now() }, card.body)
-      );
+    // Resolve outside the transaction so an unknown assignee never leaves one
+    // open.
+    const targetColumnId = assignee !== undefined ? toColumnId(assignee) : undefined;
+    database.exec('BEGIN');
+    try {
+      const row = statements.getActive.get(id);
+      if (row === undefined) {
+        database.exec('ROLLBACK');
+        return false;
+      }
+      const columnId = targetColumnId !== undefined ? targetColumnId : row.assignee_id;
+      if (columnId !== row.assignee_id) statements.setAssignee.run(columnId, now(), id);
+      // A move onto any active column brings the card back from 完了.
+      statements.clearDone.run(id);
+      const columnIds = statements.columnIdsExcept.all(columnId, id).map((entry) => entry.id);
+      const insertAt = Number.isInteger(index)
+        ? Math.max(0, Math.min(index, columnIds.length))
+        : columnIds.length;
+      columnIds.splice(insertAt, 0, id);
+      columnIds.forEach((cardId, position) => statements.setPosition.run(position, cardId));
+      database.exec('COMMIT');
+      return true;
+    } catch (error) {
+      try {
+        database.exec('ROLLBACK');
+      } catch {
+        // Keep the original error — a failing ROLLBACK must not mask it.
+      }
+      throw error;
     }
-    const order = {};
-    for (const listed of listCards()) {
-      (order[listed.assignee] ??= []).push(listed.id);
-    }
-    for (const column of Object.keys(order)) {
-      order[column] = order[column].filter((cardId) => cardId !== id);
-    }
-    const target = (order[targetColumn] ??= []);
-    const insertAt = Number.isInteger(index)
-      ? Math.max(0, Math.min(index, target.length))
-      : target.length;
-    target.splice(insertAt, 0, id);
-    persistOrder(order);
-    countsCache = null;
-    return true;
   }
 
-  // Taking a card off the board archives the file, like the whiteboard does,
-  // so a mis-click never loses a task.
+  // Mark a card done: it moves to the 完了 column but stays on the board,
+  // keeping its assignee, until the human archives it. Idempotent.
+  function markCardDone(id) {
+    const at = now();
+    return statements.markDone.run(at, at, id).changes > 0;
+  }
+
   function archiveCard(id) {
-    if (!CARD_ID_PATTERN.test(id)) return false;
-    const archiveDirectory = path.join(boardDirectory, '.archived');
-    try {
-      fileSystem.mkdirSync(archiveDirectory, { recursive: true });
-      let target = path.join(archiveDirectory, id);
-      if (fileSystem.existsSync(target)) {
-        target = path.join(archiveDirectory, `${id.slice(0, -'.md'.length)}-${now()}.md`);
-      }
-      fileSystem.renameSync(path.join(boardDirectory, id), target);
-    } catch {
-      return false;
-    }
-    countsCache = null;
-    try {
-      const order = readOrder();
-      let changed = false;
-      for (const column of Object.keys(order)) {
-        const pruned = order[column].filter((cardId) => cardId !== id);
-        if (pruned.length !== order[column].length) {
-          order[column] = pruned;
-          changed = true;
-        }
-      }
-      if (changed) persistOrder(order);
-    } catch {
-      // The card is already off the board; a stale order entry is harmless.
-    }
-    return true;
+    return statements.archive.run(now(), id).changes > 0;
   }
 
   // A follow-up note from the human, appended to the card body so the next
   // run sees the full history in its prompt.
   function appendNote(id, note) {
-    if (!CARD_ID_PATTERN.test(id)) return false;
-    const parsed = readCardFile(id);
-    if (parsed === null) return false;
-    const card = cardFromAttributes(id, parsed.attributes, parsed.body);
+    const row = statements.getActive.get(id);
+    if (row === undefined) return false;
     const noteText = String(note ?? '').trim();
     if (noteText === '') return false;
-    const body = `${card.body}\n\n## 追記 (${formatNoteDate(now())})\n\n${noteText}`.trim();
-    fileSystem.writeFileSync(
-      path.join(boardDirectory, id),
-      formatCard({ ...card, updatedAt: now() }, body)
-    );
+    const body = `${row.body}\n\n## 追記 (${formatNoteDate(now())})\n\n${noteText}`.trim();
+    statements.setBody.run(body, now(), id);
     return true;
   }
 
-  // The next task for a resident: the top card of its column.
+  // The next task for a resident: the top card of its column. Only active
+  // residents resolve, so an archived resident's leftover cards are never
+  // picked up.
   function topCardFor(assignee) {
-    return listCards().find((card) => card.assignee === assignee) ?? null;
+    const row =
+      assignee === USER_COLUMN ? null : statements.residentIdByName.get(assignee);
+    if (assignee !== USER_COLUMN && row === undefined) return null;
+    const card = statements.top.get(assignee === USER_COLUMN ? null : row.id);
+    return card === undefined ? null : cardFromRow(card);
   }
 
   // Card totals for the canvas badge; the user column is the human's inbox.
   function counts() {
-    if (countsCache !== null && now() - countsCache.at < COUNTS_CACHE_TTL_MS) {
-      return countsCache.value;
-    }
-    const cards = listCards();
-    const value = {
-      total: cards.length,
-      user: cards.filter((card) => card.assignee === USER_COLUMN).length,
-    };
-    countsCache = { at: now(), value };
-    return value;
+    const row = statements.counts.get();
+    return { total: row.total, user: row.user };
   }
 
-  return { createCard, listCards, moveCard, archiveCard, appendNote, topCardFor, counts };
+  return { createCard, listCards, moveCard, markCardDone, archiveCard, appendNote, topCardFor, counts };
 }

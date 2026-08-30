@@ -1,19 +1,26 @@
-// Resident team orchestrator: composes the manifest store, scheduler, session
+// Resident team orchestrator: composes the resident store, scheduler, session
 // registry, runner, whiteboard and kanban board into one handle for the core.
-// A tick loop re-reads the manifests (so hand-edited files are picked up),
-// fires due triggers, gates trigger runs on both their precheck command and an
-// assigned board card, works the top card of each idle resident's board column,
-// and turns finished runs into whiteboard reports plus a #general notification.
+// A tick loop re-reads the resident rows, fires due triggers, gates trigger
+// runs on both their precheck command and an assigned board card, works the
+// top card of each idle resident's board column, and turns finished runs into
+// whiteboard reports plus a #general notification.
 
-import { execFile } from 'node:child_process';
-import os from 'node:os';
-import path from 'node:path';
-import { createBoard, USER_COLUMN } from './board.js';
-import { createManifestStore } from './manifest.js';
-import { createSessionRegistry } from './registry.js';
-import { createRunner, expandHomeDirectory, splitReportLevel } from './runner.js';
-import { createWhiteboard } from './whiteboard.js';
-import { isDue, nextRunAt } from './scheduler.js';
+import { execFile } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import { createBoard, USER_COLUMN } from "./board.js";
+import { openDatabase } from "./database.js";
+import { importLegacyData } from "./legacy-import.js";
+import { importResidents } from "./resident-import.js";
+import { createResidentStore } from "./resident-store.js";
+import { createSessionRegistry } from "./registry.js";
+import {
+  createRunner,
+  expandHomeDirectory,
+  splitReportLevel,
+} from "./runner.js";
+import { createWhiteboard } from "./whiteboard.js";
+import { isDue, nextRunAt } from "./scheduler.js";
 
 const TICK_INTERVAL_MS = 30_000;
 const PRECHECK_TIMEOUT_MS = 30_000;
@@ -24,50 +31,67 @@ const PRECHECK_OUTPUT_CAP = 16 * 1024;
 // one resident team.
 export const DEFAULT_DATA_DIRECTORY = path.join(
   os.homedir(),
-  'Library',
-  'Application Support',
-  'ai-office'
+  "Library",
+  "Application Support",
+  "ai-office",
 );
 
 // Rules every resident follows regardless of role; the role-specific
-// instructions from INSTRUCTIONS.md are appended below this.
-function buildPrompt(configuration, instructions, precheckOutput, task) {
+// instructions (edited in the resident drawer) are appended below this.
+// `reports` are the task card's own past reports, oldest first: a run keeps no
+// memory of its own, so replaying them is what carries the history (initial
+// card body → prior investigations → follow-up notes) into this run.
+function buildPrompt(
+  configuration,
+  instructions,
+  precheckOutput,
+  task,
+  reports = [],
+) {
   const sections = [
     `あなたは AI Office の常駐チームの一員「${configuration.displayName}」です。以下のルールと役割指示に従って作業してください。`,
     [
-      '共通ルール:',
-      '- 最後のメッセージが人間向けの報告としてそのままホワイトボードに掲示されます。日本語で簡潔にまとめてください。',
-      '- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書き、2行目以降に本文を続けてください。本文の途中や末尾には書かないでください。',
-    ].join('\n'),
+      "共通ルール:",
+      "- 最後のメッセージが人間向けの報告として利用されます。日本語で簡潔にまとめてください。",
+      "- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書き、2行目以降に本文を続けてください。本文の途中や末尾には書かないでください。",
+    ].join("\n"),
     `## 役割指示\n\n${instructions.trim()}`,
   ];
   if (task) {
     sections.push(
-      `## 今回のタスク(カンバンボードより)\n\n### ${task.title}\n\n${task.body}`.trim()
+      `## 今回のタスク(カンバンボードより)\n\n### ${task.title}\n\n${task.body}`.trim(),
     );
   }
-  if (precheckOutput) {
-    sections.push(`## 事前チェックの出力\n\n\`\`\`\n${precheckOutput.trim()}\n\`\`\``);
+  if (reports.length > 0) {
+    const history = reports
+      .map((report) => `### ${report.title}\n\n${report.body}`.trim())
+      .join("\n\n");
+    sections.push(`## このタスクのこれまでの報告(古い順)\n\n${history}`);
   }
-  return sections.join('\n\n');
+  if (precheckOutput) {
+    sections.push(
+      `## 事前チェックの出力\n\n\`\`\`\n${precheckOutput.trim()}\n\`\`\``,
+    );
+  }
+  return sections.join("\n\n");
 }
 
 function defaultRunPrecheck(command, workingDirectory) {
   return new Promise((resolve) => {
     execFile(
-      '/bin/sh',
-      ['-c', command],
+      "/bin/sh",
+      ["-c", command],
       {
         cwd: expandHomeDirectory(workingDirectory),
         timeout: PRECHECK_TIMEOUT_MS,
         maxBuffer: PRECHECK_OUTPUT_CAP,
-        encoding: 'utf8',
+        encoding: "utf8",
       },
       (error, stdout) => {
         // A failing precheck means "no work found" — the agent run is simply
         // skipped rather than surfacing an error every interval.
-        resolve(error ? '' : stdout);
-      }
+        resolve(error ? "" : stdout);
+      },
     );
   });
 }
@@ -77,15 +101,38 @@ export function createResidents({
   dataDirectory = DEFAULT_DATA_DIRECTORY,
   now = () => Date.now(),
   runPrecheck = defaultRunPrecheck,
-  manifestStore = createManifestStore({ dataDirectory, now }),
-  registry = createSessionRegistry({
-    filePath: path.join(dataDirectory, 'session-registry.json'),
-    now,
-  }),
-  whiteboard = createWhiteboard({ dataDirectory }),
-  board = createBoard({ dataDirectory, now }),
-  runner = createRunner({ registry, now }),
+  database = null,
+  residentStore = null,
+  registry = null,
+  whiteboard = null,
+  board = null,
+  runner = null,
 } = {}) {
+  // The database only opens when a store actually needs it, so tests that
+  // inject stubs never touch the disk. The one-time imports run right after
+  // the first open: resident files first, so the legacy Markdown import's
+  // foreign keys can resolve.
+  let ownedDatabase = null;
+  if (
+    residentStore === null ||
+    registry === null ||
+    whiteboard === null ||
+    board === null
+  ) {
+    if (database === null) {
+      database = openDatabase({
+        location: path.join(dataDirectory, "office.db"),
+      });
+      ownedDatabase = database;
+    }
+    importResidents(database, { dataDirectory, now });
+    importLegacyData(database, { dataDirectory, now });
+    residentStore ??= createResidentStore({ database, now });
+    registry ??= createSessionRegistry({ database, now });
+    whiteboard ??= createWhiteboard({ database, now });
+    board ??= createBoard({ database, now });
+  }
+  runner ??= createRunner({ registry, now });
   let tickTimer = null;
   // Cards currently being worked, by resident name. In-memory on purpose:
   // if the server dies mid-run the card simply stays in its column and the
@@ -99,7 +146,7 @@ export function createResidents({
 
   function formatRunDate(at) {
     const date = new Date(at);
-    const pad = (n) => String(n).padStart(2, '0');
+    const pad = (n) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
@@ -108,18 +155,20 @@ export function createResidents({
     activeCards.delete(entry.name);
     const finishedAt = now();
     const { level, body } = splitReportLevel(resultText);
-    const reportLevel = outcome === 'ok' ? level : 'review-needed';
+    const reportLevel = outcome === "ok" ? level : "review-needed";
     const reportBody =
-      outcome === 'ok' ? body : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
+      outcome === "ok"
+        ? body
+        : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
     const title = `${configuration.displayName} ${formatRunDate(finishedAt)}`;
     // A trigger-driven run that needs a human joins the board as a card in
     // the user column, so follow-up is tracked like any other task. Filed
     // before the report so the report can carry the card id.
     let taskId = task?.id ?? null;
-    if (taskId === null && reportLevel === 'review-needed') {
+    if (taskId === null && reportLevel === "review-needed") {
       taskId = board.createCard({
         title,
-        body: '定期実行が要確認で終了しました。リンクされた報告を確認してください。',
+        body: "定期実行が要確認で終了しました。リンクされた報告を確認してください。",
         assignee: USER_COLUMN,
         origin: entry.name,
         createdAt: finishedAt,
@@ -133,25 +182,37 @@ export function createResidents({
       task: taskId,
     });
     if (task !== null) {
-      if (reportLevel === 'info') board.archiveCard(task.id);
+      // An ok run moves the card into the 完了 column (it stays on the board
+      // until the human archives it); a review-needed run hands it back.
+      if (reportLevel === "info") board.markCardDone(task.id);
       else board.moveCard(task.id, { assignee: USER_COLUMN });
     }
-    manifestStore.saveState(entry.name, {
+    residentStore.saveState(entry.name, {
       ...entry.state,
       lastFinishedAt: finishedAt,
       lastOutcome: outcome,
     });
     state.postMessage({
-      authorKind: 'agent',
+      authorKind: "agent",
       authorName: configuration.displayName,
       cli: configuration.cli,
       text:
-        reportLevel === 'review-needed'
-          ? '@社長 確認をお願いします(ホワイトボードに報告を掲示しました)'
-          : `@社長 ${task !== null ? `タスク「${task.title}」` : '作業'}が完了しました(ホワイトボードに報告を掲示しました)`,
+        reportLevel === "review-needed"
+          ? "@社長 確認をお願いします(ホワイトボードに報告を掲示しました)"
+          : `@社長 ${task !== null ? `タスク「${task.title}」` : "作業"}が完了しました(ホワイトボードに報告を掲示しました)`,
       at: finishedAt,
     });
     state.refresh();
+  }
+
+  // A task card's own reports, oldest first — the continuity thread replayed
+  // into the next run's prompt. Archiving a card archives its reports, so a
+  // reworked card only ever carries the reports still on the board.
+  function linkedReports(taskId) {
+    return whiteboard
+      .listReports()
+      .filter((report) => report.task === taskId)
+      .sort((first, second) => first.createdAt - second.createdAt);
   }
 
   // Start one run. `gateOnPrecheck` is true for scheduled ticks and false for
@@ -169,23 +230,40 @@ export function createResidents({
       // Record the attempt first so a slow precheck cannot double-fire the
       // trigger on the next tick.
       entry.state = { ...entry.state, lastRunAt: startedAt };
-      manifestStore.saveState(entry.name, entry.state);
+      residentStore.saveState(entry.name, entry.state);
 
       // A firing trigger is not enough on its own: with no assigned card the
       // team stays quiet instead of filing a meaningless report every interval.
-      if (gateOnPrecheck && task === null && board.topCardFor(entry.name) === null) {
-        manifestStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+      if (
+        gateOnPrecheck &&
+        task === null &&
+        board.topCardFor(entry.name) === null
+      ) {
+        residentStore.saveState(entry.name, {
+          ...entry.state,
+          lastOutcome: "skipped",
+        });
         return false;
       }
 
       let precheckOutput = null;
       if (configuration.precheck && task === null) {
-        precheckOutput = await runPrecheck(configuration.precheck, configuration.workingDirectory);
-        if (gateOnPrecheck && precheckOutput.trim() === '') {
-          manifestStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+        precheckOutput = await runPrecheck(
+          configuration.precheck,
+          configuration.workingDirectory,
+        );
+        if (gateOnPrecheck && precheckOutput.trim() === "") {
+          residentStore.saveState(entry.name, {
+            ...entry.state,
+            lastOutcome: "skipped",
+          });
           return false;
         }
       }
+      // A run keeps no memory of its own: replaying the card's past reports is
+      // what carries the earlier investigations into this run, so the human
+      // never has to quote them into a note by hand.
+      const history = task === null ? [] : linkedReports(task.id);
       const started = runner.run(
         {
           name: entry.name,
@@ -195,9 +273,15 @@ export function createResidents({
           workingDirectory: configuration.workingDirectory,
         },
         {
-          prompt: buildPrompt(configuration, entry.instructions, precheckOutput, task),
+          prompt: buildPrompt(
+            configuration,
+            entry.instructions,
+            precheckOutput,
+            task,
+            history,
+          ),
           onFinished: (result) => handleFinished(entry, result, task),
-        }
+        },
       );
       if (started && task !== null) activeCards.set(entry.name, task);
       if (started) state.refresh();
@@ -208,10 +292,12 @@ export function createResidents({
   }
 
   function tick() {
-    for (const entry of manifestStore.list()) {
+    for (const entry of residentStore.list()) {
       if (!entry.configuration.enabled) continue;
       if (runner.isRunning(entry.name) || launching.has(entry.name)) continue;
-      if (isDue(entry.configuration.trigger, entry.state.lastRunAt ?? null, now())) {
+      if (
+        isDue(entry.configuration.trigger, entry.state.lastRunAt ?? null, now())
+      ) {
         launch(entry, { gateOnPrecheck: true });
         continue;
       }
@@ -234,13 +320,24 @@ export function createResidents({
       clearInterval(tickTimer);
       tickTimer = null;
     }
+    // Closing checkpoints the WAL; only a database this module opened is ours
+    // to close.
+    if (ownedDatabase !== null) {
+      try {
+        ownedDatabase.close();
+      } catch {
+        // Already closed — stop() must stay idempotent.
+      }
+      ownedDatabase = null;
+    }
   }
 
   // Lightweight per-snapshot data for the canvas (no instructions text).
   function snapshotData() {
     const currentTime = now();
-    return manifestStore.list({ withInstructions: false }).map((entry) => ({
+    return residentStore.list({ withInstructions: false }).map((entry) => ({
       name: entry.name,
+      teamId: entry.teamId,
       displayName: entry.configuration.displayName,
       seat: entry.configuration.seat,
       cli: entry.configuration.cli,
@@ -253,14 +350,20 @@ export function createResidents({
       lastRunAt: entry.state.lastRunAt ?? null,
       lastOutcome: entry.state.lastOutcome ?? null,
       nextRunAt: entry.configuration.enabled
-        ? nextRunAt(entry.configuration.trigger, entry.state.lastRunAt ?? null, currentTime)
+        ? nextRunAt(
+            entry.configuration.trigger,
+            entry.state.lastRunAt ?? null,
+            currentTime,
+          )
         : null,
     }));
   }
 
   // Full detail for the resident panel, instructions included.
   function list() {
-    return manifestStore.list().map((entry) => ({
+    return residentStore.list().map((entry) => ({
+      id: entry.id,
+      teamId: entry.teamId,
       name: entry.name,
       configuration: entry.configuration,
       instructions: entry.instructions,
@@ -269,20 +372,31 @@ export function createResidents({
     }));
   }
 
-  function save(name, { configuration, instructions }) {
-    manifestStore.save(name, { configuration, instructions });
+  function save(name, { configuration, instructions, teamId }) {
+    residentStore.save(name, { configuration, instructions, teamId });
+    state.refresh();
+  }
+
+  function saveTeam(team) {
+    const id = residentStore.saveTeam(team);
+    state.refresh();
+    return id;
+  }
+
+  function deleteTeam(id) {
+    residentStore.deleteTeam(id);
     state.refresh();
   }
 
   function remove(name) {
-    manifestStore.remove(name);
+    residentStore.remove(name);
     state.refresh();
   }
 
   function runNow(name) {
-    const entry = manifestStore.read(name);
+    const entry = residentStore.read(name);
     if (entry === null) throw new Error(`unknown resident: ${name}`);
-    if (runner.isRunning(name)) throw new Error('already running');
+    if (runner.isRunning(name)) throw new Error("already running");
     return launch(entry, { gateOnPrecheck: false });
   }
 
@@ -315,7 +429,9 @@ export function createResidents({
 
   function assertAssignee(assignee) {
     if (assignee === USER_COLUMN) return;
-    if (manifestStore.read(assignee) === null) throw new Error(`unknown assignee: ${assignee}`);
+    if (residentStore.read(assignee, { withInstructions: false }) === null) {
+      throw new Error(`unknown assignee: ${assignee}`);
+    }
   }
 
   function listBoardCards() {
@@ -326,7 +442,7 @@ export function createResidents({
       whiteboard
         .listReports()
         .map((report) => report.task)
-        .filter(Boolean)
+        .filter(Boolean),
     );
     return board.listCards().map((card) => ({
       ...card,
@@ -337,7 +453,13 @@ export function createResidents({
 
   function createBoardCard({ title, body, assignee }) {
     assertAssignee(assignee);
-    const id = board.createCard({ title, body, assignee, origin: USER_COLUMN, createdAt: now() });
+    const id = board.createCard({
+      title,
+      body,
+      assignee,
+      origin: USER_COLUMN,
+      createdAt: now(),
+    });
     state.refresh();
     return id;
   }
@@ -350,10 +472,23 @@ export function createResidents({
     return changed;
   }
 
+  function markBoardCardDone(id) {
+    if (isWorkingCard(id)) return false;
+    const changed = board.markCardDone(id);
+    if (changed) state.refresh();
+    return changed;
+  }
+
   function archiveBoardCard(id) {
     if (isWorkingCard(id)) return false;
     const changed = board.archiveCard(id);
-    if (changed) state.refresh();
+    // Reports stay on the board until the human archives them or the card they
+    // belong to is archived; do the latter here so an archived card takes its
+    // reports with it.
+    if (changed) {
+      whiteboard.archiveReportsForTask(id);
+      state.refresh();
+    }
     return changed;
   }
 
@@ -369,6 +504,9 @@ export function createResidents({
     tick,
     snapshotData,
     list,
+    listTeams: residentStore.listTeams,
+    saveTeam,
+    deleteTeam,
     save,
     remove,
     runNow,
@@ -381,6 +519,7 @@ export function createResidents({
     listBoardCards,
     createBoardCard,
     moveBoardCard,
+    markBoardCardDone,
     archiveBoardCard,
     appendBoardNote,
     boardCounts: board.counts,

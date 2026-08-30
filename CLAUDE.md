@@ -7,23 +7,26 @@ working in this repository.
 
 A Gather-like virtual office that visualizes local AI coding agent sessions
 (Claude Code / Codex CLI / Gemini CLI) as pixel-art coworkers. The server
-uses the Node.js standard library only — no runtime dependencies.
+has no npm runtime dependencies; persistence is SQLite via the built-in
+`node:sqlite` (npm scripts pass `--experimental-sqlite` for Node 22,
+Electron's Node 24 needs no flag).
 
 ## Commands
 
 - `npm start` — run the server at http://localhost:4680
-- `npm test` — run the full test suite (node:test, ~90 tests, no build step)
+- `npm test` — run the full test suite (node:test, ~140 tests, no build step)
 - `npm run electron` — desktop app embedding the same server
 
 ## Repository map
 
-- `public/office.js` — canvas rendering: office layout, avatars and walking, window/sky day-night scenery
-- `public/office/` — layout grid, small talk, sprite specs, desk-avoiding pathfinding
+- `public/office.js` — canvas rendering: office layout, resident desks, entrance-lobby visitors, window/sky day-night scenery
+- `public/office/` — layout geometry (team rooms + entrance lobby), sprite specs, desk-avoiding pathfinding
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `whiteboard.js` (reports), `board.js` (kanban task cards)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `registry.js` (session bindings), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
 - `docs/architecture.md` — full architecture notes
+- `docs/database.md` — office.db schema (ER diagram, indexes, conventions)
 
 ## Resident team facts (asked repeatedly — check here first)
 
@@ -52,11 +55,27 @@ uses the Node.js standard library only — no runtime dependencies.
   (`Not inside a trusted directory…`); the `--sandbox` flag
   (`read-only`/`workspace-write`) still bounds what the run may touch.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
-  on its first line flags it for a human.
-- Task queue: the kanban board (`board.js`; cards under
-  `<dataDir>/board/*.md`, columns = assignee). An idle resident whose
-  trigger is not due works the **top card** of its column (precheck is
-  skipped — the card is the trigger). An ok run auto-archives the card; a
+  on its first line flags it for a human. A report stays on the board until
+  the human archives it or the card it links to is archived — archiving a
+  card archives its un-pinned reports too (pinned reports stay).
+- Everything the resident team persists lives in `<dataDir>/office.db`
+  (opened by `database.js`): resident configuration + instructions + run
+  state (`residents` table, edited in-app), teams (`teams`, 1:N — every
+  resident belongs to one team, default id `default`), session bindings
+  (`session_bindings`), reports and cards. Cards/reports reference residents
+  by foreign-keyed id; the HTTP API stays name-based (`'user'` = the human's
+  column). Teams are user-managed (name + seat count 1..12, both editable;
+  deleting a team with residents or the last team is refused); the canvas
+  draws one room per team, three rooms per band wrapping to the next band
+  below, and seats are unique per (team, seat). Archiving sets `archived_at` — rows are never deleted, and
+  listings filter to active rows. See `docs/database.md` for the ER diagram.
+- Task queue: the kanban board (`board.js`; rows in the `cards` table, each
+  card assigned to one resident or the user). The UI groups columns by team —
+  user first, one per team (each card tagged with its assignee's avatar), then
+  a 完了 column of done cards. An idle resident whose trigger is not due works
+  the **top card** of its column (precheck is skipped — the card is the
+  trigger). An ok run marks the card done (it moves to 完了 and stays there
+  until the human archives it explicitly — completion never deletes); a
   review-needed or failed run moves it to the user column. A trigger-driven
   run ending review-needed auto-files a card in the user column.
 

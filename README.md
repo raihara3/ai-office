@@ -3,15 +3,14 @@
 A Gather-like virtual office that visualizes your local AI coding agents —
 Claude Code, Codex CLI and Gemini CLI — as pixel-art coworkers.
 
-Each session (one log file) gets its own avatar and desk on a shared grid
-of six pre-furnished desks (three columns by two rows) that fills from
-the top-left; vacant seats show an empty desk, and sessions beyond six
-overflow onto extra rows. When an agent is actively
-working, its avatar sits at
-the desk and a speech bubble shows what it is doing right now (current tool
-action or the user's request). When idle, the avatar walks to the break room
-for a coffee. Subagent runs appear as mini avatars next to the desk. A
-separate desk island in the top-left seats the resident team — permanently
+Each terminal session (one log file) gets its own visitor avatar in the
+entrance lobby pinned to the bottom of the scene: when the agent starts
+working, the avatar steps out of the elevator, waits at a lobby spot while
+a speech bubble shows what it is doing right now (current tool action or
+the user's request), and rides the elevator back out once the answer is
+delivered — it re-enters on the next prompt. Subagent runs appear as mini
+avatars next to the visitor. Team rooms in the top-left seat the resident
+team — permanently
 assigned agents that run on schedules and report to a wall whiteboard.
 
 ![status](https://img.shields.io/badge/runtime-Node.js%20%E2%89%A520-brightgreen)
@@ -25,8 +24,10 @@ npm start
 # open http://localhost:4680
 ```
 
-The server has no runtime dependencies — Node.js standard library only. Set
-`PORT` to change the listen port.
+The server has no npm runtime dependencies; persistence is SQLite via the
+built-in `node:sqlite` (Node ≥ 22.5 — the npm scripts pass
+`--experimental-sqlite` for Node below 23.4). Set `PORT` to change the
+listen port.
 
 ### Desktop app (Electron)
 
@@ -37,8 +38,11 @@ npm run dist      # optional: build a macOS .dmg/.zip via electron-builder
 ```
 
 The Electron main process embeds the same server in-process and points a
-window at it, so the browser and desktop paths share all logic. (Don't run
-`npm start` and `npm run electron` at once — they would fight over the port.)
+window at it, so the browser and desktop paths share all logic. Exactly one
+server core runs per data directory: launching the desktop app while a
+standalone `npm start` owns the port attaches a window to that server
+instead of starting a second core (two cores would double-run board cards),
+and a second desktop launch just focuses the existing window.
 
 ### Tests
 
@@ -66,27 +70,31 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 
 - **Working**: an event was observed within the last 90 seconds and the turn
   has not completed.
-- **Break**: the turn completed (15-second grace period) or no recent events
-  and no tool call is still in flight.
+- **Break**: the turn completed (5-second grace period) or no recent events
+  and no tool call is still in flight. A visitor on break rides the elevator
+  out of the office.
 - **Blocked**: a tool call was issued but its result has not arrived (most
   notably a command awaiting the user's permission, or a long-running
-  command). No idle timeout applies; the avatar stays seated at its desk.
+  command). No idle timeout applies; the avatar stays at its lobby spot.
 - **Waiting**: the agent asked the user a question or requested approval
   (e.g. `AskUserQuestion`, plan approval, Codex approval requests). No idle
-  timeout applies; the avatar stands in front of its desk with a 🖐️ bubble.
+  timeout applies; the avatar waits at its lobby spot with a 🖐️ bubble.
 - Sessions with no events for 3 days expire from the office (their log
   files are no longer tailed).
 
 ### Visualization
 
 - Speech bubble: 確認中 (inspecting) / 考え中 (thinking) / 作業中 (working)
-  while at the desk, ・・・ while blocked (a tool call in flight, e.g. awaiting
-  permission), ☕ on break, plus おはようございます on arrival and
-  お疲れさまでした when walking out
-- Desk nameplate: the repository (project) name, in the vendor's color
-- Mini avatars beside the desk: running subagents (label = agent type);
-  background subagent sessions get their own desk. Both wear a green-and-
-  yellow beginner's mark (若葉マーク)
+  while waiting in the lobby, ・・・ while blocked (a tool call in flight,
+  e.g. awaiting permission), 🖐️ when waiting for the user, plus お邪魔します
+  when stepping out of the elevator and 失礼します when riding it home
+- Visitor tag: the repository (project) name, under the avatar
+- Mini avatars beside the visitor: running subagents (label = agent type);
+  background subagent sessions get their own lobby spot. Both wear a green-
+  and-yellow beginner's mark (若葉マーク)
+- Elevator doors slide open whenever a visitor stands near them; a
+  decorative door in the partition wall separates the lobby from the work
+  area (no avatar passes through it)
 - App bar: the AI OFFICE brand, view tabs (オフィス / ボード) that switch
   between the office canvas and the in-place full board, the connection
   status pill, a 🌙/☀️ light/dark theme toggle (the choice is remembered in
@@ -107,7 +115,8 @@ Canvas 2D scene with procedurally drawn pixel avatars.
 
 ### HR cleanup
 
-An HR avatar stands by the entrance (the EXIT door, bottom-left). Clicking it
+A receptionist avatar (受付) staffs the counter in the entrance lobby. The
+アバター退勤 button in the app bar
 finds sessions whose CLI process is no longer running. Each running process
 grants one "seat" per (CLI, working directory) — checked via `ps` + `lsof` —
 and only the most recently active sessions keep a seat; the rest are
@@ -120,8 +129,8 @@ becomes retirable once the lock is released; other app hosts, lacking such a
 signal, become retirable once idle. Sessions currently shown as working are
 never retired, resident-team sessions are permanent staff and never retire,
 and ambiguous cases err on the side of alive. Retired avatars
-walk out the
-door; their log files are left untouched on disk and the clock-out is tracked
+ride the elevator
+out; their log files are left untouched on disk and the clock-out is tracked
 in the state store, which ignores replayed log lines up to the member's last
 event so a retired session cannot resurrect from a rescan (genuinely newer
 activity brings them back). The clock-out is persisted to
@@ -131,15 +140,16 @@ survives a server restart. Endpoints:
 
 ## Resident team
 
-Beyond the free-address grid, a six-desk island in the top-left seats the
-resident team: permanently assigned agents, one role each. A resident is
-configured declaratively under
-`~/Library/Application Support/ai-office/residents/<name>/` —
-`resident.json` (display name, seat, CLI, read-only/edit mode, working
-directory, trigger, optional precheck, enabled), `INSTRUCTIONS.md` (the role
-prompt), `state.json` (run bookkeeping) and `outbox/` (reports). The files
-are the source of truth; clicking a resident desk opens an in-app drawer
-with the same fields (create, edit, unassign, run now).
+The team rooms in the top-left seat the
+resident team: permanently assigned agents, one role each. A resident's
+configuration (display name, seat, CLI, read-only/edit mode, working
+directory, trigger, optional precheck, enabled), role prompt and run
+bookkeeping live as a row in
+`~/Library/Application Support/ai-office/office.db` (SQLite), edited through
+the in-app drawer opened by clicking a resident desk (create, edit,
+unassign, run now). Every resident belongs to one team (default team
+`office` for now). Reports and kanban cards live in the same database,
+foreign-keyed to their resident.
 
 Triggers are `{type: "schedule", days, times}` (fixed weekday/time slots;
 occurrences still fire up to one hour late, older ones are skipped) or
@@ -153,37 +163,36 @@ the CLI's permission flags. One run per resident at a time, with a
 30-minute timeout. The CLI writes its normal transcript, so the existing
 tail → watcher → state pipeline visualizes the run; a session registry
 (`session-registry.json`) binds the session to its resident so it seats at
-the resident island — never the free-address grid — is protected from HR
+its resident's team desk — never appearing as a lobby visitor — is protected
+from HR
 cleanup, and skips the `#general` request/reply exchange (the resident posts
 its own report notification instead).
 
 Resident seats render three states: unassigned (gray avatar facing the
 viewer), assigned idle (vendor-colored, screen off, ⏸ when disabled) and
-running (facing the monitor, lit screen, status bubble). Residents never go
-to the break room or walk out.
+running (facing the monitor, lit screen, status bubble). Residents never
+wait in the lobby or ride the elevator out.
 
-A kanban board hands tasks to residents: one card per Markdown file under
-`~/Library/Application Support/ai-office/board/` (columns are assignees —
-the user or a resident; drag order lives in a `board-state.json` sidecar).
-An idle resident whose trigger is not due picks up the top card of its
-column — the precheck is skipped, the card is the trigger — and receives
-the card body in its prompt. A run that ends ok archives the card into
-`board/.archived/` (never deleted); a review-needed or failed run moves the
-card to the user column, and a trigger-driven run that ends review-needed
-files a user-column card automatically. Reports carry a `task:` frontmatter
-line linking them to their card; cards cannot be moved or archived while
-their run is in flight.
+A kanban board hands tasks to residents: one row per card in the `cards`
+table of `office.db` (columns are assignees — the user or a resident; drag
+order is the `position` column). An idle resident whose trigger is not due
+picks up the top card of its column — the precheck is skipped, the card is
+the trigger — and receives the card body in its prompt. A run that ends ok
+archives the card (sets `archived_at`, never deletes the row); a
+review-needed or failed run moves the card to the user column, and a
+trigger-driven run that ends review-needed files a user-column card
+automatically. Reports carry a `task` column linking them to their card;
+cards cannot be moved or archived while their run is in flight.
 
-Run results are saved as frontmatter Markdown reports in the resident's
-`outbox/`; the whiteboard on the top wall shows a badge counting unread
-reports plus cards waiting in the user column (red when any needs the
-human) and, when clicked, switches to the in-place board view (file cards,
-drag to reorder or reassign, open a card in the drawer for its body, linked
-reports, a follow-up note form and a done button); reports are listed in
-the inbox sidebar (read state lives in a `whiteboard-state.json` sidecar).
-Each report row has a ✕
-button that takes it off the board — the
-file is moved to the resident's `outbox/.archived/`, never deleted.
+Run results are saved as rows in the `reports` table of `office.db`; the
+whiteboard on the top wall shows a badge counting unread reports plus cards
+waiting in the user column (red when any needs the human) and, when
+clicked, switches to the in-place board view (file cards, drag to reorder
+or reassign, open a card in the drawer for its body, linked reports, a
+follow-up note form and a done button); reports are listed in the inbox
+sidebar (read and pin state are plain columns). Each report row has a ✕
+button that takes it off the board — the row is flagged `archived_at`,
+never deleted.
 Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
 `POST /api/residents/:name/run`, `GET /api/whiteboard`,
 `POST /api/whiteboard/read`, `POST /api/whiteboard/archive`,
@@ -201,7 +210,7 @@ see [docs/architecture.md](docs/architecture.md).
 
 ## Limitations
 
-- Free-address sessions are visualize-only: the office does not control
+- Visitor sessions are visualize-only: the office does not control
   CLIs you start yourself (resident runs, spawned headlessly by the office,
   are the exception).
 - Gemini log parsing is best-effort — the chat log format varies between

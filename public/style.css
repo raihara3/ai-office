@@ -175,6 +175,31 @@ textarea:focus-visible {
   color: var(--primary);
 }
 
+.tab-badge {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e0952f;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.tab-badge[hidden] {
+  display: none;
+}
+
+.tab-badge.review {
+  background: #d93a4a;
+}
+
 #appbar-actions {
   display: flex;
   align-items: center;
@@ -212,7 +237,8 @@ textarea:focus-visible {
   border-color: var(--text-muted);
 }
 
-#cleanup-run {
+#cleanup-run,
+#team-add {
   padding: 6px 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-small);
@@ -223,7 +249,8 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
-#cleanup-run:hover {
+#cleanup-run:hover,
+#team-add:hover {
   border-color: var(--text-muted);
   color: var(--text);
 }
@@ -263,32 +290,52 @@ textarea:focus-visible {
   align-items: stretch;
   flex-shrink: 0;
   gap: 10px;
-  height: 148px;
+  height: 200px;
   padding: 10px 16px;
   overflow-x: auto;
   overflow-y: hidden;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+#kanban-strip::-webkit-scrollbar,
+#kanban-strip .board-cards::-webkit-scrollbar {
+  display: none;
+}
+
+#kanban-strip[hidden] {
+  display: none;
 }
 
 .strip-column {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  gap: 5px;
-  width: 216px;
-  padding: 8px 10px;
+  width: 248px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-muted);
+  box-shadow: var(--shadow-soft);
+  background: var(--surface);
+}
+
+/* The strip's card area fills the fixed-height column and scrolls, so every
+   card stays full-size and draggable instead of being truncated to a preview. */
+#kanban-strip .board-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .strip-column-head {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .assignee-chip {
@@ -373,42 +420,8 @@ textarea:focus-visible {
   color: var(--primary);
 }
 
-.strip-card {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  box-shadow: var(--shadow-soft);
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.strip-card:hover {
-  border-color: var(--primary);
-}
-
-.strip-card.working {
-  border-color: rgba(23, 153, 95, 0.45);
-}
-
-.strip-card-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 11px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.strip-more {
-  color: var(--text-faint);
-  font-size: 10px;
-}
-
 .strip-empty {
+  padding: 4px 2px;
   color: var(--text-faint);
   font-size: 11px;
 }
@@ -423,23 +436,66 @@ textarea:focus-visible {
 
 #office-wrap {
   display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 1;
+  position: relative;
   min-width: 0;
-  padding: 16px;
+  overflow: hidden;
 }
 
 #office-wrap[hidden] {
   display: none;
 }
 
+/* The canvas grows with the team count; this scroller lets an enlarged scene
+   pan while 'safe center' keeps a small scene centered without clipping the
+   top-left the way plain flex centering would. */
+#office-scroll {
+  display: flex;
+  align-items: safe center;
+  justify-content: safe center;
+  flex: 1;
+  min-width: 0;
+  padding: 16px;
+  overflow: auto;
+}
+
 #office {
-  max-width: 100%;
-  max-height: 100%;
+  flex: none;
   border-radius: 12px;
   box-shadow: var(--shadow-raised);
   image-rendering: pixelated;
+}
+
+/* Zoom cluster pinned to the office viewport corner, above the scroller. */
+#office-zoom {
+  display: flex;
+  gap: 4px;
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+#office-zoom button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#office-zoom button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 /* --- full board view (in-place, swaps with the canvas) ------------------ */
@@ -573,6 +629,29 @@ textarea:focus-visible {
   color: var(--warning);
 }
 
+.card-badge.done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* The avatar tag on a card: which coworker owns it, so a team column that
+   mixes several residents still reads at a glance. */
+.card-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.assignee-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
 .board-card-time {
   margin-left: auto;
   color: var(--text-faint);
@@ -589,6 +668,36 @@ textarea:focus-visible {
   border-left: 1px solid var(--border);
   background: var(--surface);
   overflow: hidden;
+}
+
+#panel[hidden] {
+  display: none;
+}
+
+/* The inbox tab expands the panel to fill the content area; the office tab
+   keeps it a fixed sidebar. */
+#panel.expanded {
+  flex: 1;
+  width: auto;
+  border-left: none;
+}
+
+#panel.expanded #inbox-list {
+  padding: 16px;
+}
+
+#panel.expanded .report {
+  max-width: 880px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+/* In the inbox tab a report shows its body in full; only #inbox-list scrolls
+   once the content outgrows the viewport, rather than each body scrolling
+   inside the 240px cap the fixed sidebar uses. */
+#panel.expanded .report-body {
+  max-height: none;
+  overflow-y: visible;
 }
 
 #panel-head {
@@ -709,6 +818,23 @@ textarea:focus-visible {
 
 .report.favorite .report-favorite {
   color: var(--warning);
+}
+
+.report-copy {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.report-copy:hover {
+  color: var(--primary);
+}
+
+.report-copy.copied {
+  color: var(--success);
 }
 
 .report-archive {
@@ -832,7 +958,8 @@ textarea:focus-visible {
 #card-detail[hidden],
 #card-form[hidden],
 #activity-wrap[hidden],
-#resident-form[hidden] {
+#resident-form[hidden],
+#team-form[hidden] {
   display: none;
 }
 
@@ -962,6 +1089,7 @@ textarea:focus-visible {
 /* --- forms (drawer) ----------------------------------------------------- */
 
 #resident-form,
+#team-form,
 #card-form {
   display: flex;
   flex-direction: column;
@@ -969,6 +1097,7 @@ textarea:focus-visible {
 }
 
 #resident-form label,
+#team-form label,
 #card-form label {
   display: flex;
   flex-direction: column;
@@ -981,6 +1110,7 @@ textarea:focus-visible {
 #resident-form input,
 #resident-form select,
 #resident-form textarea,
+#team-form input,
 #card-form input,
 #card-form select,
 #card-form textarea,

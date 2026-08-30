@@ -36,40 +36,55 @@ function createWindow() {
 
 // Start the embedded server, waiting until it actually listens before the
 // window loads its URL (avoids an ERR_CONNECTION_REFUSED race). If the default
-// port is already taken — e.g. a standalone `npm start` is running — fall back
-// to an arbitrary free port so the desktop app still opens.
+// port is already taken — e.g. a standalone `npm start` is running — attach a
+// window to that server instead of starting a second core: two cores over the
+// same data directory means two tick loops, which double-run board cards and
+// clobber each other's session-registry bindings.
 async function startEmbeddedServer() {
-  let handle = startServer()
+  const handle = startServer()
   try {
     await handle.ready
+    return handle
   } catch (error) {
-    if (error && error.code === 'EADDRINUSE') {
-      handle.close()
-      handle = startServer({ port: 0 })
-      await handle.ready
-    } else {
-      throw error
-    }
+    const url = handle.url
+    handle.close()
+    if (error && error.code !== 'EADDRINUSE') throw error
+    const probe = await fetch(`${url}/api/board`).catch(() => null)
+    if (probe === null || !probe.ok) throw error // port holder is not ai-office
+    console.log(`[ai-office] attaching to the already-running server at ${url}`)
+    return { url, close() {} }
   }
-  return handle
 }
 
-app.whenReady().then(async () => {
-  try {
-    embeddedServer = await startEmbeddedServer()
-  } catch (error) {
-    dialog.showErrorBox('AI Office', `Failed to start the server:\n${error.message}`)
-    app.quit()
-    return
-  }
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+// One desktop instance at a time: a second launch focuses the existing
+// window instead of spawning another full app over the same data directory.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
     }
   })
-})
+
+  app.whenReady().then(async () => {
+    try {
+      embeddedServer = await startEmbeddedServer()
+    } catch (error) {
+      dialog.showErrorBox('AI Office', `Failed to start the server:\n${error.message}`)
+      app.quit()
+      return
+    }
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

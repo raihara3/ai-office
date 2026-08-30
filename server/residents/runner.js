@@ -251,7 +251,13 @@ export function createRunner({
       finished = true;
       clearTimeout(timeout);
       running.delete(resident.name);
-      onFinished({ outcome, resultText });
+      // finish() fires from child-process event handlers, where an exception
+      // would escalate to an uncaughtException and take the server down.
+      try {
+        onFinished({ outcome, resultText });
+      } catch (error) {
+        console.error(`resident run ${resident.name}: finish handler failed: ${error.message}`);
+      }
     };
 
     child.on('error', (error) => finish('error', `実行に失敗しました: ${error.message}`));

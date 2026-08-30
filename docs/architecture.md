@@ -43,7 +43,7 @@ tail → watcher → state の流れがそのまま実行を可視化します�
 ## ファイルツリー
 
 ```
-server/                バックエンド(Node.js 標準ライブラリのみ)
+server/                バックエンド(npm 依存なし。永続化は node:sqlite)
   index.js             エントリポイント + startServer()(Electron 埋め込み契約も兼ねる)
   core.js              state + watchers + cleanup を合成; ライフサイクル(start/stop)
   http.js              HTTP 静的配信 + SSE + /api/* を core に橋渡しするアダプタ
@@ -54,17 +54,24 @@ server/                バックエンド(Node.js 標準ライブラリのみ)
   cleanup.test.js      人事(HR)退勤ヒューリスティックのテスト
   residents/           常駐チーム(スケジュール実行される常駐エージェント)
     residents.js       オーケストレータ: tick ループ + precheck + 報告生成
-    manifest.js        resident.json / INSTRUCTIONS.md / state.json の読み書きと検証
-    manifest.test.js   マニフェスト検証・入出力のテスト
+    resident-store.js  residents / teams テーブルの読み書きと検証
+    resident-store.test.js 検証・保存・席重複・アーカイブのテスト
+    resident-import.js 旧 resident ファイル群からの一回限りのインポート
+    resident-import.test.js インポート・ghost 生成・クリーンアップのテスト
     scheduler.js       トリガー判定(schedule / interval)の純粋関数
     scheduler.test.js  トリガー判定のテスト
-    registry.js        セッションレジストリ(セッションログ ↔ 常駐員の紐付け)
+    registry.js        セッションレジストリ(session_bindings テーブル)
+    registry.test.js   フラグメント照合・上限・アーカイブ済み解決のテスト
     runner.js          ヘッドレス CLI 実行(コマンド構築 + タイムアウト)
     runner.test.js     コマンド構築・出力パースのテスト
-    whiteboard.js      ホワイトボード(frontmatter 付き Markdown 報告 + 既読管理)
-    whiteboard.test.js frontmatter パース・既読管理のテスト
-    board.js           カンバンボード(タスクカードの Markdown ストア + 並び順)
+    database.js        office.db のオープンとスキーマ移行(node:sqlite / WAL)
+    database.test.js   スキーマ移行・再オープン・新版 DB 拒否のテスト
+    whiteboard.js      ホワイトボード(reports テーブルの報告 + 既読・ピン管理)
+    whiteboard.test.js 報告の掲示・既読・アーカイブ・ピンのテスト
+    board.js           カンバンボード(cards テーブルのカードストア + 並び順)
     board.test.js      カードの起票・並び替え・アーカイブ・追記のテスト
+    legacy-import.js   旧 Markdown ストアからの一回限りのインポート
+    legacy-import.test.js インポートとクリーンアップのテスト
   watchers/
     claude.js          Claude Code トランスクリプト解析(handleLine + startWatcher)
     codex.js           Codex CLI rollout ログ解析
@@ -76,10 +83,8 @@ public/                フロントエンド(静的 ES モジュールとして�
   office.js            canvas 描画ループ(部屋・デスク・アバター・吹き出し)
   office/
     specs.js           ベンダー別アバターの色 + エンブレム
-    layout.js          純粋なシーン幾何(デスク・休憩スポット・座席)
+    layout.js          純粋なシーン幾何(チームルーム・エントランスロビー・座席)
     layout.test.js     幾何のテスト
-    small-talk.js      休憩室の雑談ステートマシン(random 注入可能)
-    small-talk.test.js 雑談のテスト
     pathfinding.js     デスクを避けるグリッド経路探索(空きスペースのみを歩く)
     pathfinding.test.js 経路探索のテスト
   office-client.js     トランスポートクライアント(SSE + cleanup API), IPC へ差し替え可能
@@ -112,7 +117,7 @@ state ストア・人事 cleanup・3 つの CLI watcher・常駐チームを、�
 `postMessage`、`previewCleanup`、`runCleanup`、常駐員 CRUD / 実行、
 ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
 オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
-その席を常駐チームの島に配置)、常駐員名簿とホワイトボードの未読数と
+その席をチームルームの机に配置)、常駐員名簿とホワイトボードの未読数と
 カンバンボードのカード数を添付
 します。リフレッシュタイマーを保持し、経過時間のみで起きる
 `working → break` の遷移もクライアントへ届くようにします。
@@ -123,7 +128,8 @@ HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態ス�
 Server-Sent Events(`/events`)でストリームし、人事 cleanup のエンドポイント
 (`GET /api/cleanup/preview`、`POST /api/cleanup`)、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
-`POST /api/residents/:name/run`)、ホワイトボード(`GET /api/whiteboard`、
+`POST /api/residents/:name/run`)、チーム管理(`GET`/`POST /api/teams`、
+`PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
 `POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)、カンバンボード
 (`GET /api/board`、`POST /api/board/create`/`move`/`archive`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
@@ -197,13 +203,17 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
 
 ### `residents/`
 
-常駐チーム: 左上のデスク島に常駐する最大 6 人のエージェント(1 人 = 1 役割)。
-設定は `~/Library/Application Support/ai-office/residents/<name>/` 配下の
-ファイル(`resident.json`・`INSTRUCTIONS.md`・`state.json`・`outbox/`)が
-単一の真実の源で、アプリ内パネルとテキストエディタのどちらで編集しても
-同じ場所に行き着きます。
+常駐チーム: 左上のチームルーム群に常駐するエージェント(1 人 = 1 役割、
+1 チームあたり最大 12 席)。チームはユーザーが作成・改名・席数変更・削除
+できます(所属常駐がいるチームと最後の 1 チームは削除不可)。
+設定(プロフィール・役割プロンプト・実行簿記)・チーム・セッション紐付け・
+報告・カンバンカードはすべて
+`~/Library/Application Support/ai-office/office.db`(SQLite)に永続化され、
+編集はアプリ内パネル(ドロワー)で行います。各常駐は 1 つのチームに所属し
+(1:N、既定は 'default' チーム)、カード・報告は常駐 id への外部キーで
+リレーションされます(スキーマは [database.md](database.md))。
 
-- **`residents.js`** — オーケストレータ。30 秒ごとの tick でマニフェストを
+- **`residents.js`** — オーケストレータ。30 秒ごとの tick で常駐行を
   再読込し、期日が来たトリガーを発火します。トリガー起点の実行は「実際に
   作業があるとき」だけ開始します。すなわち、その常駐員にカンバンのカードが
   割り当てられており、かつ `precheck` シェルコマンドが設定されている場合は
@@ -213,37 +223,55 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   への報告通知を生成します。
   トリガーが期日でないアイドルな常駐員は、自分のカンバン列の一番上の
   カードをタスクとして実行します(precheck はスキップし、カードの本文を
-  プロンプトの「今回のタスク」節に含める)。カード実行が info で完了すると
+  プロンプトの「今回のタスク」節に含める)。実行は自身の記憶を持たない
+  ため、そのカードに紐づく過去の報告本文を古い順に「これまでの報告」節と
+  してプロンプトへ差し込み、経緯(初期本文 → 過去の調査 → 追記)を引き継ぎ
+  ます。人間が報告内容を手で追記へ引用する必要はありません。カード実行が info で完了すると
   カードを自動アーカイブ、review-needed または失敗ならユーザー列へ移動し、
   トリガー起点の実行が review-needed で終わった場合はユーザー列にカードを
-  自動起票します。報告の frontmatter には `task: <カード id>` を刻印して
-  カードと紐付けます。実行中カードの移動・アーカイブはここで拒否します。
-- **`manifest.js`** — 常駐員ディレクトリの読み書きと `resident.json` の検証。
-  キャッシュせず毎回ディスクへ読みに行きます。
+  自動起票します。報告の `task` 列には カード id を刻印してカードと
+  紐付けます。実行中カードの移動・アーカイブはここで拒否します。
+- **`resident-store.js`** — residents / teams テーブルの読み書きと設定の
+  検証。公開 API は名前ベース(save は席の重複を拒否、remove は
+  `archived_at` の刻印でアーカイブ済みの名前は再利用可)。キャッシュせず
+  毎回 DB へ読みに行きます。
+- **`resident-import.js`** — 旧ファイル群(`residents/<name>/` と
+  `session-registry.json`)から office.db への一回限りのインポート。
+  取り込んだ常駐は旧スラッグ名を id として保持し、カード・報告だけが参照
+  する行方不明の名前にはアーカイブ済みの ghost 行を作って外部キーを成立
+  させます。コミット後にのみ元ファイルを削除します。
 - **`scheduler.js`** — トリガー判定の純粋関数群。
   `{type: "schedule", days, times}`(曜日 + 時刻)と
   `{type: "interval", minutes, activeDays?, activeHours?}` をサポートし、
   schedule の発火は 1 時間まで遅延を許容(それより古い回はスキップ)します。
   現在時刻は常に引数で受け取ります。
-- **`registry.js`** — セッションレジストリ(`session-registry.json`)。実行が
-  生むセッションログを常駐員に紐付けて永続化し、その席をフリーアドレスの
-  グリッドではなく常駐チームの島に固定します。
+- **`registry.js`** — セッションレジストリ(`session_bindings` テーブル)。
+  実行が生むセッションログを常駐員に紐付けて永続化し、そのセッションを
+  ロビーの来客としてではなくチームルームの机に固定します。行単位の INSERT
+  なので複数プロセスでも紐付けが失われません(照合は JS 側: パスは完全
+  一致・セッション uuid は部分一致、新しい順)。
 - **`runner.js`** — ヘッドレス CLI 実行(`claude -p --session-id <uuid>`、
   `codex exec --sandbox …`、`gemini --skip-trust -p`)。read-only / edit のモードを各 CLI の
   権限フラグにマップし、30 分のタイムアウトと常駐員ごとの同時 1 実行を
   強制します。コマンド構築と出力パースは純粋関数として export されます。
-- **`whiteboard.js`** — 常駐員から人間への報告。frontmatter 付き Markdown を
-  各常駐員の `outbox/` に保存し、既読状態はサイドカーの
-  `whiteboard-state.json` に持ちます(報告ファイル自体は読んでも不変)。
-  ボードから外された報告は `outbox/.archived/` へ移動され(削除はしません)、
-  サイドカーの既読エントリも取り除かれます。
-- **`board.js`** — カンバンボードのカードストア。カード = frontmatter
-  (title/assignee/origin/createdAt/updatedAt)付き Markdown
-  (`<dataDirectory>/board/<id>.md`)、列 = 担当者(`user` または常駐名)。
-  並び順はサイドカーの `board-state.json` に持ち(カードファイル自体は
-  並び替えで不変)、ボードから外したカードは `board/.archived/` へ移動
-  されます(削除はしません)。ユーザーの追記はカード本文への
-  「## 追記」節として蓄積されます。
+- **`database.js`** — `<dataDirectory>/office.db` を `node:sqlite` の
+  `DatabaseSync` で同期的に開き、WAL と `PRAGMA user_version` ベースの
+  スキーマ移行を適用します。アプリより新しいバージョンの DB は推測せず
+  起動を拒否します。スキーマの全体像(ER 図)は
+  [database.md](database.md) を参照してください。
+- **`whiteboard.js`** — 常駐員から人間への報告。`reports` テーブルの行で、
+  既読・お気に入り(ピン)はカラム、ボードから外す操作は `archived_at` の
+  刻印です(行は削除しません)。ピン中の報告はアーカイブを拒否します。
+- **`board.js`** — カンバンボードのカードストア。カード = `cards` テーブル
+  の行、列 = 担当者(`user` または常駐名)。列内の並び順は `position`
+  カラムで、ドラッグのたびに対象列を密に振り直します。ボードから外した
+  カードは `archived_at` を刻印します(行は削除しません)。ユーザーの
+  追記はカード本文への「## 追記」節として蓄積されます。
+- **`legacy-import.js`** — SQLite 移行前の Markdown ストア
+  (`outbox/*.md`・`board/*.md` とサイドカー JSON)を初回オープン時に一度
+  だけ `office.db` へ取り込みます。取り込みは単一トランザクションで、
+  コミット後にのみ元ファイルを削除し、完了マーカーを `meta` テーブルに
+  残して再実行を防ぎます。
 
 ## フロントエンド(`public/`)
 
@@ -273,13 +301,19 @@ SaaS テーマ(ライト / ダーク。ダーク用トークンは
 
 ### `office.js`
 
-canvas 描画ループ。部屋・デスク・アバター・吹き出し・サブエージェントの
-ミニアバター・人事アバターのフレームごとの描画と、アバターの移動(デスク /
-休憩室 / 出口への歩行)を担います。常駐チームの席は 3 状態で描き分けます:
+canvas 描画ループ。チームルーム・デスク・アバター・吹き出し・サブエージェント
+のミニアバター・受付アバターのフレームごとの描画と、来客アバターの移動を
+担います。ターミナル起動の CLI セッションは下端のエントランスロビーに
+「来客」として描画されます: セッションが働き始めるとエレベーターから登場し
+(扉は来客が近づくとスライドして開く)、ロビーの待機スポットでステータス
+吹き出し(作業中 / 確認中 / 考え中、ブロック中は ・・・、ユーザー入力待ちは
+🖐️)を出し、回答を出し終える(status が break)かセッションが消えると
+エレベーターに乗って退場します(次の指示で再入場)。来客が机に座ることは
+ありません。常駐チームの席は 3 状態で描き分けます:
 未割り当て(こちらを向くグレーのアバター)、割り当て済みアイドル(ベンダー
 カラーでこちらを向き、画面は消灯。稼働オフなら ⏸)、実行中(モニターに
-向かい、画面点灯 + ステータス吹き出し)。常駐員は休憩室にも出口にも
-行きません。ホワイトボード(未読報告数 + ユーザー列カード枚数の合計バッジ
+向かい、画面点灯 + ステータス吹き出し)。常駐員はロビーに出ることも
+エレベーターで退場することもありません。ホワイトボード(未読報告数 + ユーザー列カード枚数の合計バッジ
 付き。ユーザー列にカードがあれば赤)も描画し、ホワイトボード /
 常駐デスクのクリックは CustomEvent として `app.js` へ通知します
 (`office:whiteboard-open`。常駐デスクは上下 2 領域に分かれ、モニタ側は
@@ -297,15 +331,23 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 
 ### `office/layout.js`
 
-純粋なシーン幾何:`computeLayout(usedSeats)`、`deskPosition`、`breakSpot`、
-`doorPosition`、`lowestFreeSeat`。フリーアドレスのデスクグリッドは 3 列 × 6 席
-(`SEAT_COUNT`)を事前設置とし、空席には空机が描かれ、超過分は下の行へ
-あふれます。各行の y は常駐チームの机の行と揃えています。左端の
-常駐チームエリア(壁のない床パッチ `RESIDENT_ROOM`)とその空机 6 つ
-(3 列 2 行の島)の座標 `residentDeskPosition`、常駐デスクのクリック領域
-`residentDeskHitRect`(とその上帯だけを切り出すモニタ領域
-`residentMonitorHitRect`)、上壁のホワイトボードのクリック領域 `WHITEBOARD`
-もここに定義します。canvas も DOM も触れないため単体テスト可能です。
+純粋なシーン幾何:`computeLayout(teams)` が
+`{width, height, entranceTop, rooms}` を返します。チームルーム
+(`teamRooms`)は左上から横並びで、幅 404 固定・3 列 × 最大 4 行(席数 1〜12
+で縦に成長)、3 ルームごとに下のバンドへ折り返します。チームの追加は
+アプリバー右上の「＋ チーム」ボタンから行います。シーン下端には
+エントランスロビーの帯(`ENTRANCE_HEIGHT`)がピン留めされ、仕切り壁
+(`PARTITION_HEIGHT`)で執務エリアと隔てられます。ロビー左端の
+エレベーターの乗降位置 `elevatorPosition(layout)` と、来客の待機スポット
+`entranceSpot(index, layout)`(ベンチ前 → その右の床、溢れた分は下端の
+後列)もここに定義します。ロビーの家具矩形(`ELEVATOR`・`RECEPTION`・
+`BENCH`)と、それらを経路探索の障害物リストに育てる
+`entranceObstacles(layout)` も同居させ、待機スポットが家具に埋まらない
+ことをテストで固定しています。
+机の座標 `roomDeskPosition`、クリック領域 `roomDeskHitRect`(とその上帯の
+モニタ領域 `roomMonitorHitRect`)、ルーム名ラベルの `teamLabelHitRect`、
+上壁のホワイトボードのクリック領域 `WHITEBOARD` もここに定義します。
+canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/pathfinding.js`
 
@@ -315,14 +357,10 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 16px グリッド上の A*(斜め移動はコーナー抜けを禁止)で経路を求め、
 可視線で直線化した経由点(始点を除き終点を含む)を返します。到達不能なら
 `[goal]` に退避するため、描画側は従来どおり直進にフォールバックします。
-`office.js` はこれを使い、アバターがデスクやモニタの上を横切らず空きスペース
-だけを歩くようにします。canvas も DOM も触れないため単体テスト可能です。
-
-### `office/small-talk.js`
-
-休憩室の雑談ステートマシン。`createSmallTalk({ random })` は
-`update(time, restingKeys)` と `bubbleFor(key)` を返します。random を注入できるため
-テストで決定的に動作します。
+歩くのはロビーの来客だけなので、`office.js` は `layout.js` の
+`entranceObstacles(layout)`(仕切り壁・エレベーターの筐体・受付カウンター・
+ベンチ)を障害物として渡し、アバターが空きスペースだけを歩くように
+します。canvas も DOM も触れないため単体テスト可能です。
 
 ### `office-client.js`
 
@@ -377,8 +415,9 @@ Electron メインプロセス。`startServer` により同一サーバをプロ
 - `createState` への **クロック** の注入(ステータス導出は経過時間に依存)。
 - `createCleanup` への **OS 検査関数のスタブ** 注入。
 - 各 watcher の `handleLine` への **`report` スタブ** 注入。
-- `createSmallTalk` への **`random`** の注入。
-- `createManifestStore` / `createWhiteboard` / `createBoard` /
-  `createSessionRegistry` への
-  **ファイルシステムのスタブ** 注入。scheduler と runner のコマンド構築は
+- `createResidentStore` / `createSessionRegistry` / `createWhiteboard` /
+  `createBoard` へは `openDatabase({ location: ':memory:' })` の
+  **インメモリ SQLite** を注入。インポータのテストは加えて
+  **ファイルシステムのスタブ** を注入します。
+  scheduler と runner のコマンド構築は
   現在時刻や設定を引数に取る純粋関数です。

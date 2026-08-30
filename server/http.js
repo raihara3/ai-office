@@ -155,8 +155,69 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
-    // Resident team management: list/save/unassign/run. The resident files on
-    // disk stay the source of truth; these endpoints only read and write them
+    // Team management: list/create, and rename/resize/delete per id.
+    if (urlPath === '/api/teams') {
+      if (request.method === 'GET') {
+        sendJson(response, 200, { teams: core.listTeams() });
+        return;
+      }
+      if (request.method !== 'POST') {
+        response.writeHead(405).end();
+        return;
+      }
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      readJsonBody(request, 16 * 1024, (parsed) => {
+        if (parsed === null) {
+          sendJson(response, 400, { error: 'invalid JSON body' });
+          return;
+        }
+        try {
+          const id = core.saveTeam({ name: parsed.name, seatCount: parsed.seatCount });
+          sendJson(response, 200, { ok: true, id });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      });
+      return;
+    }
+    const teamMatch = urlPath.match(/^\/api\/teams\/([A-Za-z0-9-]{1,64})$/);
+    if (teamMatch) {
+      const [, teamId] = teamMatch;
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      if (request.method === 'PUT') {
+        readJsonBody(request, 16 * 1024, (parsed) => {
+          if (parsed === null) {
+            sendJson(response, 400, { error: 'invalid JSON body' });
+            return;
+          }
+          try {
+            core.saveTeam({ id: teamId, name: parsed.name, seatCount: parsed.seatCount });
+            sendJson(response, 200, { ok: true });
+          } catch (error) {
+            sendJson(response, 400, { error: error.message });
+          }
+        });
+      } else if (request.method === 'DELETE') {
+        try {
+          core.deleteTeam(teamId);
+          sendJson(response, 200, { ok: true });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      } else {
+        response.writeHead(405).end();
+      }
+      return;
+    }
+
+    // Resident team management: list/save/unassign/run. The rows in office.db
+    // are the source of truth; these endpoints only read and write them
     // through the core.
     const residentMatch = urlPath.match(/^\/api\/residents(?:\/([a-z0-9][a-z0-9-]{0,63})(\/run)?)?$/);
     if (residentMatch) {
@@ -177,6 +238,7 @@ export function createHttpServer(core, { publicDirectory }) {
             core.saveResident(residentName, {
               configuration: parsed.configuration,
               instructions: parsed.instructions,
+              teamId: parsed.teamId,
             });
             sendJson(response, 200, { ok: true });
           } catch (error) {
@@ -255,7 +317,7 @@ export function createHttpServer(core, { publicDirectory }) {
       sendJson(response, 200, { cards: core.listBoard() });
       return;
     }
-    const boardAction = urlPath.match(/^\/api\/board\/(create|move|archive|note)$/)?.[1];
+    const boardAction = urlPath.match(/^\/api\/board\/(create|move|done|archive|note)$/)?.[1];
     if (boardAction) {
       if (request.method !== 'POST') {
         response.writeHead(405).end();
@@ -299,6 +361,8 @@ export function createHttpServer(core, { publicDirectory }) {
                 index: Number.isInteger(parsed.index) ? parsed.index : undefined,
               }),
             });
+          } else if (boardAction === 'done') {
+            sendJson(response, 200, { ok: core.markBoardCardDone(parsed.id) });
           } else if (boardAction === 'archive') {
             sendJson(response, 200, { ok: core.archiveBoardCard(parsed.id) });
           } else {

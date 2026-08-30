@@ -175,6 +175,31 @@ textarea:focus-visible {
   color: var(--primary);
 }
 
+.tab-badge {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e0952f;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.tab-badge[hidden] {
+  display: none;
+}
+
+.tab-badge.review {
+  background: #d93a4a;
+}
+
 #appbar-actions {
   display: flex;
   align-items: center;

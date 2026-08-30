@@ -350,6 +350,7 @@
 
   const reportListElement = document.getElementById('inbox-list');
   const inboxSummaryElement = document.getElementById('inbox-summary');
+  const inboxTabBadgeElement = document.getElementById('inbox-tab-badge');
   let latestReports = [];
 
   function linkify(escapedText) {
@@ -369,6 +370,9 @@
     } else {
       inboxSummaryElement.textContent = unread > 0 ? `未読 ${unread}` : 'すべて確認済み';
     }
+    inboxTabBadgeElement.hidden = unread === 0;
+    inboxTabBadgeElement.textContent = String(Math.min(unread, 99));
+    inboxTabBadgeElement.classList.toggle('review', review > 0);
   }
 
   function renderReports(reports) {

@@ -18,13 +18,24 @@ export const SEAT_COUNT = 6;
 export const COLUMN_SPACING = 150;
 
 // Team rooms: fixed partitions pinned to the top-left edge, laid left to
-// right in team order. Every room is three desk columns wide (124px pitch
-// plus a 20px margin each side — the same footprint the single resident room
-// had), and grows downward by rows of ceil(seatCount / 3).
+// right in team order and wrapping to a new band after every third room so
+// the scene grows downward instead of running ever wider. Every room is
+// three desk columns wide (124px pitch plus a 20px margin each side — the
+// same footprint the single resident room had), and grows downward by rows
+// of ceil(seatCount / 3).
 export const ROOM_Y = 104;
 export const ROOM_WIDTH = 404;
 export const ROOM_GAP = 40;
 export const ROOM_COLUMNS = 3;
+// Rooms per band before wrapping onto the next band below.
+export const TEAMS_PER_ROW = 3;
+// Vertical air between stacked room bands: clears the deepest desk's avatar
+// and subagent minis (which overflow ~28px below the room box) before the
+// next band's carpet begins.
+export const ROOM_ROW_GAP = 64;
+// The top desk row sits this far below its room's top edge, so desks track
+// the room when it wraps to a lower band (FIRST_ROW_Y for a top-band room).
+const DESK_OFFSET_Y = FIRST_ROW_Y - ROOM_Y;
 // Mirrors MAX_TEAM_SEATS in server/residents/resident-store.js.
 export const MAX_TEAM_SEATS = 12;
 const DESK_COLUMN_PITCH = 124;
@@ -35,30 +46,44 @@ const RIGHT_MARGIN = 136;
 // Aisle between the last team room and the free grid's first desk anchor.
 const FREE_GRID_GAP = 112;
 
-// One room rect per team, in snapshot (creation) order.
+// One room rect per team, in snapshot (creation) order. Rooms fill a band
+// left to right and wrap after TEAMS_PER_ROW; each band sits below the
+// tallest room of the band above it, so seat-heavy teams never clip.
 export function teamRooms(teams) {
-  return teams.map((team, index) => {
+  const rooms = [];
+  let bandTop = ROOM_Y;
+  let bandHeight = 0;
+  teams.forEach((team, index) => {
+    const column = index % TEAMS_PER_ROW;
+    if (index > 0 && column === 0) {
+      bandTop += bandHeight + ROOM_ROW_GAP;
+      bandHeight = 0;
+    }
     const rows = Math.max(1, Math.ceil(team.seatCount / ROOM_COLUMNS));
-    return {
+    // 6 seats → 2 rows → 344, pixel-identical to the pre-teams room.
+    const height = rows * ROW_SPACING;
+    rooms.push({
       id: team.id,
       name: team.name,
       seatCount: team.seatCount,
       rows,
-      x: 8 + index * (ROOM_WIDTH + ROOM_GAP),
-      y: ROOM_Y,
+      x: 8 + column * (ROOM_WIDTH + ROOM_GAP),
+      y: bandTop,
       width: ROOM_WIDTH,
-      // 6 seats → 2 rows → 344, pixel-identical to the pre-teams room.
-      height: rows * ROW_SPACING,
-    };
+      height,
+    });
+    bandHeight = Math.max(bandHeight, height);
   });
+  return rooms;
 }
 
 // Desk anchor within a room; index 0..seatCount-1, three columns per row.
+// The y tracks the room's top edge so desks follow a wrapped room down.
 export function roomDeskPosition(room, index) {
   const centerX = room.x + room.width / 2;
   return {
     x: centerX + ((index % ROOM_COLUMNS) - 1) * DESK_COLUMN_PITCH,
-    y: FIRST_ROW_Y + Math.floor(index / ROOM_COLUMNS) * ROW_SPACING,
+    y: room.y + DESK_OFFSET_Y + Math.floor(index / ROOM_COLUMNS) * ROW_SPACING,
   };
 }
 
@@ -104,14 +129,18 @@ export function lowestFreeSeat(usedSeats) {
 // entrance are anchored to the bottom edge.
 export function computeLayout(usedSeats, teams = []) {
   const rooms = teamRooms(teams);
-  const last = rooms[rooms.length - 1];
-  const freeGridX = (last ? last.x + last.width : 8) + FREE_GRID_GAP;
-  let maxRows = Math.ceil(SEAT_COUNT / GRID_COLUMNS);
-  for (const room of rooms) maxRows = Math.max(maxRows, room.rows);
-  for (const seat of usedSeats) {
-    maxRows = Math.max(maxRows, Math.floor(seat / GRID_COLUMNS) + 1);
+  // The free grid clears the widest band, not just the last room, now that
+  // rooms wrap; its deepest desk row also floors the world height.
+  let roomsRight = 8;
+  let lastRowY = FIRST_ROW_Y + (Math.ceil(SEAT_COUNT / GRID_COLUMNS) - 1) * ROW_SPACING;
+  for (const room of rooms) {
+    roomsRight = Math.max(roomsRight, room.x + room.width);
+    lastRowY = Math.max(lastRowY, roomDeskPosition(room, room.seatCount - 1).y);
   }
-  const lastRowY = FIRST_ROW_Y + (maxRows - 1) * ROW_SPACING;
+  const freeGridX = roomsRight + FREE_GRID_GAP;
+  for (const seat of usedSeats) {
+    lastRowY = Math.max(lastRowY, FIRST_ROW_Y + Math.floor(seat / GRID_COLUMNS) * ROW_SPACING);
+  }
   const height = Math.max(640, lastRowY + 280);
   const breakTop = height - 150;
   const width = Math.max(

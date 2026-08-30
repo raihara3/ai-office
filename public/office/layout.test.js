@@ -48,6 +48,21 @@ test('teamRooms: rooms line up left to right, rows follow seat count', () => {
   assert.equal(rooms[2].height, 172);
 });
 
+test('teamRooms: a fourth room wraps to a new band below the first', () => {
+  const rooms = teamRooms([
+    { id: 'a', name: 'A', seatCount: 6 }, // 2 rows, height 344
+    { id: 'b', name: 'B', seatCount: 3 },
+    { id: 'c', name: 'C', seatCount: 3 },
+    { id: 'd', name: 'D', seatCount: 3 },
+  ]);
+  // First three stay in the top band, wrapping back to x=8 on the fourth.
+  assert.equal(rooms[3].x, 8);
+  // Band drops below the tallest top-band room (344) plus the 64 air gap.
+  assert.equal(rooms[3].y, 104 + 344 + 64);
+  // Desks track the wrapped room down.
+  assert.equal(roomDeskPosition(rooms[3], 0).y, rooms[3].y + 136);
+});
+
 test('roomDeskPosition: three upright columns over spaced rows', () => {
   const [room] = teamRooms(DEFAULT_TEAMS);
   assert.deepEqual(roomDeskPosition(room, 0), { x: 86, y: 240 });

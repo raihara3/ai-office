@@ -14,13 +14,13 @@ Electron's Node 24 needs no flag).
 ## Commands
 
 - `npm start` — run the server at http://localhost:4680
-- `npm test` — run the full test suite (node:test, ~90 tests, no build step)
+- `npm test` — run the full test suite (node:test, ~140 tests, no build step)
 - `npm run electron` — desktop app embedding the same server
 
 ## Repository map
 
-- `public/office.js` — canvas rendering: office layout, avatars and walking, window/sky day-night scenery
-- `public/office/` — layout grid, small talk, sprite specs, desk-avoiding pathfinding
+- `public/office.js` — canvas rendering: office layout, resident desks, entrance-lobby visitors, window/sky day-night scenery
+- `public/office/` — layout geometry (team rooms + entrance lobby), sprite specs, desk-avoiding pathfinding
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)

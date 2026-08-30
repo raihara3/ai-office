@@ -1,27 +1,29 @@
 // Canvas rendering for the pixel-art office.
-// One CLI session = one avatar. All vendors share a single desk grid that
-// fills from the top-left as sessions appear. An HR avatar by the entrance
-// retires sessions whose CLI process has exited (log files are kept on disk).
-// app.js pushes state via OFFICE.setState(); this file owns the draw loop.
-// Pure geometry, vendor specs and the break-room small talk live in the
-// ./office/ modules so this file is just the canvas rendering.
+// One terminal CLI session = one visitor avatar: it steps out of the
+// entrance elevator when the session starts, waits in the lobby while the
+// answer is produced, and rides the elevator home once the turn is done.
+// A receptionist avatar in the lobby retires sessions whose CLI process has
+// exited (log files are kept on disk). app.js pushes state via
+// OFFICE.setState(); this file owns the draw loop. Pure geometry and vendor
+// specs live in the ./office/ modules so this file is just the rendering.
 
 import { CLI_SPECS, UNSET_SPEC } from './office/specs.js';
 import {
   computeLayout,
-  deskPosition,
-  breakSpot,
-  doorPosition,
-  lowestFreeSeat,
+  entranceObstacles,
+  entranceSpot,
+  elevatorPosition,
   roomDeskPosition,
   roomDeskHitRect,
   roomMonitorHitRect,
   teamLabelHitRect,
-  SEAT_COUNT,
+  BENCH,
+  ELEVATOR,
+  PARTITION_HEIGHT,
+  RECEPTION,
   WHITEBOARD,
 } from './office/layout.js';
-import { createSmallTalk } from './office/small-talk.js';
-import { deskFootprint, findPath } from './office/pathfinding.js';
+import { findPath } from './office/pathfinding.js';
 
 (() => {
   const canvas = document.getElementById('office');
@@ -42,25 +44,18 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
   let state = { employees: [] };
   // The scene geometry of the most recently drawn frame; hit-testing and
   // bubble clamping read this so clicks match what is on screen.
-  let currentLayout = computeLayout(new Set(), []);
+  let currentLayout = computeLayout([]);
   // key -> {employee, leaving} — keeps departed sessions around while the
-  // avatar walks to the door.
+  // avatar walks back into the elevator.
   const presence = new Map();
   // resident name -> its most recently active session. Resident-run sessions
-  // are visualized at the resident island, never on the free-address grid.
+  // are visualized at the resident island, never in the entrance lobby.
   let residentEmployees = new Map();
   const actors = new Map();
-  const seatByKey = new Map();
-  const usedSeats = new Set();
   let hrBubble = null;
   // Timestamp of the previous animation frame, used to make movement
   // frame-rate independent. null until the first frame runs.
   let lastFrameTime = null;
-
-  // Break-room chatter (see ./office/small-talk.js). restingKeys is refreshed
-  // at the end of each frame with whoever is currently on break.
-  const smallTalk = createSmallTalk();
-  let restingKeys = [];
 
   // Small face icons for the chat sidebar, rendered once and cached.
   const faceCache = new Map();
@@ -132,23 +127,14 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
           }
           continue;
         }
+        // A break-status session has delivered its answer: the visitor rides
+        // the elevator home (or, if only now discovered, never shows up).
+        if (employee.status === 'break') continue;
         seen.add(employee.key);
         presence.set(employee.key, { employee, leaving: false });
-        if (!seatByKey.has(employee.key)) {
-          const seat = lowestFreeSeat(usedSeats);
-          usedSeats.add(seat);
-          seatByKey.set(employee.key, seat);
-        }
       }
       for (const [key, entry] of presence) {
-        if (!seen.has(key) && !entry.leaving) {
-          entry.leaving = true;
-          const seat = seatByKey.get(key);
-          if (seat !== undefined) {
-            usedSeats.delete(seat);
-            seatByKey.delete(key);
-          }
-        }
+        if (!seen.has(key) && !entry.leaving) entry.leaving = true;
       }
     },
   };
@@ -286,8 +272,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
       px(wx - 6, 74, 108, 6, '#f7f3ea');
     }
     drawWhiteboard();
-    // neon company sign on a dark mounting board
-    drawNeonSign(672, 30);
     // oak plank floor with staggered seams
     for (let ty = 96; ty < height; ty += 24) {
       const row = (ty - 96) / 24;
@@ -301,21 +285,10 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     // soft shadow the wall casts on the floor
     px(0, 96, width, 5, 'rgba(0, 0, 0, 0.10)');
     drawTeamRooms(time, layout);
-    drawBreakArea(layout);
+    drawEntrance(layout);
     // plants (the left edge holds the team rooms, so only the right stays)
     drawPlant(width - 30, 180);
     drawPlant(width - 30, height - 30);
-    // entrance door, spanning the same y band as the break area
-    const door = doorPosition(layout);
-    const doorTop = layout.breakTop + 10;
-    px(0, doorTop, 18, 112, '#8a8172');
-    px(4, doorTop + 6, 10, 100, '#4e463c');
-    roundRect(door.x - 20, door.y + 4, 52, 12, 4, '#607d8b');
-    roundRect(door.x - 16, layout.breakTop - 22, 56, 18, 4, '#2f5d50');
-    ctx.fillStyle = '#8fe3a5';
-    ctx.font = 'bold 11px "Hiragino Sans", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('EXIT', door.x + 12, layout.breakTop - 9);
 
     // wall clock (real time)
     ctx.save();
@@ -375,7 +348,7 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
   // A seat with no resident assigned keeps the neutral gray avatar; an
   // assigned seat wears its CLI's colors, faces the room while idle, and
   // turns to the monitor while a run is in progress. Residents never walk to
-  // the break room or the exit — they live at their desk.
+  // the entrance lobby or the elevator — they live at their desk.
   function drawTeamRooms(time, layout) {
     const residents = state.residents ?? [];
     for (const room of layout.rooms) {
@@ -489,90 +462,89 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     ctx.restore();
   }
 
-  // A café-style break corner: checkered tiles, a walnut coffee counter under
-  // pendant lamps, round café tables, a mustard sofa and a plant. Aligned with
-  // the entrance at the bottom band.
-  function drawBreakArea(layout) {
-    const top = layout.breakTop;
-    // checkered café tiles
+  // The entrance lobby along the bottom edge, walled off from the work area
+  // by a partition: porcelain tiles, the elevator visitors ride in and out,
+  // a decorative door into the work area, the neon company sign, a reception
+  // counter and a bench for waiting guests. The furniture rects live in
+  // layout.js next to entranceObstacles() so walkers route around what is
+  // drawn.
+  const OFFICE_DOOR_X = 600;
+
+  // The elevator doors slide open while a visitor stands near them; frame()
+  // eases this 0..1 amount toward its target from the visitors' positions.
+  let elevatorDoorsOpen = 0;
+
+  function drawElevator(top) {
+    const frame = { x: ELEVATOR.x, y: top + ELEVATOR.y, width: ELEVATOR.width, height: ELEVATOR.height };
+    px(frame.x - 4, frame.y - 8, frame.width + 8, frame.height + 8, '#7d868f');
+    px(frame.x, frame.y, frame.width, frame.height, '#9aa3ac');
+    // floor indicator lamp over the doors
+    px(frame.x + frame.width / 2 - 14, frame.y + 4, 28, 8, '#2e3440');
+    ctx.fillStyle = elevatorDoorsOpen > 0.5 ? '#8fe3a5' : '#e0952f';
+    ctx.beginPath();
+    ctx.arc(frame.x + frame.width / 2, frame.y + 8, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // dark cab behind two sliding door panels
+    const opening = { x: frame.x + 10, y: frame.y + 18, width: 52, height: 110 };
+    px(opening.x - 3, opening.y - 3, opening.width + 6, opening.height + 6, '#5c6670');
+    px(opening.x, opening.y, opening.width, opening.height, '#161a20');
+    if (elevatorDoorsOpen > 0) {
+      ctx.fillStyle = `rgba(255, 231, 166, ${0.25 * elevatorDoorsOpen})`;
+      ctx.fillRect(opening.x, opening.y, opening.width, opening.height);
+    }
+    const half = opening.width / 2;
+    const slide = Math.round(half * elevatorDoorsOpen);
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(140, top, 690, 132, 12);
+    ctx.rect(opening.x, opening.y, opening.width, opening.height);
     ctx.clip();
-    for (let ty = 0; ty < 132; ty += 22) {
-      for (let tx = 0; tx < 690; tx += 22) {
-        const even = ((tx + ty) / 22) % 2 === 0;
-        px(140 + tx, top + ty, 22, 22, even ? '#efe6d3' : '#ddd0b6');
+    px(opening.x - slide, opening.y, half, opening.height, '#aeb6bd');
+    px(opening.x + half + slide, opening.y, half, opening.height, '#aeb6bd');
+    px(opening.x + half - 1 - slide, opening.y, 1, opening.height, '#5c6670');
+    px(opening.x + half + slide, opening.y, 1, opening.height, '#5c6670');
+    ctx.restore();
+  }
+
+  function drawEntrance(layout) {
+    const top = layout.entranceTop;
+    const width = layout.width;
+    // porcelain lobby tiles, cooler than the work area's oak planks
+    let row = 0;
+    for (let ty = top + PARTITION_HEIGHT; ty < layout.height; ty += 26, row += 1) {
+      for (let tx = 0, column = 0; tx < width; tx += 26, column += 1) {
+        px(tx, ty, 26, 26, (row + column) % 2 === 0 ? '#e9e5dc' : '#e0dbcf');
       }
     }
-    ctx.restore();
-    ctx.lineWidth = 3;
-    roundRect(140, top, 690, 132, 12, null, '#b3a68d');
-
-    // walnut coffee counter along the inside top-right
-    px(640, top + 10, 172, 30, '#4e342e');
-    px(640, top + 10, 172, 5, '#7b5e57');
-    // espresso machine on the counter
-    px(654, top - 16, 34, 30, '#2e3440');
-    px(661, top - 9, 20, 10, '#80cbc4');
-    px(666, top + 6, 10, 6, '#1c2128');
-    // cups
-    px(756, top + 2, 8, 8, '#fbf8f2');
-    px(770, top + 2, 8, 8, '#fbf8f2');
-    // pendant lamps hanging over the counter, with warm pools of light
-    for (const lampX of [706, 756, 800]) {
-      px(lampX - 1, top - 34, 2, 24, '#4e463c');
-      ctx.fillStyle = '#2e3440';
-      ctx.beginPath();
-      ctx.moveTo(lampX - 10, top - 2);
-      ctx.lineTo(lampX + 10, top - 2);
-      ctx.lineTo(lampX + 5, top - 12);
-      ctx.lineTo(lampX - 5, top - 12);
-      ctx.closePath();
-      ctx.fill();
-      px(lampX - 4, top - 2, 8, 3, '#ffd97a');
-      ctx.fillStyle = 'rgba(255, 214, 120, 0.18)';
-      ctx.beginPath();
-      ctx.ellipse(lampX, top + 18, 20, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // round café tables: white tops on dark pedestals
-    for (const tableX of [301, 481]) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-      ctx.beginPath();
-      ctx.ellipse(tableX, top + 100, 18, 6, 0, 0, Math.PI * 2);
-      ctx.fill();
-      px(tableX - 3, top + 84, 6, 14, '#37474f');
-      ctx.fillStyle = '#5d4037';
-      ctx.beginPath();
-      ctx.arc(tableX, top + 84, 17, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#e8d5b5';
-      ctx.beginPath();
-      ctx.arc(tableX, top + 84, 14, 0, Math.PI * 2);
-      ctx.fill();
-      // a shared coffee pot in the middle
-      px(tableX - 4, top + 76, 8, 8, '#2e3440');
-      px(tableX + 4, top + 78, 3, 4, '#2e3440');
-    }
-
-    // mustard sofa with teal cushions (avatars settle in front)
-    px(654, top + 46, 8, 36, '#c98f2d');
-    px(742, top + 46, 8, 36, '#c98f2d');
-    px(660, top + 46, 84, 14, '#c98f2d');
-    px(662, top + 58, 80, 24, '#e0a63c');
-    px(668, top + 50, 18, 10, '#3f7d74');
-    px(716, top + 50, 18, 10, '#3f7d74');
-
-    // plant in the corner of the area
-    drawPlant(812, top + 124);
-
+    // partition wall between the work area and the lobby
+    px(0, top, width, PARTITION_HEIGHT, '#ece6da');
+    px(0, top, width, 4, '#ddd5c6');
+    px(0, top + PARTITION_HEIGHT - 8, width, 8, '#c9c0ae');
+    px(0, top + PARTITION_HEIGHT, width, 5, 'rgba(0, 0, 0, 0.10)');
+    // decorative door into the work area (no avatar ever passes through)
+    px(OFFICE_DOOR_X - 4, top + 4, 52, 42, '#8a8172');
+    px(OFFICE_DOOR_X, top + 8, 44, 38, '#7b5e57');
+    px(OFFICE_DOOR_X + 4, top + 12, 36, 14, '#8d6e63');
+    px(OFFICE_DOOR_X + 4, top + 30, 36, 12, '#8d6e63');
+    px(OFFICE_DOOR_X + 36, top + 26, 4, 4, '#d9a441');
+    // the neon company sign, moved down from the top wall to greet visitors
+    drawNeonSign(150, top + 6);
+    drawElevator(top);
+    // reception counter, with a call bell and a small potted plant
+    px(RECEPTION.x, top + RECEPTION.y, RECEPTION.width, RECEPTION.height, '#4e342e');
+    px(RECEPTION.x, top + RECEPTION.y, RECEPTION.width, 5, '#7b5e57');
+    px(RECEPTION.x + 16, top + RECEPTION.y - 6, 8, 6, '#d9a441');
+    px(RECEPTION.x + RECEPTION.width - 28, top + RECEPTION.y - 10, 12, 10, '#c96f4a');
+    px(RECEPTION.x + RECEPTION.width - 26, top + RECEPTION.y - 16, 8, 6, '#5cb86e');
+    // teal bench where visiting sessions wait
+    px(BENCH.x + 4, top + BENCH.y + 26, 6, 8, '#37474f');
+    px(BENCH.x + BENCH.width - 10, top + BENCH.y + 26, 6, 8, '#37474f');
+    px(BENCH.x, top + BENCH.y, BENCH.width, 12, '#3f7d74');
+    px(BENCH.x, top + BENCH.y + 10, BENCH.width, 18, '#4f9184');
     // sign
     ctx.fillStyle = '#5a4632';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('☕ BREAK ROOM', 152, top - 8);
+    ctx.fillText('ENTRANCE', OFFICE_DOOR_X + 64, top + 30);
   }
 
   function drawPlant(x, y) {
@@ -590,38 +562,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     ctx.arc(x - 10, y - 32, 6, 0, Math.PI * 2);
     ctx.arc(x + 10, y - 32, 6, 0, Math.PI * 2);
     ctx.fill();
-  }
-
-  function drawDesk(deskLabel, x, y, time, employeeKey, spec, working) {
-    // nameplate: repository / work name on a Gather-style dark chip, tinted
-    // with the vendor color so it reads on the light oak floor. It hugs the
-    // monitor so the desk rows can pack tightly.
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    const labelWidth = ctx.measureText(deskLabel).width + 16;
-    roundRect(x - labelWidth / 2, y - 106, labelWidth, 18, 9, 'rgba(38, 36, 50, 0.85)');
-    ctx.fillStyle = spec.colors.body;
-    ctx.fillText(deskLabel, x, y - 93);
-
-    drawDeskFurniture(x, y, working ? '#1a2b3c' : SCREEN_OFF);
-    if (working) drawScreenCode(x, y, time, employeeKey);
-    // a small personal prop, picked deterministically per session
-    const prop = employeeKey.length % 3;
-    if (prop === 0) {
-      // succulent in a terracotta pot
-      px(x + 36, y - 50, 10, 8, '#c96f4a');
-      px(x + 38, y - 56, 6, 6, '#5cb86e');
-      px(x + 35, y - 53, 4, 4, '#3e8e52');
-      px(x + 43, y - 53, 4, 4, '#3e8e52');
-    } else if (prop === 1) {
-      // coffee mug
-      px(x + 37, y - 50, 9, 8, '#e0707a');
-      px(x + 46, y - 48, 3, 4, '#e0707a');
-    } else {
-      // a short stack of books
-      px(x + 34, y - 46, 16, 4, '#3f7d74');
-      px(x + 36, y - 50, 14, 4, '#d9a441');
-    }
   }
 
   // --- avatar ----------------------------------------------------------
@@ -714,14 +654,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
       ctx.fill();
     }
 
-    // coffee cup while on break
-    if (options.coffee) {
-      px(x + s(12), y - s(20), s(7), s(7), '#f5f0e8');
-      px(x + s(19), y - s(18), s(2), s(3), '#f5f0e8');
-      const steamY = (options.time / 60) % 12;
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillRect(x + s(14), y - s(24) - steamY / 2, 2, 4);
-    }
   }
 
   // --- bubbles ---------------------------------------------------------
@@ -820,17 +752,16 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     }
   }
 
-  // --- HR (cleanup) ----------------------------------------------------
+  // --- reception (cleanup) ----------------------------------------------
 
   function drawHr(layout, time) {
-    const door = doorPosition(layout);
-    const x = door.x + 62;
-    const y = door.y + 6;
+    const x = 290;
+    const y = layout.entranceTop + 124;
     drawAvatar(UNSET_SPEC, x, y, { time });
     ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
     ctx.fillStyle = '#4a4136';
     ctx.textAlign = 'center';
-    ctx.fillText('人事', x, y + 14);
+    ctx.fillText('受付', x, y + 14);
     if (hrBubble && hrBubble.until > Date.now()) {
       drawBubble(x, y - 56, hrBubble.text);
     } else if (!hrBubble || hrBubble.until <= Date.now()) {
@@ -935,24 +866,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     }
   }
 
-  // The desks avatars must route around: every furnished free-address seat,
-  // any overflow seat in use, and every team-room desk. Rebuilt each frame
-  // (cheap — a few dozen rects) so freed seats stop blocking immediately.
-  function deskObstacles(layout) {
-    const seats = new Set(usedSeats);
-    for (let seat = 0; seat < SEAT_COUNT; seat += 1) seats.add(seat);
-    const obstacles = [];
-    for (const seat of seats) {
-      obstacles.push(deskFootprint(deskPosition(seat, layout.freeGridX)));
-    }
-    for (const room of layout.rooms) {
-      for (let index = 0; index < room.seatCount; index += 1) {
-        obstacles.push(deskFootprint(roomDeskPosition(room, index)));
-      }
-    }
-    return obstacles;
-  }
-
   // Walk the actor toward `target` along a route that skirts the desks,
   // replanning only when the destination moves. Returns true once the final
   // waypoint is reached so callers can tell "arrived" from "still walking"
@@ -985,7 +898,7 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
         : Math.min((time - lastFrameTime) / REFERENCE_FRAME_MS, MAX_FRAME_STEP);
     lastFrameTime = time;
 
-    const layout = computeLayout(usedSeats, state.teams ?? []);
+    const layout = computeLayout(state.teams ?? []);
     currentLayout = layout;
     // Resizing clears the canvas and resets context state; re-pin the pixel
     // look. Width follows the team count, height the deepest desk row.
@@ -994,37 +907,47 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
       canvas.height = layout.height;
       ctx.imageSmoothingEnabled = false;
     }
-    drawRoom(time, layout);
-    // The free-address seats are furnished up front; vacant ones show an
-    // empty desk until a session clocks in and claims the seat.
-    for (let seat = 0; seat < SEAT_COUNT; seat += 1) {
-      if (!usedSeats.has(seat)) {
-        const desk = deskPosition(seat, layout.freeGridX);
-        drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
-      }
+
+    const elevator = elevatorPosition(layout);
+    // Slide the elevator doors open while any visitor stands near them (the
+    // previous frame's positions — one frame of lag is invisible).
+    let nearestVisitor = Infinity;
+    for (const [key, actor] of actors) {
+      if (key.startsWith('resident:')) continue;
+      nearestVisitor = Math.min(
+        nearestVisitor,
+        Math.hypot(actor.x - elevator.x, actor.y - elevator.y)
+      );
     }
+    const doorsTarget = nearestVisitor < 64 ? 1 : 0;
+    const doorsStep = 0.06 * frameStep;
+    elevatorDoorsOpen = Math.min(
+      1,
+      Math.max(0, elevatorDoorsOpen + Math.max(-doorsStep, Math.min(doorsStep, doorsTarget - elevatorDoorsOpen)))
+    );
+
+    drawRoom(time, layout);
     drawHr(layout, time);
-    smallTalk.update(time, restingKeys);
 
-    const door = doorPosition(layout);
-    const obstacles = deskObstacles(layout);
+    const obstacles = entranceObstacles(layout);
     const bounds = { width: layout.width, height: layout.height };
-    let breakIndex = 0;
-    const nowResting = [];
+    let spotIndex = 0;
 
-    // Stable draw order by seat.
+    // Stable draw order by arrival.
     const entries = [...presence.entries()].sort(
-      (a, b) => (seatByKey.get(a[0]) ?? 999) - (seatByKey.get(b[0]) ?? 999)
+      (a, b) =>
+        (a[1].employee.firstSeenAt ?? 0) - (b[1].employee.firstSeenAt ?? 0) ||
+        (a[0] < b[0] ? -1 : 1)
     );
 
     for (const [key, entry] of entries) {
       const employee = entry.employee;
       const spec = CLI_SPECS[employee.cli];
       if (!spec) continue;
+      const actor = actorFor(key, elevator, time);
 
       if (entry.leaving) {
-        const actor = actorFor(key, door, time);
-        const arrived = walkAround(actor, door, LEAVE_SPEED * frameStep, obstacles, bounds);
+        const arrived = walkAround(actor, elevator, LEAVE_SPEED * frameStep, obstacles, bounds);
         if (arrived) {
           presence.delete(key);
           actors.delete(key);
@@ -1032,68 +955,38 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
         }
         drawAvatar(spec, actor.x, actor.y, { time, walking: true });
         if (employee.isSubagent) drawWakabaMark(actor.x + 12, actor.y - 50, 11);
-        drawBubble(actor.x, actor.y - 58, 'お疲れさまでした');
+        drawBubble(actor.x, actor.y - 58, '失礼します');
         continue;
       }
 
-      const seat = seatByKey.get(key);
-      if (seat === undefined) continue;
-      const desk = deskPosition(seat, layout.freeGridX);
-      // "blocked" (a tool call awaiting a result, e.g. command permission)
-      // stays seated at the desk just like active work.
-      const working =
-        employee.status === 'working' || employee.status === 'blocked';
-      const waiting = employee.status === 'waiting';
-      const atDeskStatus = working || waiting;
-      drawDesk(employee.project ?? employee.name, desk.x, desk.y, time, key, spec, atDeskStatus);
-
-      const actor = actorFor(key, door, time);
-      // Sit in front of the desk, facing the monitor, while working.
-      const chairSpot = { x: desk.x, y: desk.y + 18 };
-      const restSpot = breakSpot(breakIndex, layout);
-      if (!atDeskStatus) breakIndex += 1;
-      const arrived = walkAround(
-        actor,
-        atDeskStatus ? chairSpot : restSpot,
-        WALK_SPEED * frameStep,
-        obstacles,
-        bounds
-      );
-
-      const seated = working && arrived;
-      // Waiting for the user: stand in front of the desk, facing the room.
-      const standing = waiting && arrived;
-      drawAvatar(spec, actor.x, actor.y, {
-        time,
-        walking: actor.walking,
-        typing: seated,
-        facingAway: seated,
-        coffee: !atDeskStatus && arrived,
-      });
+      const spot = entranceSpot(spotIndex, layout);
+      spotIndex += 1;
+      const arrived = walkAround(actor, spot, WALK_SPEED * frameStep, obstacles, bounds);
+      drawAvatar(spec, actor.x, actor.y, { time, walking: actor.walking });
       if (employee.isSubagent) drawWakabaMark(actor.x + 12, actor.y - 50, 11);
+      // visitor tag: the repository / work name under the avatar
+      ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
+      ctx.fillStyle = '#4a4136';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(employee.project ?? employee.name).slice(0, 12), actor.x, actor.y + 14);
 
       if (time < actor.greetUntil) {
-        if (seated) drawSubagents(employee, spec, actor, desk.x, desk.y, time);
-        drawBubble(actor.x, actor.y - 58, 'おはようございます');
-      } else if (seated) {
-        drawSubagents(employee, spec, actor, desk.x, desk.y, time);
+        drawBubble(actor.x, actor.y - 58, 'お邪魔します');
+      } else if (arrived) {
+        drawSubagents(employee, spec, actor, actor.x, actor.y - 18, time);
         // "blocked" (a tool call still in flight — e.g. awaiting the boss's
         // command permission, or a long silent stretch mid-turn) shows "・・・"
-        // and reverts to the normal label once fresh activity resumes.
+        // and reverts to the normal label once fresh activity resumes;
+        // "waiting" raises a hand for the boss's input.
         if (employee.status === 'blocked') {
           drawBubble(actor.x, actor.y - 58, '・・・');
+        } else if (employee.status === 'waiting') {
+          drawBubble(actor.x, actor.y - 58, '🖐️');
         } else {
-          const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
           drawBubble(actor.x, actor.y - 58, MOOD_LABELS[employee.activityKind] ?? '作業中');
         }
-      } else if (standing) {
-        drawBubble(actor.x, actor.y - 58, '🖐️');
-      } else if (!atDeskStatus && arrived) {
-        nowResting.push(key);
-        drawBubble(actor.x, actor.y - 56, smallTalk.bubbleFor(key) ?? '☕');
       }
     }
-    restingKeys = nowResting;
 
     requestAnimationFrame(frame);
   }

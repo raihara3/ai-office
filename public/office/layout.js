@@ -1,21 +1,14 @@
-// Pure geometry for the office scene: where team rooms, desks, break spots
-// and the entrance sit, and how seats are assigned. No canvas or DOM here, so
-// this module is unit-testable and shared by the renderer.
+// Pure geometry for the office scene: where team rooms and the entrance
+// lobby sit, and how seats are assigned. No canvas or DOM here, so this
+// module is unit-testable and shared by the renderer.
 
-// The first free-address row shares its y with the team rooms' top desk row
-// (both use the same desk anchor), so the islands line up horizontally.
-// Kept low enough that a desk's nameplate chip (drawn 106px above the anchor)
-// stays clear of the wall's baseboard.
+// The team rooms' top desk row. Kept low enough that a desk's nameplate chip
+// (drawn 106px above the anchor) stays clear of the wall's baseboard.
 export const FIRST_ROW_Y = 240;
 // The packing limit for rows: a desk's nameplate chip starts 106px above its
 // anchor, while the row above extends 64px below its anchor (the subagent
 // mini-avatars and their labels), leaving a couple of pixels of clearance.
 export const ROW_SPACING = 172;
-export const GRID_COLUMNS = 3;
-// Six seats are furnished up front (two rows of three); sessions beyond that
-// still overflow onto extra rows below.
-export const SEAT_COUNT = 6;
-export const COLUMN_SPACING = 150;
 
 // Team rooms: fixed partitions pinned to the top-left edge, laid left to
 // right in team order and wrapping to a new band after every third room so
@@ -40,11 +33,18 @@ const DESK_OFFSET_Y = FIRST_ROW_Y - ROOM_Y;
 export const MAX_TEAM_SEATS = 12;
 const DESK_COLUMN_PITCH = 124;
 const MIN_WIDTH = 960;
-// Clearance between the free grid's last column anchor and the right wall,
-// preserving the pre-teams 960-wide scene's margin.
+// Clearance between the widest room band and the right wall, keeping room
+// for the wall-side plants.
 const RIGHT_MARGIN = 136;
-// Aisle between the last team room and the free grid's first desk anchor.
-const FREE_GRID_GAP = 112;
+// The entrance lobby band pinned to the bottom edge of the scene, walled off
+// from the work area by a partition; visitors arrive and leave through the
+// elevator on its left side.
+// Tall enough that a visitor on the bench row (feet at entranceTop + 128)
+// keeps its subagent minis and their labels (down to +174) on the canvas.
+export const ENTRANCE_HEIGHT = 190;
+// The partition wall between the work area and the entrance lobby: plaster
+// face, baseboard and the decorative office door are drawn within this band.
+export const PARTITION_HEIGHT = 46;
 
 // One room rect per team, in snapshot (creation) order. Rooms fill a band
 // left to right and wrap after TEAMS_PER_ROW; each band sits below the
@@ -115,66 +115,62 @@ export function teamLabelHitRect(room) {
   return { x: room.x, y: room.y, width: 180, height: 30 };
 }
 
-// The lowest seat index not present in `usedSeats`. The grid fills from the
-// top-left as sessions appear, reusing seats freed when avatars leave.
-export function lowestFreeSeat(usedSeats) {
-  let seat = 0;
-  while (usedSeats.has(seat)) seat += 1;
-  return seat;
-}
-
-// The whole scene: team rooms, where the free-address grid starts, and the
-// world size. Width grows with the team count; height grows with the deepest
-// desk row (team rooms or free-address overflow); the break area and the
-// entrance are anchored to the bottom edge.
-export function computeLayout(usedSeats, teams = []) {
+// The whole scene: team rooms, the entrance lobby band, and the world size.
+// Width grows with the widest room band; height grows with the deepest desk
+// row; the entrance is anchored to the bottom edge.
+export function computeLayout(teams = []) {
   const rooms = teamRooms(teams);
-  // The free grid clears the widest band, not just the last room, now that
-  // rooms wrap; its deepest desk row also floors the world height.
   let roomsRight = 8;
-  let lastRowY = FIRST_ROW_Y + (Math.ceil(SEAT_COUNT / GRID_COLUMNS) - 1) * ROW_SPACING;
+  let lastRowY = FIRST_ROW_Y;
   for (const room of rooms) {
     roomsRight = Math.max(roomsRight, room.x + room.width);
     lastRowY = Math.max(lastRowY, roomDeskPosition(room, room.seatCount - 1).y);
   }
-  const freeGridX = roomsRight + FREE_GRID_GAP;
-  for (const seat of usedSeats) {
-    lastRowY = Math.max(lastRowY, FIRST_ROW_Y + Math.floor(seat / GRID_COLUMNS) * ROW_SPACING);
-  }
   const height = Math.max(640, lastRowY + 280);
-  const breakTop = height - 150;
-  const width = Math.max(
-    MIN_WIDTH,
-    freeGridX + (GRID_COLUMNS - 1) * COLUMN_SPACING + RIGHT_MARGIN
-  );
-  return { width, height, breakTop, freeGridX, rooms };
+  const entranceTop = height - ENTRANCE_HEIGHT;
+  const width = Math.max(MIN_WIDTH, roomsRight + RIGHT_MARGIN);
+  return { width, height, entranceTop, rooms };
 }
 
-// Free-address desk anchor; the grid starts right of the last team room.
-export function deskPosition(seat, freeGridX) {
-  return {
-    x: freeGridX + (seat % GRID_COLUMNS) * COLUMN_SPACING,
-    y: FIRST_ROW_Y + Math.floor(seat / GRID_COLUMNS) * ROW_SPACING,
-  };
+// Lobby furniture, x in world space and y relative to entranceTop. Drawn by
+// office.js and grown into the pathfinding obstacles below, and kept here so
+// the tests can pin that no waiting spot ever lands inside a blocked rect.
+export const ELEVATOR = { x: 12, y: 12, width: 72, height: 136 };
+export const RECEPTION = { x: 120, y: 72, width: 140, height: 32 };
+export const BENCH = { x: 340, y: 64, width: 230, height: 34 };
+
+// The rects lobby walkers must route around: the partition wall (so a path
+// never cuts through the work area), the elevator shell (including its outer
+// frame), the reception counter and the bench.
+export function entranceObstacles(layout) {
+  const top = layout.entranceTop;
+  return [
+    { x: 0, y: top, width: layout.width, height: PARTITION_HEIGHT },
+    { x: ELEVATOR.x - 4, y: top + ELEVATOR.y - 8, width: ELEVATOR.width + 8, height: ELEVATOR.height + 8 },
+    { x: RECEPTION.x, y: top + RECEPTION.y, width: RECEPTION.width, height: RECEPTION.height },
+    { x: BENCH.x, y: top + BENCH.y, width: BENCH.width, height: BENCH.height },
+  ];
 }
 
-// Resting spots anchored to the break-area furniture: café tables and a sofa.
-// Beyond the fixed furniture, extra avatars overflow onto a back row.
-export function breakSpot(index, layout) {
-  const top = layout.breakTop;
+// Waiting spots for visitors in the entrance lobby: in front of the bench,
+// then the open floor to its right. Beyond the fixed spots, extra visitors
+// overflow onto a back row along the bottom edge.
+export function entranceSpot(index, layout) {
+  const top = layout.entranceTop;
   const spots = [
-    { x: 268, y: top + 92 },
-    { x: 334, y: top + 92 },
-    { x: 448, y: top + 92 },
-    { x: 514, y: top + 92 },
-    { x: 668, y: top + 96 },
-    { x: 732, y: top + 96 },
+    { x: 360, y: top + 128 },
+    { x: 424, y: top + 128 },
+    { x: 488, y: top + 128 },
+    { x: 552, y: top + 128 },
+    { x: 640, y: top + 132 },
+    { x: 704, y: top + 132 },
   ];
   if (index < spots.length) return spots[index];
-  return { x: 180 + ((index - spots.length) % 8) * 56, y: top + 40 };
+  return { x: 340 + ((index - spots.length) % 8) * 56, y: top + 172 };
 }
 
-// The entrance sits on the same horizontal band as the break area.
-export function doorPosition(layout) {
-  return { x: 46, y: layout.breakTop + 92 };
+// Where visitors step in and out of the elevator, just in front of its doors
+// on the lobby's left side.
+export function elevatorPosition(layout) {
+  return { x: 48, y: layout.entranceTop + 158 };
 }

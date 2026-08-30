@@ -211,10 +211,16 @@
 
   const officeWrapElement = document.getElementById('office-wrap');
   const boardViewElement = document.getElementById('board-view');
+  const panelElement = document.getElementById('panel');
 
+  // The board tab is the full-screen kanban, so the compact strip and the
+  // inbox both step aside; the office tab shows the strip above the canvas
+  // with the inbox alongside.
   function setView(view) {
     officeWrapElement.hidden = view !== 'office';
     boardViewElement.hidden = view !== 'board';
+    stripElement.hidden = view === 'board';
+    panelElement.hidden = view === 'board';
     for (const tab of document.querySelectorAll('.view-tab')) {
       const active = tab.dataset.view === view;
       tab.classList.toggle('active', active);
@@ -455,14 +461,13 @@
   // column collecting finished cards. A card still names the resident it is
   // assigned to (shown as an avatar tag), so a team column with several cards
   // makes each owner obvious. The compact strip under the app bar mirrors the
-  // board; the full board is the "ボード" view, where cards are dragged to
-  // reorder, reassign (drop onto a teammate's card) or complete (drop in 完了).
+  // board with the same full-size, draggable cards (its columns scroll
+  // vertically); the full board is the "ボード" view. In both, cards are
+  // dragged to reorder, reassign (drop onto a teammate's card) or complete
+  // (drop in 完了).
 
   const boardColumnsElement = document.getElementById('board-columns');
   const stripElement = document.getElementById('kanban-strip');
-
-  // How many cards each compact strip column previews before "+N more".
-  const STRIP_CARD_LIMIT = 3;
 
   // Assignee chips reuse the pixel avatars' vendor colors so the strip and
   // the canvas describe the same coworker in the same hue.
@@ -569,30 +574,19 @@
   }
 
   // The compact strip: one column per assignee with the count, a live
-  // "作業中" badge while the resident's run is going, the first few cards and
-  // a quick-add button that files a task to that assignee.
+  // "作業中" badge while the resident's run is going, a quick-add button that
+  // files a task to that assignee, and the same full-size, draggable cards as
+  // the full board (the column scrolls when they overflow).
   function renderStrip() {
     const { columns, grouped, index } = groupedCards();
     stripElement.innerHTML = columns
       .map((column) => {
         const showAssignee = column.type === 'team' || column.type === 'done';
         const cards = grouped.get(column.key);
-        const preview = cards
-          .slice(0, STRIP_CARD_LIMIT)
-          .map(
-            (card) => `
-              <div class="strip-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}">
-                <span class="strip-card-title">${escapeHtml(card.title)}</span>
-                ${showAssignee ? cardAssigneeTag(card, index) : ''}
-                ${cardBadges(card)}
-              </div>`
-          )
-          .join('');
-        const overflow =
-          cards.length > STRIP_CARD_LIMIT
-            ? `<div class="strip-more">ほか ${cards.length - STRIP_CARD_LIMIT} 件</div>`
-            : '';
-        const empty = cards.length === 0 ? '<div class="strip-empty">タスクなし</div>' : '';
+        const body =
+          cards.length === 0
+            ? '<div class="strip-empty">タスクなし</div>'
+            : cards.map((card) => boardCardMarkup(card, showAssignee, index)).join('');
         const addButton =
           column.addAssignee === null
             ? ''
@@ -606,22 +600,19 @@
               ${column.busy ? '<span class="strip-busy">作業中</span>' : ''}
               ${addButton}
             </div>
-            ${preview}${overflow}${empty}
+            <div class="board-cards" data-column="${escapeHtml(column.key)}">${body}</div>
           </div>`;
       })
       .join('');
+    attachBoardHandlers(stripElement);
   }
 
-  // One delegated listener: the strip is rebuilt on board refreshes, and
-  // per-element listeners would drop a click that spans a rebuild.
+  // The quick-add button is the strip's only chrome beyond the shared cards;
+  // card clicks and drags are wired by attachBoardHandlers. A delegated
+  // listener survives the strip being rebuilt on every board refresh.
   stripElement.addEventListener('click', (event) => {
     const addButton = event.target.closest('.strip-add');
-    if (addButton !== null) {
-      openCardForm(addButton.dataset.assignee);
-      return;
-    }
-    const cardElement = event.target.closest('.strip-card');
-    if (cardElement !== null) openCardDetail(cardElement.dataset.id);
+    if (addButton !== null) openCardForm(addButton.dataset.assignee);
   });
 
   function cardBadges(card) {
@@ -632,6 +623,16 @@
     }
     if (card.orphaned) badges.push('<span class="card-badge orphaned">担当不在</span>');
     return badges.join('');
+  }
+
+  // A single card's markup, shared by the full board and the compact strip so
+  // both render the same size and drag the same way.
+  function boardCardMarkup(card, showAssignee, index) {
+    return `
+      <div class="board-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}">
+        <div class="board-card-title">${escapeHtml(card.title)}</div>
+        <div class="board-card-meta">${showAssignee ? cardAssigneeTag(card, index) : ''}${cardBadges(card)}<span class="board-card-time">${formatTime(card.createdAt)}</span></div>
+      </div>`;
   }
 
   function renderBoard() {
@@ -649,23 +650,19 @@
             <div class="board-cards" data-column="${escapeHtml(column.key)}">
               ${grouped
                 .get(column.key)
-                .map(
-                  (card) => `
-                    <div class="board-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}">
-                      <div class="board-card-title">${escapeHtml(card.title)}</div>
-                      <div class="board-card-meta">${showAssignee ? cardAssigneeTag(card, index) : ''}${cardBadges(card)}<span class="board-card-time">${formatTime(card.createdAt)}</span></div>
-                    </div>`
-                )
+                .map((card) => boardCardMarkup(card, showAssignee, index))
                 .join('')}
             </div>
           </div>`;
       })
       .join('');
-    attachBoardHandlers();
+    attachBoardHandlers(boardColumnsElement);
   }
 
+  // Markers live in whichever root is being dragged (board or strip); only one
+  // drag runs at a time, so clearing across both roots is simplest.
   function clearDropMarkers() {
-    for (const marked of boardColumnsElement.querySelectorAll('.drop-before, .drop-after')) {
+    for (const marked of document.querySelectorAll('.drop-before, .drop-after')) {
       marked.classList.remove('drop-before', 'drop-after');
     }
   }
@@ -681,8 +678,10 @@
     return next === null ? null : next.dataset.id;
   }
 
-  function attachBoardHandlers() {
-    for (const cardElement of boardColumnsElement.querySelectorAll('.board-card')) {
+  // Wire drag/drop and click for every card within `root` (the full board or
+  // the compact strip); both share the same drop resolution.
+  function attachBoardHandlers(root) {
+    for (const cardElement of root.querySelectorAll('.board-card')) {
       cardElement.addEventListener('click', () => openCardDetail(cardElement.dataset.id));
       cardElement.addEventListener('dragstart', (event) => {
         draggingCardId = cardElement.dataset.id;
@@ -705,16 +704,16 @@
       cardElement.addEventListener('drop', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        dropCard(cardElement.closest('.board-cards').dataset.column, insertBeforeId(cardElement, event));
+        dropCard(cardElement.closest('.board-cards').dataset.column, insertBeforeId(cardElement, event), root);
       });
     }
-    for (const listElement of boardColumnsElement.querySelectorAll('.board-cards')) {
+    for (const listElement of root.querySelectorAll('.board-cards')) {
       listElement.addEventListener('dragover', (event) => {
         if (draggingCardId !== null) event.preventDefault();
       });
       listElement.addEventListener('drop', (event) => {
         event.preventDefault();
-        dropCard(listElement.dataset.column, null);
+        dropCard(listElement.dataset.column, null, root);
       });
     }
   }
@@ -725,9 +724,9 @@
   // end of a team column keeps the current resident when it belongs to the team,
   // otherwise falls back to the team's first-seat resident. Positions count
   // only the target resident's cards, matching the list the server splices into.
-  function resolveDrop(column, id, beforeId) {
+  function resolveDrop(column, id, beforeId, root) {
     const cards = [
-      ...boardColumnsElement.querySelectorAll(
+      ...root.querySelectorAll(
         `.board-cards[data-column="${CSS.escape(column.key)}"] .board-card`
       ),
     ].filter((element) => element.dataset.id !== id);
@@ -739,7 +738,7 @@
     if (beforeId !== null) {
       assignee = cards.find((element) => element.dataset.id === beforeId)?.dataset.assignee ?? null;
     } else {
-      const dragged = boardColumnsElement.querySelector(`.board-card[data-id="${CSS.escape(id)}"]`);
+      const dragged = root.querySelector(`.board-card[data-id="${CSS.escape(id)}"]`);
       const current = dragged?.dataset.assignee ?? null;
       assignee = residentIndex().get(current)?.teamId === column.teamId ? current : column.addAssignee;
     }
@@ -753,7 +752,7 @@
   // Drop the dragged card into `columnKey`, before `beforeId` (null = at the
   // end). The 完了 column marks the card done; any other column reassigns and
   // reorders it (which also clears the done state server-side).
-  async function dropCard(columnKey, beforeId) {
+  async function dropCard(columnKey, beforeId, root) {
     const id = draggingCardId;
     draggingCardId = null;
     clearDropMarkers();
@@ -764,7 +763,7 @@
       if (column.type === 'done') {
         await client.markCardDone(id);
       } else {
-        const { assignee, index } = resolveDrop(column, id, beforeId);
+        const { assignee, index } = resolveDrop(column, id, beforeId, root);
         if (assignee !== null) await client.moveCard(id, assignee, index);
       }
     } catch {

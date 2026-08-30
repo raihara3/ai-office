@@ -265,7 +265,7 @@ textarea:focus-visible {
   align-items: stretch;
   flex-shrink: 0;
   gap: 10px;
-  height: 148px;
+  height: 200px;
   padding: 10px 16px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -274,23 +274,38 @@ textarea:focus-visible {
   scrollbar-width: thin;
 }
 
+#kanban-strip[hidden] {
+  display: none;
+}
+
 .strip-column {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  gap: 5px;
-  width: 216px;
-  padding: 8px 10px;
+  width: 248px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-muted);
+  box-shadow: var(--shadow-soft);
+  background: var(--surface);
+}
+
+/* The strip's card area fills the fixed-height column and scrolls, so every
+   card stays full-size and draggable instead of being truncated to a preview. */
+#kanban-strip .board-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .strip-column-head {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .assignee-chip {
@@ -375,42 +390,8 @@ textarea:focus-visible {
   color: var(--primary);
 }
 
-.strip-card {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  box-shadow: var(--shadow-soft);
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.strip-card:hover {
-  border-color: var(--primary);
-}
-
-.strip-card.working {
-  border-color: rgba(23, 153, 95, 0.45);
-}
-
-.strip-card-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 11px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.strip-more {
-  color: var(--text-faint);
-  font-size: 10px;
-}
-
 .strip-empty {
+  padding: 4px 2px;
   color: var(--text-faint);
   font-size: 11px;
 }
@@ -657,6 +638,10 @@ textarea:focus-visible {
   border-left: 1px solid var(--border);
   background: var(--surface);
   overflow: hidden;
+}
+
+#panel[hidden] {
+  display: none;
 }
 
 #panel-head {

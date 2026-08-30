@@ -38,7 +38,16 @@ export const DEFAULT_DATA_DIRECTORY = path.join(
 
 // Rules every resident follows regardless of role; the role-specific
 // instructions (edited in the resident drawer) are appended below this.
-function buildPrompt(configuration, instructions, precheckOutput, task) {
+// `reports` are the task card's own past reports, oldest first: a run keeps no
+// memory of its own, so replaying them is what carries the history (initial
+// card body → prior investigations → follow-up notes) into this run.
+function buildPrompt(
+  configuration,
+  instructions,
+  precheckOutput,
+  task,
+  reports = [],
+) {
   const sections = [
     `あなたは AI Office の常駐チームの一員「${configuration.displayName}」です。以下のルールと役割指示に従って作業してください。`,
     [
@@ -52,6 +61,12 @@ function buildPrompt(configuration, instructions, precheckOutput, task) {
     sections.push(
       `## 今回のタスク(カンバンボードより)\n\n### ${task.title}\n\n${task.body}`.trim(),
     );
+  }
+  if (reports.length > 0) {
+    const history = reports
+      .map((report) => `### ${report.title}\n\n${report.body}`.trim())
+      .join("\n\n");
+    sections.push(`## このタスクのこれまでの報告(古い順)\n\n${history}`);
   }
   if (precheckOutput) {
     sections.push(
@@ -190,6 +205,16 @@ export function createResidents({
     state.refresh();
   }
 
+  // A task card's own reports, oldest first — the continuity thread replayed
+  // into the next run's prompt. Archiving a card archives its reports, so a
+  // reworked card only ever carries the reports still on the board.
+  function linkedReports(taskId) {
+    return whiteboard
+      .listReports()
+      .filter((report) => report.task === taskId)
+      .sort((first, second) => first.createdAt - second.createdAt);
+  }
+
   // Start one run. `gateOnPrecheck` is true for scheduled ticks and false for
   // the panel's 今すぐ実行 button. A gated trigger run only starts when there is
   // actually work to do: a card must be assigned to this resident on the board
@@ -235,6 +260,10 @@ export function createResidents({
           return false;
         }
       }
+      // A run keeps no memory of its own: replaying the card's past reports is
+      // what carries the earlier investigations into this run, so the human
+      // never has to quote them into a note by hand.
+      const history = task === null ? [] : linkedReports(task.id);
       const started = runner.run(
         {
           name: entry.name,
@@ -249,6 +278,7 @@ export function createResidents({
             entry.instructions,
             precheckOutput,
             task,
+            history,
           ),
           onFinished: (result) => handleFinished(entry, result, task),
         },

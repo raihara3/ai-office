@@ -392,6 +392,7 @@
               <span class="report-title">${escapeHtml(report.title)}</span>
               <span class="report-time">${formatTime(report.createdAt)}</span>
               <button type="button" class="report-favorite" title="お気に入り" aria-pressed="${report.favorite ? 'true' : 'false'}">${report.favorite ? '★' : '☆'}</button>
+              <button type="button" class="report-copy" title="全文をコピー">⧉</button>
               <button type="button" class="report-archive" title="ボードから外す"${report.favorite ? ' disabled' : ''}>✕</button>
             </div>
             <div class="report-body" hidden>${linkify(escapeHtml(report.body))}</div>
@@ -427,6 +428,23 @@
           // Fall through: reload so the panel reflects what is really on disk.
         }
         loadReports();
+      });
+      reportElement.querySelector('.report-copy').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const report = latestReports.find((entry) => entry.id === reportElement.dataset.id);
+        if (!report) return;
+        const copyButton = event.currentTarget;
+        try {
+          await navigator.clipboard.writeText(report.body);
+          copyButton.classList.add('copied');
+          copyButton.textContent = '✓';
+          setTimeout(() => {
+            copyButton.classList.remove('copied');
+            copyButton.textContent = '⧉';
+          }, 1200);
+        } catch {
+          // Clipboard is unavailable (e.g. insecure context): leave the button as is.
+        }
       });
       reportElement.querySelector('.report-archive').addEventListener('click', async (event) => {
         event.stopPropagation();

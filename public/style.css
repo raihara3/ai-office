@@ -692,6 +692,14 @@ textarea:focus-visible {
   margin-left: auto;
 }
 
+/* In the inbox tab a report shows its body in full; only #inbox-list scrolls
+   once the content outgrows the viewport, rather than each body scrolling
+   inside the 240px cap the fixed sidebar uses. */
+#panel.expanded .report-body {
+  max-height: none;
+  overflow-y: visible;
+}
+
 #panel-head {
   display: flex;
   align-items: baseline;
@@ -810,6 +818,23 @@ textarea:focus-visible {
 
 .report.favorite .report-favorite {
   color: var(--warning);
+}
+
+.report-copy {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.report-copy:hover {
+  color: var(--primary);
+}
+
+.report-copy.copied {
+  color: var(--success);
 }
 
 .report-archive {

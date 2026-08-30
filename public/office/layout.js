@@ -27,14 +27,12 @@ export const ROOM_GAP = 40;
 export const ROOM_COLUMNS = 3;
 // Mirrors MAX_TEAM_SEATS in server/residents/resident-store.js.
 export const MAX_TEAM_SEATS = 12;
-// The dashed "+ チーム追加" ghost slot after the last room.
-export const ADD_SLOT_WIDTH = 120;
 const DESK_COLUMN_PITCH = 124;
 const MIN_WIDTH = 960;
 // Clearance between the free grid's last column anchor and the right wall,
 // preserving the pre-teams 960-wide scene's margin.
 const RIGHT_MARGIN = 136;
-// Aisle between the ghost slot and the free grid's first desk anchor.
+// Aisle between the last team room and the free grid's first desk anchor.
 const FREE_GRID_GAP = 112;
 
 // One room rect per team, in snapshot (creation) order.
@@ -53,13 +51,6 @@ export function teamRooms(teams) {
       height: rows * ROW_SPACING,
     };
   });
-}
-
-// The ghost slot inviting a new team, right of the last room.
-export function addTeamSlot(rooms) {
-  const last = rooms[rooms.length - 1];
-  const x = last ? last.x + last.width + ROOM_GAP : 8;
-  return { x, y: ROOM_Y, width: ADD_SLOT_WIDTH, height: ROW_SPACING };
 }
 
 // Desk anchor within a room; index 0..seatCount-1, three columns per row.
@@ -107,14 +98,14 @@ export function lowestFreeSeat(usedSeats) {
   return seat;
 }
 
-// The whole scene: team rooms, the add-team slot, where the free-address
-// grid starts, and the world size. Width grows with the team count; height
-// grows with the deepest desk row (team rooms or free-address overflow); the
-// break area and the entrance are anchored to the bottom edge.
+// The whole scene: team rooms, where the free-address grid starts, and the
+// world size. Width grows with the team count; height grows with the deepest
+// desk row (team rooms or free-address overflow); the break area and the
+// entrance are anchored to the bottom edge.
 export function computeLayout(usedSeats, teams = []) {
   const rooms = teamRooms(teams);
-  const addSlot = addTeamSlot(rooms);
-  const freeGridX = addSlot.x + addSlot.width + FREE_GRID_GAP;
+  const last = rooms[rooms.length - 1];
+  const freeGridX = (last ? last.x + last.width : 8) + FREE_GRID_GAP;
   let maxRows = Math.ceil(SEAT_COUNT / GRID_COLUMNS);
   for (const room of rooms) maxRows = Math.max(maxRows, room.rows);
   for (const seat of usedSeats) {
@@ -127,10 +118,10 @@ export function computeLayout(usedSeats, teams = []) {
     MIN_WIDTH,
     freeGridX + (GRID_COLUMNS - 1) * COLUMN_SPACING + RIGHT_MARGIN
   );
-  return { width, height, breakTop, freeGridX, rooms, addSlot };
+  return { width, height, breakTop, freeGridX, rooms };
 }
 
-// Free-address desk anchor; the grid starts right of the add-team slot.
+// Free-address desk anchor; the grid starts right of the last team room.
 export function deskPosition(seat, freeGridX) {
   return {
     x: freeGridX + (seat % GRID_COLUMNS) * COLUMN_SPACING,

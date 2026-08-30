@@ -325,12 +325,12 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 ### `office/layout.js`
 
 純粋なシーン幾何:`computeLayout(usedSeats, teams)` が
-`{width, height, breakTop, freeGridX, rooms, addSlot}` を返します。チームルーム
+`{width, height, breakTop, freeGridX, rooms}` を返します。チームルーム
 (`teamRooms`)は左端から横並びで、幅 404 固定・3 列 × 最大 4 行(席数 1〜12
-で縦に成長)。最後のルームの右に破線の「+ チーム追加」ゴーストスロット
-(`addTeamSlot`)、さらに右にフリーアドレスグリッド(3 列 × 6 席事前設置、
+で縦に成長)。最後のルームの右にフリーアドレスグリッド(3 列 × 6 席事前設置、
 超過分は下の行へ。`deskPosition(seat, freeGridX)`)が続き、ワールド幅は
-チーム数に応じて動的に広がります。各行の y はルームの机の行と揃えています。
+チーム数に応じて動的に広がります。チームの追加はアプリバー右上の
+「＋ チーム」ボタンから行います。各行の y はルームの机の行と揃えています。
 机の座標 `roomDeskPosition`、クリック領域 `roomDeskHitRect`(とその上帯の
 モニタ領域 `roomMonitorHitRect`)、ルーム名ラベルの `teamLabelHitRect`、
 上壁のホワイトボードのクリック領域 `WHITEBOARD` もここに定義します。

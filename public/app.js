@@ -889,6 +889,7 @@
     openDrawer('team-form', team === null ? 'チームを追加' : `チーム設定(${team.name})`);
   }
   window.addEventListener('office:team-open', (event) => openTeamPanel(event.detail.teamId));
+  document.getElementById('team-add').addEventListener('click', () => openTeamPanel(null));
 
   teamForm.addEventListener('submit', async (event) => {
     event.preventDefault();

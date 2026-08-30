@@ -5,7 +5,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  addTeamSlot,
   computeLayout,
   deskPosition,
   breakSpot,
@@ -61,18 +60,12 @@ test('roomDeskPosition: three upright columns over spaced rows', () => {
   assert.deepEqual(roomDeskPosition(second, 0), { x: 530, y: 240 });
 });
 
-test('addTeamSlot: after the last room, or at the left edge with no teams', () => {
-  const rooms = teamRooms(DEFAULT_TEAMS);
-  assert.deepEqual(addTeamSlot(rooms), { x: 452, y: 104, width: 120, height: 172 });
-  assert.equal(addTeamSlot([]).x, 8);
-});
-
 test('computeLayout: one 6-seat team reproduces the classic scene heights', () => {
   const layout = computeLayout(new Set(), DEFAULT_TEAMS);
   assert.equal(layout.height, 692);
   assert.equal(layout.breakTop, 542);
-  assert.equal(layout.freeGridX, 684); // add slot 452..572 + gap
-  assert.equal(layout.width, 1120); // free grid last column 984 + margin
+  assert.equal(layout.freeGridX, 524); // last room right 412 + gap 112
+  assert.equal(layout.width, 960); // free grid last column 824 + margin, floored to MIN_WIDTH
 });
 
 test('computeLayout: overflowing the pre-placed rows grows the room', () => {
@@ -91,9 +84,9 @@ test('computeLayout: a tall team room grows the world and stays above the break 
 
 test('deskPosition: fills columns then wraps, anchored to freeGridX', () => {
   const { freeGridX } = computeLayout(new Set(), DEFAULT_TEAMS);
-  assert.deepEqual(deskPosition(0, freeGridX), { x: 684, y: 240 });
-  assert.deepEqual(deskPosition(2, freeGridX), { x: 984, y: 240 });
-  assert.deepEqual(deskPosition(3, freeGridX), { x: 684, y: 412 });
+  assert.deepEqual(deskPosition(0, freeGridX), { x: 524, y: 240 });
+  assert.deepEqual(deskPosition(2, freeGridX), { x: 824, y: 240 });
+  assert.deepEqual(deskPosition(3, freeGridX), { x: 524, y: 412 });
 });
 
 test('free-address rows line up with the team rooms', () => {

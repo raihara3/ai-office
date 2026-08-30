@@ -301,7 +301,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     // soft shadow the wall casts on the floor
     px(0, 96, width, 5, 'rgba(0, 0, 0, 0.10)');
     drawTeamRooms(time, layout);
-    drawAddTeamSlot(layout);
     drawBreakArea(layout);
     // plants (the left edge holds the team rooms, so only the right stays)
     drawPlant(width - 30, 180);
@@ -415,24 +414,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
       ctx.textAlign = 'left';
       ctx.fillText(room.name, room.x + 8, room.y + 22);
     }
-  }
-
-  // The dashed ghost slot inviting a new team, right of the last room.
-  function drawAddTeamSlot(layout) {
-    const slot = layout.addSlot;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(90, 80, 60, 0.5)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.roundRect(slot.x, slot.y, slot.width, slot.height, 10);
-    ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = 'rgba(90, 80, 60, 0.7)';
-    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('＋', slot.x + slot.width / 2, slot.y + slot.height / 2 - 4);
-    ctx.fillText('チーム追加', slot.x + slot.width / 2, slot.y + slot.height / 2 + 14);
   }
 
   // One assigned resident seat: nameplate in the vendor color, and the
@@ -895,7 +876,7 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
 
   // The whiteboard, team labels and desks open panels owned by app.js; the
   // canvas only reports the hits as window events to stay DOM-agnostic.
-  // Order matters: labels sit above the desk band, the add slot last.
+  // Order matters: labels sit above the desk band.
   canvas.addEventListener('click', (event) => {
     const point = canvasPoint(event);
     if (isInside(point, WHITEBOARD)) {
@@ -907,10 +888,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
       window.dispatchEvent(
         new CustomEvent('office:team-open', { detail: { teamId: labelRoom.id } })
       );
-      return;
-    }
-    if (isInside(point, currentLayout.addSlot)) {
-      window.dispatchEvent(new CustomEvent('office:team-open', { detail: { teamId: null } }));
       return;
     }
     const hit = teamDeskAt(point);
@@ -937,7 +914,6 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     const clickable =
       isInside(point, WHITEBOARD) ||
       teamLabelAt(point) !== null ||
-      isInside(point, currentLayout.addSlot) ||
       teamDeskAt(point) !== null;
     canvas.style.cursor = clickable ? 'pointer' : 'default';
   });

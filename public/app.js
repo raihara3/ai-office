@@ -289,6 +289,43 @@
     { passive: false }
   );
 
+  // Holding the middle mouse button (scroll wheel) and dragging pans freely in
+  // any direction, unlike the axis-locked scrollbars. Window-level listeners
+  // keep the pan tracking even when the pointer leaves the viewport.
+  let panPointer = null; // { startX, startY, scrollLeft, scrollTop }
+
+  function stopPan() {
+    if (panPointer === null) return;
+    panPointer = null;
+    officeScrollElement.style.cursor = '';
+    window.removeEventListener('mousemove', onPanMove);
+    window.removeEventListener('mouseup', onPanUp);
+  }
+
+  function onPanMove(event) {
+    if (panPointer === null) return;
+    officeScrollElement.scrollLeft = panPointer.scrollLeft - (event.clientX - panPointer.startX);
+    officeScrollElement.scrollTop = panPointer.scrollTop - (event.clientY - panPointer.startY);
+  }
+
+  function onPanUp(event) {
+    if (event.button === 1) stopPan();
+  }
+
+  officeScrollElement.addEventListener('mousedown', (event) => {
+    if (event.button !== 1) return;
+    event.preventDefault(); // suppress the browser's middle-click autoscroll
+    panPointer = {
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: officeScrollElement.scrollLeft,
+      scrollTop: officeScrollElement.scrollTop,
+    };
+    officeScrollElement.style.cursor = 'grabbing';
+    window.addEventListener('mousemove', onPanMove);
+    window.addEventListener('mouseup', onPanUp);
+  });
+
   // 'fit' must re-fit on viewport resize; any mode must re-apply when the
   // canvas's intrinsic size changes (office.js rewrites width/height as teams
   // and sessions appear). Mutations watch the attributes, not the styled box,

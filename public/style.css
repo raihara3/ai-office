@@ -296,7 +296,12 @@ textarea:focus-visible {
   overflow-y: hidden;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+#kanban-strip::-webkit-scrollbar,
+#kanban-strip .board-cards::-webkit-scrollbar {
+  display: none;
 }
 
 #kanban-strip[hidden] {
@@ -321,7 +326,7 @@ textarea:focus-visible {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .strip-column-head {

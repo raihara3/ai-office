@@ -644,6 +644,24 @@ textarea:focus-visible {
   display: none;
 }
 
+/* The inbox tab expands the panel to fill the content area; the office tab
+   keeps it a fixed sidebar. */
+#panel.expanded {
+  flex: 1;
+  width: auto;
+  border-left: none;
+}
+
+#panel.expanded #inbox-list {
+  padding: 16px;
+}
+
+#panel.expanded .report {
+  max-width: 880px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
 #panel-head {
   display: flex;
   align-items: baseline;

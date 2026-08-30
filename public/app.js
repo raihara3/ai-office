@@ -213,14 +213,15 @@
   const boardViewElement = document.getElementById('board-view');
   const panelElement = document.getElementById('panel');
 
-  // The board tab is the full-screen kanban, so the compact strip and the
-  // inbox both step aside; the office tab shows the strip above the canvas
-  // with the inbox alongside.
+  // The office tab shows the strip above the canvas with the inbox alongside;
+  // the board tab is the full-screen kanban; the inbox tab expands the inbox
+  // panel to fill the content area. The strip only rides above the canvas.
   function setView(view) {
     officeWrapElement.hidden = view !== 'office';
     boardViewElement.hidden = view !== 'board';
-    stripElement.hidden = view === 'board';
+    stripElement.hidden = view !== 'office';
     panelElement.hidden = view === 'board';
+    panelElement.classList.toggle('expanded', view === 'inbox');
     for (const tab of document.querySelectorAll('.view-tab')) {
       const active = tab.dataset.view === view;
       tab.classList.toggle('active', active);

@@ -137,15 +137,15 @@ survives a server restart. Endpoints:
 ## Resident team
 
 Beyond the free-address grid, a six-desk island in the top-left seats the
-resident team: permanently assigned agents, one role each. A resident is
-configured declaratively under
-`~/Library/Application Support/ai-office/residents/<name>/` —
-`resident.json` (display name, seat, CLI, read-only/edit mode, working
-directory, trigger, optional precheck, enabled), `INSTRUCTIONS.md` (the role
-prompt) and `state.json` (run bookkeeping). The files are the source of
-truth; clicking a resident desk opens an in-app drawer with the same fields
-(create, edit, unassign, run now). Reports and kanban cards live in
-`~/Library/Application Support/ai-office/office.db` (SQLite).
+resident team: permanently assigned agents, one role each. A resident's
+configuration (display name, seat, CLI, read-only/edit mode, working
+directory, trigger, optional precheck, enabled), role prompt and run
+bookkeeping live as a row in
+`~/Library/Application Support/ai-office/office.db` (SQLite), edited through
+the in-app drawer opened by clicking a resident desk (create, edit,
+unassign, run now). Every resident belongs to one team (default team
+`office` for now). Reports and kanban cards live in the same database,
+foreign-keyed to their resident.
 
 Triggers are `{type: "schedule", days, times}` (fixed weekday/time slots;
 occurrences still fire up to one hour late, older ones are skipped) or

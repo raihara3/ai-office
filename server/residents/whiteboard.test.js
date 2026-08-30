@@ -1,16 +1,33 @@
 // Unit tests for the whiteboard report store (whiteboard.js): listing, read
 // state and unread counts, archiving and the favorite pin, over an in-memory
-// SQLite database.
+// SQLite database with resident fixtures created through the resident store.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { openDatabase } from './database.js';
+import { createResidentStore } from './resident-store.js';
 import { createWhiteboard } from './whiteboard.js';
 
 function whiteboardWith(nowValue = 10_000_000) {
   const database = openDatabase({ location: ':memory:' });
-  return { database, whiteboard: createWhiteboard({ database, now: () => nowValue }) };
+  const residentStore = createResidentStore({ database, now: () => nowValue });
+  for (const [index, name] of ['log-analyst', 'issue-watcher'].entries()) {
+    residentStore.save(name, {
+      configuration: {
+        displayName: name,
+        seat: index,
+        cli: 'claude',
+        mode: 'read-only',
+        workingDirectory: '~',
+        trigger: { type: 'interval', minutes: 10 },
+        precheck: null,
+        enabled: true,
+      },
+      instructions: '',
+    });
+  }
+  return { database, residentStore, whiteboard: createWhiteboard({ database, now: () => nowValue }) };
 }
 
 test('whiteboard: save → list → markRead → counts', () => {
@@ -45,6 +62,8 @@ test('whiteboard: save → list → markRead → counts', () => {
   // Marking an already-read report stays true; an unknown id is refused.
   assert.equal(whiteboard.markRead(firstId), true);
   assert.equal(whiteboard.markRead('no-such-report'), false);
+
+  assert.throws(() => whiteboard.saveReport('nobody', { title: 'x', level: 'info', body: '', createdAt: 1 }), /unknown resident/);
 });
 
 test('whiteboard: archiveReport takes the report off the board but keeps the row', () => {
@@ -92,4 +111,24 @@ test('whiteboard: a favorited report is pinned and cannot be archived', () => {
   assert.equal(whiteboard.listReports().length, 0);
 
   assert.equal(whiteboard.toggleFavorite('no-such-report'), null);
+});
+
+test('whiteboard: reports keep their author name after the resident is archived', () => {
+  const { whiteboard, residentStore } = whiteboardWith();
+  whiteboard.saveReport('log-analyst', {
+    title: '最後の報告',
+    level: 'info',
+    body: '本文',
+    createdAt: 1_000_000,
+  });
+  residentStore.remove('log-analyst');
+  assert.equal(whiteboard.listReports()[0].resident, 'log-analyst');
+  // A run that finishes just after its resident was unassigned still reports.
+  whiteboard.saveReport('log-analyst', {
+    title: '滑り込みの報告',
+    level: 'info',
+    body: '',
+    createdAt: 2_000_000,
+  });
+  assert.equal(whiteboard.listReports().length, 2);
 });

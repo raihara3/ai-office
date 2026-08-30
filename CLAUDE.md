@@ -24,7 +24,7 @@ Electron's Node 24 needs no flag).
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `whiteboard.js` (reports), `board.js` (kanban task cards), `legacy-import.js` (one-time Markdown-store import)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `registry.js` (session bindings), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
 - `docs/architecture.md` — full architecture notes
 - `docs/database.md` — office.db schema (ER diagram, indexes, conventions)
 
@@ -56,9 +56,14 @@ Electron's Node 24 needs no flag).
   (`read-only`/`workspace-write`) still bounds what the run may touch.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
   on its first line flags it for a human.
-- Reports and cards live in `<dataDir>/office.db` (`reports`/`cards` tables,
-  opened by `database.js`). Archiving sets `archived_at` — rows are never
-  deleted, and listings filter to active rows.
+- Everything the resident team persists lives in `<dataDir>/office.db`
+  (opened by `database.js`): resident configuration + instructions + run
+  state (`residents` table, edited in-app), teams (`teams`, 1:N — every
+  resident belongs to one team, default id `default`), session bindings
+  (`session_bindings`), reports and cards. Cards/reports reference residents
+  by foreign-keyed id; the HTTP API stays name-based (`'user'` = the human's
+  column). Archiving sets `archived_at` — rows are never deleted, and
+  listings filter to active rows. See `docs/database.md` for the ER diagram.
 - Task queue: the kanban board (`board.js`; rows in the `cards` table,
   columns = assignee). An idle resident whose
   trigger is not due works the **top card** of its column (precheck is

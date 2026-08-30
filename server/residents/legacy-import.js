@@ -9,8 +9,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { ensureResidentId } from './resident-import.js';
 
 const IMPORT_MARKER_KEY = 'legacyImportedAt';
+const USER_SENTINEL = 'user';
 
 // A minimal "key: value" frontmatter block — no YAML nesting, by design.
 // Moved from whiteboard.js when the stores went to SQLite; the importer is
@@ -202,19 +204,24 @@ export function importLegacyData(database, { dataDirectory, fileSystem = fs, now
   // primary-key throw, which would roll back the marker and re-fail on every
   // boot.
   const insertReport = database.prepare(
-    `INSERT OR IGNORE INTO reports (id, resident, title, level, task, body, created_at, "read", favorite, archived_at)
+    `INSERT OR IGNORE INTO reports (id, resident_id, title, level, task, body, created_at, "read", favorite, archived_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertCard = database.prepare(
-    `INSERT OR IGNORE INTO cards (id, title, assignee, origin, body, position, created_at, updated_at, archived_at)
+    `INSERT OR IGNORE INTO cards (id, title, assignee_id, origin_id, body, position, created_at, updated_at, archived_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   database.exec('BEGIN');
   try {
+    // Frontmatter can name residents that no longer exist anywhere;
+    // ensureResidentId gives those an archived ghost row so the foreign keys
+    // hold. 'user' marks the human, who is not a resident — NULL.
+    const toResidentId = (name) =>
+      name === USER_SENTINEL || !name ? null : ensureResidentId(database, name, now);
     for (const report of reports) {
       insertReport.run(
         report.id,
-        report.resident,
+        ensureResidentId(database, report.resident, now),
         report.title,
         report.level,
         report.task,
@@ -229,8 +236,8 @@ export function importLegacyData(database, { dataDirectory, fileSystem = fs, now
       insertCard.run(
         card.id,
         card.title,
-        card.assignee,
-        card.origin,
+        toResidentId(card.assignee),
+        toResidentId(card.origin),
         card.body,
         card.position,
         card.createdAt,

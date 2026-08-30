@@ -94,6 +94,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     previewCleanup: cleanup.findRetirableSessions,
     runCleanup: cleanup.retireSessions,
     listResidents: residents.list,
+    listTeams: residents.listTeams,
     saveResident: residents.save,
     deleteResident: residents.remove,
     runResident: residents.runNow,

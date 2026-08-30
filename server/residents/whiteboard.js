@@ -1,8 +1,11 @@
 // The whiteboard: reports from resident team members to the human, stored in
-// the reports table of office.db. Read and favorite (pinned) are plain
-// columns; archiving sets archived_at instead of deleting, so a mis-click
-// never loses a report and archived rows stay queryable. The store takes the
-// database handle as an injectable dependency — tests open ':memory:'.
+// the reports table of office.db with a foreign-keyed author (resident_id).
+// The public API speaks resident names; listings join the name back even for
+// archived residents so history keeps its author. Read and favorite (pinned)
+// are plain columns; archiving sets archived_at instead of deleting, so a
+// mis-click never loses a report and archived rows stay queryable. The store
+// takes the database handle as an injectable dependency — tests open
+// ':memory:'.
 
 import { randomUUID } from 'node:crypto';
 
@@ -10,14 +13,22 @@ const MAX_REPORTS = 100;
 
 export function createWhiteboard({ database, now = () => Date.now() }) {
   const statements = {
+    // Active preferred, archived accepted: a resident unassigned while its
+    // run was still in flight must not lose that run's report.
+    residentIdByName: database.prepare(
+      'SELECT id FROM residents WHERE name = ? ORDER BY (archived_at IS NULL) DESC LIMIT 1'
+    ),
     insert: database.prepare(
-      `INSERT INTO reports (id, resident, title, level, task, body, created_at)
+      `INSERT INTO reports (id, resident_id, title, level, task, body, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ),
     listActive: database.prepare(
-      `SELECT id, resident, title, level, task, body, created_at, "read", favorite
-       FROM reports WHERE archived_at IS NULL
-       ORDER BY created_at DESC, id LIMIT ${MAX_REPORTS}`
+      `SELECT rep.id, res.name AS resident, rep.title, rep.level, rep.task, rep.body,
+              rep.created_at, rep."read", rep.favorite
+       FROM reports rep
+       JOIN residents res ON res.id = rep.resident_id
+       WHERE rep.archived_at IS NULL
+       ORDER BY rep.created_at DESC, rep.id LIMIT ${MAX_REPORTS}`
     ),
     markRead: database.prepare(
       'UPDATE reports SET "read" = 1 WHERE id = ? AND archived_at IS NULL'
@@ -47,10 +58,12 @@ export function createWhiteboard({ database, now = () => Date.now() }) {
   // `task` optionally links the report to the kanban card whose run produced
   // it, so the card detail view can pull the report in.
   function saveReport(residentName, { title, level, body, createdAt, task = null }) {
+    const resident = statements.residentIdByName.get(residentName);
+    if (resident === undefined) throw new Error(`unknown resident: ${residentName}`);
     const id = randomUUID();
     statements.insert.run(
       id,
-      residentName,
+      resident.id,
       title,
       level === 'review-needed' ? 'review-needed' : 'info',
       task,

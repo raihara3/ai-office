@@ -155,8 +155,14 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
-    // Resident team management: list/save/unassign/run. The resident files on
-    // disk stay the source of truth; these endpoints only read and write them
+    // Teams the residents belong to (read-only until team management ships).
+    if (urlPath === '/api/teams') {
+      sendJson(response, 200, { teams: core.listTeams() });
+      return;
+    }
+
+    // Resident team management: list/save/unassign/run. The rows in office.db
+    // are the source of truth; these endpoints only read and write them
     // through the core.
     const residentMatch = urlPath.match(/^\/api\/residents(?:\/([a-z0-9][a-z0-9-]{0,63})(\/run)?)?$/);
     if (residentMatch) {

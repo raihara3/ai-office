@@ -1,9 +1,9 @@
-// Resident team orchestrator: composes the manifest store, scheduler, session
+// Resident team orchestrator: composes the resident store, scheduler, session
 // registry, runner, whiteboard and kanban board into one handle for the core.
-// A tick loop re-reads the manifests (so hand-edited files are picked up),
-// fires due triggers, gates trigger runs on both their precheck command and an
-// assigned board card, works the top card of each idle resident's board column,
-// and turns finished runs into whiteboard reports plus a #general notification.
+// A tick loop re-reads the resident rows, fires due triggers, gates trigger
+// runs on both their precheck command and an assigned board card, works the
+// top card of each idle resident's board column, and turns finished runs into
+// whiteboard reports plus a #general notification.
 
 import { execFile } from 'node:child_process';
 import os from 'node:os';
@@ -11,7 +11,8 @@ import path from 'node:path';
 import { createBoard, USER_COLUMN } from './board.js';
 import { openDatabase } from './database.js';
 import { importLegacyData } from './legacy-import.js';
-import { createManifestStore } from './manifest.js';
+import { importResidents } from './resident-import.js';
+import { createResidentStore } from './resident-store.js';
 import { createSessionRegistry } from './registry.js';
 import { createRunner, expandHomeDirectory, splitReportLevel } from './runner.js';
 import { createWhiteboard } from './whiteboard.js';
@@ -32,7 +33,7 @@ export const DEFAULT_DATA_DIRECTORY = path.join(
 );
 
 // Rules every resident follows regardless of role; the role-specific
-// instructions from INSTRUCTIONS.md are appended below this.
+// instructions (edited in the resident drawer) are appended below this.
 function buildPrompt(configuration, instructions, precheckOutput, task) {
   const sections = [
     `あなたは AI Office の常駐チームの一員「${configuration.displayName}」です。以下のルールと役割指示に従って作業してください。`,
@@ -79,25 +80,31 @@ export function createResidents({
   dataDirectory = DEFAULT_DATA_DIRECTORY,
   now = () => Date.now(),
   runPrecheck = defaultRunPrecheck,
-  manifestStore = createManifestStore({ dataDirectory, now }),
-  registry = createSessionRegistry({
-    filePath: path.join(dataDirectory, 'session-registry.json'),
-    now,
-  }),
+  database = null,
+  residentStore = null,
+  registry = null,
   whiteboard = null,
   board = null,
-  runner = createRunner({ registry, now }),
+  runner = null,
 } = {}) {
   // The database only opens when a store actually needs it, so tests that
-  // inject both stubs never touch the disk. The one-time legacy Markdown
-  // import runs right after the first open.
-  let database = null;
-  if (whiteboard === null || board === null) {
-    database = openDatabase({ location: path.join(dataDirectory, 'office.db') });
+  // inject stubs never touch the disk. The one-time imports run right after
+  // the first open: resident files first, so the legacy Markdown import's
+  // foreign keys can resolve.
+  let ownedDatabase = null;
+  if (residentStore === null || registry === null || whiteboard === null || board === null) {
+    if (database === null) {
+      database = openDatabase({ location: path.join(dataDirectory, 'office.db') });
+      ownedDatabase = database;
+    }
+    importResidents(database, { dataDirectory, now });
     importLegacyData(database, { dataDirectory, now });
+    residentStore ??= createResidentStore({ database, now });
+    registry ??= createSessionRegistry({ database, now });
     whiteboard ??= createWhiteboard({ database, now });
     board ??= createBoard({ database, now });
   }
+  runner ??= createRunner({ registry, now });
   let tickTimer = null;
   // Cards currently being worked, by resident name. In-memory on purpose:
   // if the server dies mid-run the card simply stays in its column and the
@@ -148,7 +155,7 @@ export function createResidents({
       if (reportLevel === 'info') board.archiveCard(task.id);
       else board.moveCard(task.id, { assignee: USER_COLUMN });
     }
-    manifestStore.saveState(entry.name, {
+    residentStore.saveState(entry.name, {
       ...entry.state,
       lastFinishedAt: finishedAt,
       lastOutcome: outcome,
@@ -181,12 +188,12 @@ export function createResidents({
       // Record the attempt first so a slow precheck cannot double-fire the
       // trigger on the next tick.
       entry.state = { ...entry.state, lastRunAt: startedAt };
-      manifestStore.saveState(entry.name, entry.state);
+      residentStore.saveState(entry.name, entry.state);
 
       // A firing trigger is not enough on its own: with no assigned card the
       // team stays quiet instead of filing a meaningless report every interval.
       if (gateOnPrecheck && task === null && board.topCardFor(entry.name) === null) {
-        manifestStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+        residentStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
         return false;
       }
 
@@ -194,7 +201,7 @@ export function createResidents({
       if (configuration.precheck && task === null) {
         precheckOutput = await runPrecheck(configuration.precheck, configuration.workingDirectory);
         if (gateOnPrecheck && precheckOutput.trim() === '') {
-          manifestStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
+          residentStore.saveState(entry.name, { ...entry.state, lastOutcome: 'skipped' });
           return false;
         }
       }
@@ -220,7 +227,7 @@ export function createResidents({
   }
 
   function tick() {
-    for (const entry of manifestStore.list()) {
+    for (const entry of residentStore.list()) {
       if (!entry.configuration.enabled) continue;
       if (runner.isRunning(entry.name) || launching.has(entry.name)) continue;
       if (isDue(entry.configuration.trigger, entry.state.lastRunAt ?? null, now())) {
@@ -248,20 +255,20 @@ export function createResidents({
     }
     // Closing checkpoints the WAL; only a database this module opened is ours
     // to close.
-    if (database !== null) {
+    if (ownedDatabase !== null) {
       try {
-        database.close();
+        ownedDatabase.close();
       } catch {
         // Already closed — stop() must stay idempotent.
       }
-      database = null;
+      ownedDatabase = null;
     }
   }
 
   // Lightweight per-snapshot data for the canvas (no instructions text).
   function snapshotData() {
     const currentTime = now();
-    return manifestStore.list({ withInstructions: false }).map((entry) => ({
+    return residentStore.list({ withInstructions: false }).map((entry) => ({
       name: entry.name,
       displayName: entry.configuration.displayName,
       seat: entry.configuration.seat,
@@ -282,7 +289,9 @@ export function createResidents({
 
   // Full detail for the resident panel, instructions included.
   function list() {
-    return manifestStore.list().map((entry) => ({
+    return residentStore.list().map((entry) => ({
+      id: entry.id,
+      teamId: entry.teamId,
       name: entry.name,
       configuration: entry.configuration,
       instructions: entry.instructions,
@@ -292,17 +301,17 @@ export function createResidents({
   }
 
   function save(name, { configuration, instructions }) {
-    manifestStore.save(name, { configuration, instructions });
+    residentStore.save(name, { configuration, instructions });
     state.refresh();
   }
 
   function remove(name) {
-    manifestStore.remove(name);
+    residentStore.remove(name);
     state.refresh();
   }
 
   function runNow(name) {
-    const entry = manifestStore.read(name);
+    const entry = residentStore.read(name);
     if (entry === null) throw new Error(`unknown resident: ${name}`);
     if (runner.isRunning(name)) throw new Error('already running');
     return launch(entry, { gateOnPrecheck: false });
@@ -337,7 +346,9 @@ export function createResidents({
 
   function assertAssignee(assignee) {
     if (assignee === USER_COLUMN) return;
-    if (manifestStore.read(assignee) === null) throw new Error(`unknown assignee: ${assignee}`);
+    if (residentStore.read(assignee, { withInstructions: false }) === null) {
+      throw new Error(`unknown assignee: ${assignee}`);
+    }
   }
 
   function listBoardCards() {
@@ -391,6 +402,7 @@ export function createResidents({
     tick,
     snapshotData,
     list,
+    listTeams: residentStore.listTeams,
     save,
     remove,
     runNow,

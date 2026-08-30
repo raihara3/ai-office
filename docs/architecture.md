@@ -54,11 +54,14 @@ server/                バックエンド(npm 依存なし。永続化は node:s
   cleanup.test.js      人事(HR)退勤ヒューリスティックのテスト
   residents/           常駐チーム(スケジュール実行される常駐エージェント)
     residents.js       オーケストレータ: tick ループ + precheck + 報告生成
-    manifest.js        resident.json / INSTRUCTIONS.md / state.json の読み書きと検証
-    manifest.test.js   マニフェスト検証・入出力のテスト
+    resident-store.js  residents / teams テーブルの読み書きと検証
+    resident-store.test.js 検証・保存・席重複・アーカイブのテスト
+    resident-import.js 旧 resident ファイル群からの一回限りのインポート
+    resident-import.test.js インポート・ghost 生成・クリーンアップのテスト
     scheduler.js       トリガー判定(schedule / interval)の純粋関数
     scheduler.test.js  トリガー判定のテスト
-    registry.js        セッションレジストリ(セッションログ ↔ 常駐員の紐付け)
+    registry.js        セッションレジストリ(session_bindings テーブル)
+    registry.test.js   フラグメント照合・上限・アーカイブ済み解決のテスト
     runner.js          ヘッドレス CLI 実行(コマンド構築 + タイムアウト)
     runner.test.js     コマンド構築・出力パースのテスト
     database.js        office.db のオープンとスキーマ移行(node:sqlite / WAL)
@@ -202,13 +205,14 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
 ### `residents/`
 
 常駐チーム: 左上のデスク島に常駐する最大 6 人のエージェント(1 人 = 1 役割)。
-設定は `~/Library/Application Support/ai-office/residents/<name>/` 配下の
-ファイル(`resident.json`・`INSTRUCTIONS.md`・`state.json`)が単一の真実の
-源で、アプリ内パネルとテキストエディタのどちらで編集しても同じ場所に
-行き着きます。報告とカンバンカードは同ディレクトリ直下の `office.db`
-(SQLite)に永続化されます。
+設定(プロフィール・役割プロンプト・実行簿記)・チーム・セッション紐付け・
+報告・カンバンカードはすべて
+`~/Library/Application Support/ai-office/office.db`(SQLite)に永続化され、
+編集はアプリ内パネル(ドロワー)で行います。各常駐は 1 つのチームに所属し
+(1:N、既定は 'default' チーム)、カード・報告は常駐 id への外部キーで
+リレーションされます(スキーマは [database.md](database.md))。
 
-- **`residents.js`** — オーケストレータ。30 秒ごとの tick でマニフェストを
+- **`residents.js`** — オーケストレータ。30 秒ごとの tick で常駐行を
   再読込し、期日が来たトリガーを発火します。トリガー起点の実行は「実際に
   作業があるとき」だけ開始します。すなわち、その常駐員にカンバンのカードが
   割り当てられており、かつ `precheck` シェルコマンドが設定されている場合は
@@ -223,16 +227,25 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   トリガー起点の実行が review-needed で終わった場合はユーザー列にカードを
   自動起票します。報告の `task` 列には カード id を刻印してカードと
   紐付けます。実行中カードの移動・アーカイブはここで拒否します。
-- **`manifest.js`** — 常駐員ディレクトリの読み書きと `resident.json` の検証。
-  キャッシュせず毎回ディスクへ読みに行きます。
+- **`resident-store.js`** — residents / teams テーブルの読み書きと設定の
+  検証。公開 API は名前ベース(save は席の重複を拒否、remove は
+  `archived_at` の刻印でアーカイブ済みの名前は再利用可)。キャッシュせず
+  毎回 DB へ読みに行きます。
+- **`resident-import.js`** — 旧ファイル群(`residents/<name>/` と
+  `session-registry.json`)から office.db への一回限りのインポート。
+  取り込んだ常駐は旧スラッグ名を id として保持し、カード・報告だけが参照
+  する行方不明の名前にはアーカイブ済みの ghost 行を作って外部キーを成立
+  させます。コミット後にのみ元ファイルを削除します。
 - **`scheduler.js`** — トリガー判定の純粋関数群。
   `{type: "schedule", days, times}`(曜日 + 時刻)と
   `{type: "interval", minutes, activeDays?, activeHours?}` をサポートし、
   schedule の発火は 1 時間まで遅延を許容(それより古い回はスキップ)します。
   現在時刻は常に引数で受け取ります。
-- **`registry.js`** — セッションレジストリ(`session-registry.json`)。実行が
-  生むセッションログを常駐員に紐付けて永続化し、その席をフリーアドレスの
-  グリッドではなく常駐チームの島に固定します。
+- **`registry.js`** — セッションレジストリ(`session_bindings` テーブル)。
+  実行が生むセッションログを常駐員に紐付けて永続化し、その席をフリー
+  アドレスのグリッドではなく常駐チームの島に固定します。行単位の INSERT
+  なので複数プロセスでも紐付けが失われません(照合は JS 側: パスは完全
+  一致・セッション uuid は部分一致、新しい順)。
 - **`runner.js`** — ヘッドレス CLI 実行(`claude -p --session-id <uuid>`、
   `codex exec --sandbox …`、`gemini --skip-trust -p`)。read-only / edit のモードを各 CLI の
   権限フラグにマップし、30 分のタイムアウトと常駐員ごとの同時 1 実行を
@@ -389,8 +402,9 @@ Electron メインプロセス。`startServer` により同一サーバをプロ
 - `createCleanup` への **OS 検査関数のスタブ** 注入。
 - 各 watcher の `handleLine` への **`report` スタブ** 注入。
 - `createSmallTalk` への **`random`** の注入。
-- `createManifestStore` / `createSessionRegistry` への
-  **ファイルシステムのスタブ** 注入。`createWhiteboard` / `createBoard` へは
-  `openDatabase({ location: ':memory:' })` の **インメモリ SQLite** を注入。
+- `createResidentStore` / `createSessionRegistry` / `createWhiteboard` /
+  `createBoard` へは `openDatabase({ location: ':memory:' })` の
+  **インメモリ SQLite** を注入。インポータのテストは加えて
+  **ファイルシステムのスタブ** を注入します。
   scheduler と runner のコマンド構築は
   現在時刻や設定を引数に取る純粋関数です。

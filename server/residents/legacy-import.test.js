@@ -145,15 +145,24 @@ test('legacy import: moves reports and cards into the database, then cleans up',
   assert.equal(report.read, 1);
   assert.equal(report.favorite, 1);
   assert.equal(report.archived_at, null);
+  assert.equal(report.resident_id, 'task-runner');
   const archivedReport = database.prepare('SELECT * FROM reports WHERE id = ?').get('task-runner/r0.md');
   assert.equal(archivedReport.archived_at, 5000);
 
-  const cards = database.prepare('SELECT id, position FROM cards ORDER BY position').all();
+  // 'task-runner' exists nowhere as a configured resident: the import created
+  // an archived ghost row so the foreign keys hold and the name displays.
+  const ghost = database.prepare('SELECT * FROM residents WHERE id = ?').get('task-runner');
+  assert.equal(ghost.name, 'task-runner');
+  assert.notEqual(ghost.archived_at, null);
+
+  const cards = database
+    .prepare('SELECT id, assignee_id, position FROM cards ORDER BY position')
+    .all();
   assert.deepEqual(
-    cards.map((card) => ({ id: card.id, position: card.position })),
+    cards.map((card) => ({ id: card.id, assignee_id: card.assignee_id, position: card.position })),
     [
-      { id: 'c2.md', position: 0 },
-      { id: 'c1.md', position: 1 },
+      { id: 'c2.md', assignee_id: 'task-runner', position: 0 },
+      { id: 'c1.md', assignee_id: 'task-runner', position: 1 },
     ]
   );
 

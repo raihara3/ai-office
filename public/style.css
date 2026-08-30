@@ -425,23 +425,66 @@ textarea:focus-visible {
 
 #office-wrap {
   display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 1;
+  position: relative;
   min-width: 0;
-  padding: 16px;
+  overflow: hidden;
 }
 
 #office-wrap[hidden] {
   display: none;
 }
 
+/* The canvas grows with the team count; this scroller lets an enlarged scene
+   pan while 'safe center' keeps a small scene centered without clipping the
+   top-left the way plain flex centering would. */
+#office-scroll {
+  display: flex;
+  align-items: safe center;
+  justify-content: safe center;
+  flex: 1;
+  min-width: 0;
+  padding: 16px;
+  overflow: auto;
+}
+
 #office {
-  max-width: 100%;
-  max-height: 100%;
+  flex: none;
   border-radius: 12px;
   box-shadow: var(--shadow-raised);
   image-rendering: pixelated;
+}
+
+/* Zoom cluster pinned to the office viewport corner, above the scroller. */
+#office-zoom {
+  display: flex;
+  gap: 4px;
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+#office-zoom button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#office-zoom button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 /* --- full board view (in-place, swaps with the canvas) ------------------ */

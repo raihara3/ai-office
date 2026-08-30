@@ -54,7 +54,14 @@
     <div id="kanban-strip"></div>
     <div id="content">
       <section id="office-wrap">
-        <canvas id="office" width="960" height="600"></canvas>
+        <div id="office-scroll">
+          <canvas id="office" width="960" height="600"></canvas>
+        </div>
+        <div id="office-zoom" role="group" aria-label="ズーム">
+          <button type="button" id="office-zoom-out" title="縮小">−</button>
+          <button type="button" id="office-zoom-fit" title="全体表示に戻す">⤢</button>
+          <button type="button" id="office-zoom-in" title="拡大">＋</button>
+        </div>
       </section>
       <section id="board-view" hidden>
         <div id="board-columns"></div>

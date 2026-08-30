@@ -221,12 +221,86 @@
       tab.setAttribute('aria-selected', active ? 'true' : 'false');
     }
     if (view === 'board') renderBoard();
+    // The scroller has no size while hidden, so re-fit when the office returns.
+    if (view === 'office') applyZoom();
   }
   for (const tab of document.querySelectorAll('.view-tab')) {
     tab.addEventListener('click', () => setView(tab.dataset.view));
   }
   // Clicking the whiteboard on the canvas opens the full board in place.
   window.addEventListener('office:whiteboard-open', () => setView('board'));
+
+  // --- office zoom --------------------------------------------------------
+  // The canvas intrinsic size grows with the team/session count, so on a fixed
+  // viewport it shrinks to fit. Zoom lets the user enlarge it and pan by
+  // scrolling; 'fit' tracks the viewport so the whole scene stays visible.
+  const officeScrollElement = document.getElementById('office-scroll');
+  const officeCanvasElement = document.getElementById('office');
+  const ZOOM_STEP = 1.25;
+  const ZOOM_MIN = 0.25;
+  const ZOOM_MAX = 3;
+  let zoomMode = 'fit'; // 'fit' | number
+
+  function fitScale() {
+    const styles = getComputedStyle(officeScrollElement);
+    const availableWidth =
+      officeScrollElement.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+    const availableHeight =
+      officeScrollElement.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
+    return Math.min(availableWidth / officeCanvasElement.width, availableHeight / officeCanvasElement.height, 1);
+  }
+
+  function currentScale() {
+    return zoomMode === 'fit' ? fitScale() : zoomMode;
+  }
+
+  function applyZoom() {
+    // No size while the office tab is hidden; setView re-fits on return.
+    if (officeScrollElement.clientWidth === 0 || officeScrollElement.clientHeight === 0) return;
+    const scale = currentScale();
+    officeCanvasElement.style.width = `${officeCanvasElement.width * scale}px`;
+    officeCanvasElement.style.height = `${officeCanvasElement.height * scale}px`;
+  }
+
+  function setZoom(scale) {
+    zoomMode = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+    applyZoom();
+  }
+
+  document
+    .getElementById('office-zoom-in')
+    .addEventListener('click', () => setZoom(currentScale() * ZOOM_STEP));
+  document
+    .getElementById('office-zoom-out')
+    .addEventListener('click', () => setZoom(currentScale() / ZOOM_STEP));
+  document.getElementById('office-zoom-fit').addEventListener('click', () => {
+    zoomMode = 'fit';
+    applyZoom();
+  });
+
+  // Ctrl/⌘ + wheel zooms like a map; a plain wheel keeps scrolling to pan.
+  officeScrollElement.addEventListener(
+    'wheel',
+    (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      setZoom(currentScale() * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP));
+    },
+    { passive: false }
+  );
+
+  // 'fit' must re-fit on viewport resize; any mode must re-apply when the
+  // canvas's intrinsic size changes (office.js rewrites width/height as teams
+  // and sessions appear). Mutations watch the attributes, not the styled box,
+  // so applying our own style.width never feeds back into the observer.
+  new ResizeObserver(() => {
+    if (zoomMode === 'fit') applyZoom();
+  }).observe(officeScrollElement);
+  new MutationObserver(applyZoom).observe(officeCanvasElement, {
+    attributes: true,
+    attributeFilter: ['width', 'height'],
+  });
+  applyZoom();
 
   // --- inbox --------------------------------------------------------------
 

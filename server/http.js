@@ -155,9 +155,64 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
-    // Teams the residents belong to (read-only until team management ships).
+    // Team management: list/create, and rename/resize/delete per id.
     if (urlPath === '/api/teams') {
-      sendJson(response, 200, { teams: core.listTeams() });
+      if (request.method === 'GET') {
+        sendJson(response, 200, { teams: core.listTeams() });
+        return;
+      }
+      if (request.method !== 'POST') {
+        response.writeHead(405).end();
+        return;
+      }
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      readJsonBody(request, 16 * 1024, (parsed) => {
+        if (parsed === null) {
+          sendJson(response, 400, { error: 'invalid JSON body' });
+          return;
+        }
+        try {
+          const id = core.saveTeam({ name: parsed.name, seatCount: parsed.seatCount });
+          sendJson(response, 200, { ok: true, id });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      });
+      return;
+    }
+    const teamMatch = urlPath.match(/^\/api\/teams\/([A-Za-z0-9-]{1,64})$/);
+    if (teamMatch) {
+      const [, teamId] = teamMatch;
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      if (request.method === 'PUT') {
+        readJsonBody(request, 16 * 1024, (parsed) => {
+          if (parsed === null) {
+            sendJson(response, 400, { error: 'invalid JSON body' });
+            return;
+          }
+          try {
+            core.saveTeam({ id: teamId, name: parsed.name, seatCount: parsed.seatCount });
+            sendJson(response, 200, { ok: true });
+          } catch (error) {
+            sendJson(response, 400, { error: error.message });
+          }
+        });
+      } else if (request.method === 'DELETE') {
+        try {
+          core.deleteTeam(teamId);
+          sendJson(response, 200, { ok: true });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      } else {
+        response.writeHead(405).end();
+      }
       return;
     }
 
@@ -183,6 +238,7 @@ export function createHttpServer(core, { publicDirectory }) {
             core.saveResident(residentName, {
               configuration: parsed.configuration,
               instructions: parsed.instructions,
+              teamId: parsed.teamId,
             });
             sendJson(response, 200, { ok: true });
           } catch (error) {

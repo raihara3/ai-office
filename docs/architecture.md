@@ -130,7 +130,8 @@ HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態ス�
 Server-Sent Events(`/events`)でストリームし、人事 cleanup のエンドポイント
 (`GET /api/cleanup/preview`、`POST /api/cleanup`)、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
-`POST /api/residents/:name/run`)、ホワイトボード(`GET /api/whiteboard`、
+`POST /api/residents/:name/run`)、チーム管理(`GET`/`POST /api/teams`、
+`PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
 `POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)、カンバンボード
 (`GET /api/board`、`POST /api/board/create`/`move`/`archive`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
@@ -204,7 +205,9 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
 
 ### `residents/`
 
-常駐チーム: 左上のデスク島に常駐する最大 6 人のエージェント(1 人 = 1 役割)。
+常駐チーム: 左上のチームルーム群に常駐するエージェント(1 人 = 1 役割、
+1 チームあたり最大 12 席)。チームはユーザーが作成・改名・席数変更・削除
+できます(所属常駐がいるチームと最後の 1 チームは削除不可)。
 設定(プロフィール・役割プロンプト・実行簿記)・チーム・セッション紐付け・
 報告・カンバンカードはすべて
 `~/Library/Application Support/ai-office/office.db`(SQLite)に永続化され、
@@ -321,15 +324,17 @@ canvas 描画ループ。部屋・デスク・アバター・吹き出し・サ�
 
 ### `office/layout.js`
 
-純粋なシーン幾何:`computeLayout(usedSeats)`、`deskPosition`、`breakSpot`、
-`doorPosition`、`lowestFreeSeat`。フリーアドレスのデスクグリッドは 3 列 × 6 席
-(`SEAT_COUNT`)を事前設置とし、空席には空机が描かれ、超過分は下の行へ
-あふれます。各行の y は常駐チームの机の行と揃えています。左端の
-常駐チームエリア(壁のない床パッチ `RESIDENT_ROOM`)とその空机 6 つ
-(3 列 2 行の島)の座標 `residentDeskPosition`、常駐デスクのクリック領域
-`residentDeskHitRect`(とその上帯だけを切り出すモニタ領域
-`residentMonitorHitRect`)、上壁のホワイトボードのクリック領域 `WHITEBOARD`
-もここに定義します。canvas も DOM も触れないため単体テスト可能です。
+純粋なシーン幾何:`computeLayout(usedSeats, teams)` が
+`{width, height, breakTop, freeGridX, rooms, addSlot}` を返します。チームルーム
+(`teamRooms`)は左端から横並びで、幅 404 固定・3 列 × 最大 4 行(席数 1〜12
+で縦に成長)。最後のルームの右に破線の「+ チーム追加」ゴーストスロット
+(`addTeamSlot`)、さらに右にフリーアドレスグリッド(3 列 × 6 席事前設置、
+超過分は下の行へ。`deskPosition(seat, freeGridX)`)が続き、ワールド幅は
+チーム数に応じて動的に広がります。各行の y はルームの机の行と揃えています。
+机の座標 `roomDeskPosition`、クリック領域 `roomDeskHitRect`(とその上帯の
+モニタ領域 `roomMonitorHitRect`)、ルーム名ラベルの `teamLabelHitRect`、
+上壁のホワイトボードのクリック領域 `WHITEBOARD` もここに定義します。
+canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/pathfinding.js`
 

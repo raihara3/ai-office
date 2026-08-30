@@ -162,6 +162,19 @@
           <button type="button" id="resident-unassign" class="danger-button">割り当て解除</button>
         </div>
       </form>
+      <form id="team-form" class="drawer-section" hidden>
+        <label>チーム名
+          <input id="team-name" required maxlength="40" placeholder="開発チーム">
+        </label>
+        <label>席数(1〜12)
+          <input id="team-seat-count" type="number" min="1" max="12" value="6" required>
+        </label>
+        <p id="team-error" class="form-error" hidden></p>
+        <div class="form-actions">
+          <button type="submit" id="team-save" class="primary-button">保存</button>
+          <button type="button" id="team-delete" class="danger-button">チームを削除</button>
+        </div>
+      </form>
     </div>
   </aside>
   <script type="module" src="office.js"></script>

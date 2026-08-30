@@ -12,8 +12,10 @@ import { WEEKDAY_KEYS, parseTimeOfDay } from './scheduler.js';
 export const RESIDENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const RESIDENT_CLIS = ['claude', 'codex', 'gemini'];
 export const RESIDENT_MODES = ['read-only', 'edit'];
-// Mirrors RESIDENT_DESK_COUNT in public/office/layout.js.
-export const RESIDENT_SEAT_COUNT = 6;
+// Mirrors MAX_TEAM_SEATS in public/office/layout.js (3 columns × 4 rows);
+// the effective per-team bound is the team's seat_count.
+export const MIN_TEAM_SEATS = 1;
+export const MAX_TEAM_SEATS = 12;
 export const DEFAULT_TEAM_ID = 'default';
 
 function isValidWeekdayList(days) {
@@ -61,9 +63,9 @@ export function validateResident(configuration) {
   if (
     !Number.isInteger(configuration?.seat) ||
     configuration.seat < 0 ||
-    configuration.seat >= RESIDENT_SEAT_COUNT
+    configuration.seat >= MAX_TEAM_SEATS
   ) {
-    errors.push(`seat must be an integer 0..${RESIDENT_SEAT_COUNT - 1}`);
+    errors.push(`seat must be an integer 0..${MAX_TEAM_SEATS - 1}`);
   }
   if (!RESIDENT_CLIS.includes(configuration?.cli)) {
     errors.push(`cli must be one of ${RESIDENT_CLIS.join(', ')}`);
@@ -107,15 +109,45 @@ export function createResidentStore({ database, now = () => Date.now() }) {
       `SELECT ${COLUMNS}, instructions FROM residents WHERE archived_at IS NULL ORDER BY name`
     ),
     seatHolder: database.prepare(
-      'SELECT name FROM residents WHERE seat = ? AND archived_at IS NULL AND name <> ?'
+      'SELECT name FROM residents WHERE team_id = ? AND seat = ? AND archived_at IS NULL AND name <> ?'
+    ),
+    readTeam: database.prepare(
+      'SELECT id, name, seat_count FROM teams WHERE id = ? AND archived_at IS NULL'
+    ),
+    // rowid = insertion order: stable "creation order" even when tests inject
+    // clocks older than the migration's own timestamps.
+    oldestTeam: database.prepare(
+      'SELECT id FROM teams WHERE archived_at IS NULL ORDER BY rowid LIMIT 1'
+    ),
+    teamNameHolder: database.prepare(
+      'SELECT id FROM teams WHERE name = ? AND archived_at IS NULL AND id <> ?'
+    ),
+    insertTeam: database.prepare(
+      'INSERT INTO teams (id, name, seat_count, created_at) VALUES (?, ?, ?, ?)'
+    ),
+    updateTeam: database.prepare(
+      'UPDATE teams SET name = ?, seat_count = ? WHERE id = ? AND archived_at IS NULL'
+    ),
+    archiveTeam: database.prepare(
+      'UPDATE teams SET archived_at = ? WHERE id = ? AND archived_at IS NULL'
+    ),
+    teamResidentCount: database.prepare(
+      'SELECT COUNT(*) AS n FROM residents WHERE team_id = ? AND archived_at IS NULL'
+    ),
+    teamSeatOverflow: database.prepare(
+      'SELECT name FROM residents WHERE team_id = ? AND seat >= ? AND archived_at IS NULL ORDER BY seat'
+    ),
+    activeTeamCount: database.prepare(
+      'SELECT COUNT(*) AS n FROM teams WHERE archived_at IS NULL'
     ),
     insert: database.prepare(
       `INSERT INTO residents (id, team_id, name, display_name, cli, mode, seat, working_directory, "trigger", precheck, enabled, instructions, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ),
-    // Editing preserves id, team_id, created_at and the run-state columns.
+    // Editing preserves id, created_at and the run-state columns; the team
+    // follows the desk the drawer was opened from.
     update: database.prepare(
-      `UPDATE residents SET display_name = ?, cli = ?, mode = ?, seat = ?, working_directory = ?,
+      `UPDATE residents SET team_id = ?, display_name = ?, cli = ?, mode = ?, seat = ?, working_directory = ?,
         "trigger" = ?, precheck = ?, enabled = ?, instructions = ?, updated_at = ?
        WHERE name = ? AND archived_at IS NULL`
     ),
@@ -127,7 +159,7 @@ export function createResidentStore({ database, now = () => Date.now() }) {
       'UPDATE residents SET archived_at = ? WHERE name = ? AND archived_at IS NULL'
     ),
     listTeams: database.prepare(
-      'SELECT id, name FROM teams WHERE archived_at IS NULL ORDER BY created_at'
+      'SELECT id, name, seat_count FROM teams WHERE archived_at IS NULL ORDER BY rowid'
     ),
   };
 
@@ -175,13 +207,23 @@ export function createResidentStore({ database, now = () => Date.now() }) {
     return rows.map(entryFromRow);
   }
 
-  function save(name, { configuration, instructions }) {
+  function save(name, { configuration, instructions, teamId }) {
     assertName(name);
     const errors = validateResident(configuration);
     if (errors.length > 0) throw new Error(errors.join('; '));
+    // The team follows the desk the drawer was opened from; an edit without
+    // an explicit team keeps the current one, a brand-new resident defaults
+    // to the oldest team.
+    const existing = statements.read.get(name);
+    const targetTeamId = teamId ?? existing?.team_id ?? statements.oldestTeam.get()?.id;
+    const team = targetTeamId === undefined ? undefined : statements.readTeam.get(targetTeamId);
+    if (team === undefined) throw new Error(`unknown team: ${targetTeamId}`);
+    if (configuration.seat >= team.seat_count) {
+      throw new Error(`seat must be an integer 0..${team.seat_count - 1}`);
+    }
     // The canvas draws one resident per desk, so a seat can only hold one
-    // active resident; the drawer surfaces this message on a 400.
-    const holder = statements.seatHolder.get(configuration.seat, name);
+    // active resident per team; the drawer surfaces this message on a 400.
+    const holder = statements.seatHolder.get(team.id, configuration.seat, name);
     if (holder !== undefined) {
       throw new Error(`seat ${configuration.seat} is already taken by ${holder.name}`);
     }
@@ -196,10 +238,58 @@ export function createResidentStore({ database, now = () => Date.now() }) {
       configuration.enabled ? 1 : 0,
       instructions ?? '',
     ];
-    const updated = statements.update.run(...values, now(), name);
-    if (updated.changes === 0) {
-      statements.insert.run(randomUUID(), DEFAULT_TEAM_ID, name, ...values, now(), now());
+    if (existing !== undefined) {
+      statements.update.run(team.id, ...values, now(), name);
+    } else {
+      statements.insert.run(randomUUID(), team.id, name, ...values, now(), now());
     }
+  }
+
+  function saveTeam({ id = null, name, seatCount } = {}) {
+    let existing;
+    if (id !== null) {
+      existing = statements.readTeam.get(id);
+      if (existing === undefined) throw new Error(`unknown team: ${id}`);
+    }
+    const mergedName = name !== undefined ? name : existing?.name;
+    const cleanName = typeof mergedName === 'string' ? mergedName.trim() : '';
+    if (cleanName === '') throw new Error('team name is required');
+    const mergedSeatCount = seatCount !== undefined ? seatCount : existing?.seat_count;
+    if (
+      !Number.isInteger(mergedSeatCount) ||
+      mergedSeatCount < MIN_TEAM_SEATS ||
+      mergedSeatCount > MAX_TEAM_SEATS
+    ) {
+      throw new Error(`seatCount must be an integer ${MIN_TEAM_SEATS}..${MAX_TEAM_SEATS}`);
+    }
+    if (statements.teamNameHolder.get(cleanName, existing?.id ?? '') !== undefined) {
+      throw new Error(`team name "${cleanName}" is already in use`);
+    }
+    if (existing !== undefined) {
+      // Shrinking must not strand a resident on a desk that stops existing.
+      const overflow = statements.teamSeatOverflow.all(existing.id, mergedSeatCount);
+      if (overflow.length > 0) {
+        throw new Error(
+          `cannot shrink to ${mergedSeatCount} seats: ${overflow.map((row) => row.name).join(', ')} sit(s) beyond seat ${mergedSeatCount - 1}`
+        );
+      }
+      statements.updateTeam.run(cleanName, mergedSeatCount, existing.id);
+      return existing.id;
+    }
+    const newId = randomUUID();
+    statements.insertTeam.run(newId, cleanName, mergedSeatCount, now());
+    return newId;
+  }
+
+  function deleteTeam(id) {
+    const team = statements.readTeam.get(id);
+    if (team === undefined) throw new Error(`unknown team: ${id}`);
+    const residentCount = statements.teamResidentCount.get(id).n;
+    if (residentCount > 0) {
+      throw new Error(`team "${team.name}" still has ${residentCount} resident(s); unassign them first`);
+    }
+    if (statements.activeTeamCount.get().n === 1) throw new Error('cannot delete the last team');
+    statements.archiveTeam.run(now(), id);
   }
 
   function saveState(name, state) {
@@ -222,8 +312,10 @@ export function createResidentStore({ database, now = () => Date.now() }) {
   }
 
   function listTeams() {
-    return statements.listTeams.all().map((row) => ({ id: row.id, name: row.name }));
+    return statements.listTeams
+      .all()
+      .map((row) => ({ id: row.id, name: row.name, seatCount: row.seat_count }));
   }
 
-  return { list, read, save, saveState, remove, listTeams };
+  return { list, read, save, saveState, remove, listTeams, saveTeam, deleteTeam };
 }

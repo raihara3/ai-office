@@ -270,6 +270,7 @@ export function createResidents({
     const currentTime = now();
     return residentStore.list({ withInstructions: false }).map((entry) => ({
       name: entry.name,
+      teamId: entry.teamId,
       displayName: entry.configuration.displayName,
       seat: entry.configuration.seat,
       cli: entry.configuration.cli,
@@ -300,8 +301,19 @@ export function createResidents({
     }));
   }
 
-  function save(name, { configuration, instructions }) {
-    residentStore.save(name, { configuration, instructions });
+  function save(name, { configuration, instructions, teamId }) {
+    residentStore.save(name, { configuration, instructions, teamId });
+    state.refresh();
+  }
+
+  function saveTeam(team) {
+    const id = residentStore.saveTeam(team);
+    state.refresh();
+    return id;
+  }
+
+  function deleteTeam(id) {
+    residentStore.deleteTeam(id);
     state.refresh();
   }
 
@@ -403,6 +415,8 @@ export function createResidents({
     snapshotData,
     list,
     listTeams: residentStore.listTeams,
+    saveTeam,
+    deleteTeam,
     save,
     remove,
     runNow,

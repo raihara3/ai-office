@@ -1,10 +1,9 @@
-// Pure geometry for the office scene: where desks, break spots and the
-// entrance sit, and how seats are assigned. No canvas or DOM here, so this
-// module is unit-testable and shared by the renderer.
+// Pure geometry for the office scene: where team rooms, desks, break spots
+// and the entrance sit, and how seats are assigned. No canvas or DOM here, so
+// this module is unit-testable and shared by the renderer.
 
-export const CANVAS_WIDTH = 960;
-// The first free-address row shares its y with the resident island's top row
-// (both use the same desk anchor), so the two islands line up horizontally.
+// The first free-address row shares its y with the team rooms' top desk row
+// (both use the same desk anchor), so the islands line up horizontally.
 // Kept low enough that a desk's nameplate chip (drawn 106px above the anchor)
 // stays clear of the wall's baseboard.
 export const FIRST_ROW_Y = 240;
@@ -16,32 +15,59 @@ export const GRID_COLUMNS = 3;
 // Six seats are furnished up front (two rows of three); sessions beyond that
 // still overflow onto extra rows below.
 export const SEAT_COUNT = 6;
-// The main desk grid starts right of the resident-team room, leaving an
-// aisle between the room's right edge (412) and the first desk's left edge.
-export const FIRST_COLUMN_X = 524;
 export const COLUMN_SPACING = 150;
 
-// The resident team's room pinned to the top-left edge: a fixed partition
-// holding a fixed island of full-size desks, independent of live sessions.
-// Unlike the main grid it never grows, so it stays put as the office fills up.
-// The room is wide enough for three desk columns 124px apart (the same
-// column pitch as the old two-column island) plus a 20px margin on each side.
-export const RESIDENT_ROOM = { x: 8, y: 104, width: 404, height: 344 };
-export const RESIDENT_DESK_COUNT = 6;
-export const RESIDENT_COLUMNS = 3;
+// Team rooms: fixed partitions pinned to the top-left edge, laid left to
+// right in team order. Every room is three desk columns wide (124px pitch
+// plus a 20px margin each side — the same footprint the single resident room
+// had), and grows downward by rows of ceil(seatCount / 3).
+export const ROOM_Y = 104;
+export const ROOM_WIDTH = 404;
+export const ROOM_GAP = 40;
+export const ROOM_COLUMNS = 3;
+// Mirrors MAX_TEAM_SEATS in server/residents/resident-store.js.
+export const MAX_TEAM_SEATS = 12;
+// The dashed "+ チーム追加" ghost slot after the last room.
+export const ADD_SLOT_WIDTH = 120;
+const DESK_COLUMN_PITCH = 124;
+const MIN_WIDTH = 960;
+// Clearance between the free grid's last column anchor and the right wall,
+// preserving the pre-teams 960-wide scene's margin.
+const RIGHT_MARGIN = 136;
+// Aisle between the ghost slot and the free grid's first desk anchor.
+const FREE_GRID_GAP = 112;
 
-// An island of six full-size desks in three columns and two rows, all upright
-// (monitor sitting on the desktop). The rows are spaced far enough apart that
-// every desk — the top row included — shows an empty chair tucked beneath it,
-// and the columns keep a margin to the side walls so nothing overflows them.
-// The anchor matches deskPosition's, and the rows share the free-address
-// grid's FIRST_ROW_Y / ROW_SPACING so the two islands line up horizontally.
-export function residentDeskPosition(index) {
-  const centerX = RESIDENT_ROOM.x + RESIDENT_ROOM.width / 2;
-  const columnSpacing = 124;
+// One room rect per team, in snapshot (creation) order.
+export function teamRooms(teams) {
+  return teams.map((team, index) => {
+    const rows = Math.max(1, Math.ceil(team.seatCount / ROOM_COLUMNS));
+    return {
+      id: team.id,
+      name: team.name,
+      seatCount: team.seatCount,
+      rows,
+      x: 8 + index * (ROOM_WIDTH + ROOM_GAP),
+      y: ROOM_Y,
+      width: ROOM_WIDTH,
+      // 6 seats → 2 rows → 344, pixel-identical to the pre-teams room.
+      height: rows * ROW_SPACING,
+    };
+  });
+}
+
+// The ghost slot inviting a new team, right of the last room.
+export function addTeamSlot(rooms) {
+  const last = rooms[rooms.length - 1];
+  const x = last ? last.x + last.width + ROOM_GAP : 8;
+  return { x, y: ROOM_Y, width: ADD_SLOT_WIDTH, height: ROW_SPACING };
+}
+
+// Desk anchor within a room; index 0..seatCount-1, three columns per row.
+export function roomDeskPosition(room, index) {
+  const centerX = room.x + room.width / 2;
   return {
-    x: centerX + ((index % RESIDENT_COLUMNS) - 1) * columnSpacing,
-    y: FIRST_ROW_Y + Math.floor(index / RESIDENT_COLUMNS) * ROW_SPACING,
+    x: centerX + ((index % ROOM_COLUMNS) - 1) * DESK_COLUMN_PITCH,
+    y: FIRST_ROW_Y + Math.floor(index / ROOM_COLUMNS) * ROW_SPACING,
   };
 }
 
@@ -49,10 +75,10 @@ export function residentDeskPosition(index) {
 // team reports to the human are posted here, so it is a click target.
 export const WHITEBOARD = { x: 188, y: 16, width: 96, height: 58 };
 
-// The clickable area of a resident desk, spanning the nameplate chip (106px
+// The clickable area of a team desk, spanning the nameplate chip (106px
 // above the anchor) down past the chair, matching the drawn furniture.
-export function residentDeskHitRect(index) {
-  const desk = residentDeskPosition(index);
+export function roomDeskHitRect(room, index) {
+  const desk = roomDeskPosition(room, index);
   return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 132 };
 }
 
@@ -60,10 +86,17 @@ export function residentDeskHitRect(index) {
 // monitor from the avatar: the upper band covers the nameplate chip and the
 // monitor (the desktop surface sits at -46), opening the activity view; the
 // lower band covers the desk, chair and avatar, opening the settings panel.
-// The split leaves no dead zone — together the bands tile residentDeskHitRect.
-export function residentMonitorHitRect(index) {
-  const desk = residentDeskPosition(index);
+// The split leaves no dead zone — together the bands tile roomDeskHitRect.
+export function roomMonitorHitRect(room, index) {
+  const desk = roomDeskPosition(room, index);
   return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 62 };
+}
+
+// The clickable band around the room's name label (drawn at x+8, y+22).
+// Checked before desk hit rects: row 0's nameplate chips start at y 134, so
+// the 30px band only overlaps dead room padding, never a desk target.
+export function teamLabelHitRect(room) {
+  return { x: room.x, y: room.y, width: 180, height: 30 };
 }
 
 // The lowest seat index not present in `usedSeats`. The grid fills from the
@@ -74,27 +107,33 @@ export function lowestFreeSeat(usedSeats) {
   return seat;
 }
 
-// Room height grows with the number of occupied rows — never below the
-// pre-placed free-address rows or the resident island's rows; the break area
-// and the entrance are anchored to the bottom edge rather than floating
-// below the last desk row.
-export function computeLayout(usedSeats) {
-  let maxRows = Math.max(
-    Math.ceil(SEAT_COUNT / GRID_COLUMNS),
-    Math.ceil(RESIDENT_DESK_COUNT / RESIDENT_COLUMNS)
-  );
+// The whole scene: team rooms, the add-team slot, where the free-address
+// grid starts, and the world size. Width grows with the team count; height
+// grows with the deepest desk row (team rooms or free-address overflow); the
+// break area and the entrance are anchored to the bottom edge.
+export function computeLayout(usedSeats, teams = []) {
+  const rooms = teamRooms(teams);
+  const addSlot = addTeamSlot(rooms);
+  const freeGridX = addSlot.x + addSlot.width + FREE_GRID_GAP;
+  let maxRows = Math.ceil(SEAT_COUNT / GRID_COLUMNS);
+  for (const room of rooms) maxRows = Math.max(maxRows, room.rows);
   for (const seat of usedSeats) {
     maxRows = Math.max(maxRows, Math.floor(seat / GRID_COLUMNS) + 1);
   }
   const lastRowY = FIRST_ROW_Y + (maxRows - 1) * ROW_SPACING;
   const height = Math.max(640, lastRowY + 280);
   const breakTop = height - 150;
-  return { breakTop, height };
+  const width = Math.max(
+    MIN_WIDTH,
+    freeGridX + (GRID_COLUMNS - 1) * COLUMN_SPACING + RIGHT_MARGIN
+  );
+  return { width, height, breakTop, freeGridX, rooms, addSlot };
 }
 
-export function deskPosition(seat) {
+// Free-address desk anchor; the grid starts right of the add-team slot.
+export function deskPosition(seat, freeGridX) {
   return {
-    x: FIRST_COLUMN_X + (seat % GRID_COLUMNS) * COLUMN_SPACING,
+    x: freeGridX + (seat % GRID_COLUMNS) * COLUMN_SPACING,
     y: FIRST_ROW_Y + Math.floor(seat / GRID_COLUMNS) * ROW_SPACING,
   };
 }

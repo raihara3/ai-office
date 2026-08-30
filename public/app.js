@@ -188,7 +188,7 @@
 
   const drawerElement = document.getElementById('drawer');
   const drawerTitleElement = document.getElementById('drawer-title');
-  const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form'];
+  const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form', 'team-form'];
 
   function openDrawer(sectionId, title) {
     for (const id of DRAWER_SECTION_IDS) field(id).hidden = id !== sectionId;
@@ -361,7 +361,12 @@
   let draggingCardId = null;
 
   function boardColumns() {
-    const residents = [...(latestSnapshot?.residents ?? [])].sort((a, b) => a.seat - b.seat);
+    // Columns group by team (creation order), then seat within the team.
+    const teamOrder = new Map((latestSnapshot?.teams ?? []).map((team, index) => [team.id, index]));
+    const residents = [...(latestSnapshot?.residents ?? [])].sort(
+      (a, b) =>
+        (teamOrder.get(a.teamId) ?? 99) - (teamOrder.get(b.teamId) ?? 99) || a.seat - b.seat
+    );
     return [
       { key: 'user', label: 'あなた(社長)', color: USER_COLOR, busy: false },
       ...residents.map((resident) => ({
@@ -703,6 +708,7 @@
     const signature = JSON.stringify([
       snapshot.board,
       (snapshot.residents ?? []).map((resident) => resident.busy),
+      (snapshot.teams ?? []).map((team) => team.id + team.name),
     ]);
     const changed = boardSignature !== null && signature !== boardSignature;
     boardSignature = signature;
@@ -743,6 +749,8 @@
   }
 
   let panelSeat = null;
+  // The team whose desk opened the drawer; saved into the resident's row.
+  let panelTeamId = null;
 
   function showTriggerSection(type) {
     document.getElementById('trigger-schedule').hidden = type !== 'schedule';
@@ -806,8 +814,9 @@
     residentError.hidden = false;
   }
 
-  async function openResidentPanel(seat, name) {
+  async function openResidentPanel(seat, name, teamId) {
     panelSeat = seat;
+    panelTeamId = teamId ?? null;
     let entry = null;
     if (name) {
       try {
@@ -818,15 +827,17 @@
       }
     }
     fillResidentForm(entry);
+    const teamName = (latestSnapshot?.teams ?? []).find((team) => team.id === panelTeamId)?.name;
+    const seatLabel = `${teamName ? `${teamName} ` : ''}席 ${seat + 1}`;
     openDrawer(
       'resident-form',
       entry === null
-        ? `常駐員を追加(席 ${seat + 1})`
-        : `${entry.configuration.displayName}(席 ${seat + 1})`
+        ? `常駐員を追加(${seatLabel})`
+        : `${entry.configuration.displayName}(${seatLabel})`
     );
   }
   window.addEventListener('office:resident-seat-open', (event) =>
-    openResidentPanel(event.detail.seat, event.detail.name)
+    openResidentPanel(event.detail.seat, event.detail.name, event.detail.teamId)
   );
 
   residentForm.addEventListener('submit', async (event) => {
@@ -845,10 +856,65 @@
           enabled: field('resident-enabled').checked,
         },
         instructions: field('resident-instructions').value,
+        teamId: panelTeamId,
       });
       closeDrawer();
     } catch (error) {
       showResidentError(error.message);
+    }
+  });
+
+  // --- team settings (drawer) ---------------------------------------------
+
+  const teamForm = document.getElementById('team-form');
+  const teamError = document.getElementById('team-error');
+  // The team being edited, or null while creating a new one.
+  let editingTeamId = null;
+
+  function showTeamError(message) {
+    teamError.textContent = message;
+    teamError.hidden = false;
+  }
+
+  function openTeamPanel(teamId) {
+    editingTeamId = teamId ?? null;
+    const teams = latestSnapshot?.teams ?? [];
+    const team = teams.find((entry) => entry.id === editingTeamId) ?? null;
+    field('team-name').value = team?.name ?? '';
+    field('team-seat-count').value = String(team?.seatCount ?? 6);
+    // The last team cannot be deleted, and a team being created has nothing
+    // to delete yet.
+    field('team-delete').hidden = team === null || teams.length <= 1;
+    teamError.hidden = true;
+    openDrawer('team-form', team === null ? 'チームを追加' : `チーム設定(${team.name})`);
+  }
+  window.addEventListener('office:team-open', (event) => openTeamPanel(event.detail.teamId));
+
+  teamForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const payload = {
+      name: field('team-name').value.trim(),
+      seatCount: Number(field('team-seat-count').value),
+    };
+    try {
+      if (editingTeamId === null) await client.createTeam(payload);
+      else await client.saveTeam(editingTeamId, payload);
+      closeDrawer();
+    } catch (error) {
+      showTeamError(error.message);
+    }
+  });
+
+  field('team-delete').addEventListener('click', async () => {
+    const name = field('team-name').value.trim();
+    if (!window.confirm(`チーム「${name}」を削除しますか?(所属する常駐員がいる場合は削除できません)`)) {
+      return;
+    }
+    try {
+      await client.deleteTeam(editingTeamId);
+      closeDrawer();
+    } catch (error) {
+      showTeamError(error.message);
     }
   });
 
@@ -1003,6 +1069,7 @@
         boardSignature = JSON.stringify([
           snapshot.board,
           (snapshot.residents ?? []).map((resident) => resident.busy),
+          (snapshot.teams ?? []).map((team) => team.id + team.name),
         ]);
         return;
       }

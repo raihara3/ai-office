@@ -8,17 +8,15 @@
 
 import { CLI_SPECS, UNSET_SPEC } from './office/specs.js';
 import {
-  CANVAS_WIDTH,
   computeLayout,
   deskPosition,
   breakSpot,
   doorPosition,
   lowestFreeSeat,
-  RESIDENT_ROOM,
-  RESIDENT_DESK_COUNT,
-  residentDeskPosition,
-  residentDeskHitRect,
-  residentMonitorHitRect,
+  roomDeskPosition,
+  roomDeskHitRect,
+  roomMonitorHitRect,
+  teamLabelHitRect,
   SEAT_COUNT,
   WHITEBOARD,
 } from './office/layout.js';
@@ -42,6 +40,9 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
   const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
 
   let state = { employees: [] };
+  // The scene geometry of the most recently drawn frame; hit-testing and
+  // bubble clamping read this so clicks match what is on screen.
+  let currentLayout = computeLayout(new Set(), []);
   // key -> {employee, leaving} — keeps departed sessions around while the
   // avatar walks to the door.
   const presence = new Map();
@@ -228,10 +229,11 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
 
   function drawRoom(time, layout) {
     const height = layout.height;
+    const width = layout.width;
     // wall: warm plaster with a crown line and a baseboard
-    px(0, 0, CANVAS_WIDTH, 96, '#ece6da');
-    px(0, 0, CANVAS_WIDTH, 6, '#ddd5c6');
-    px(0, 86, CANVAS_WIDTH, 10, '#c9c0ae');
+    px(0, 0, width, 96, '#ece6da');
+    px(0, 0, width, 6, '#ddd5c6');
+    px(0, 86, width, 10, '#c9c0ae');
     // windows: slim dark frames, sky gradient, and either drifting daytime
     // clouds or a twinkling night sky depending on the server's time of day.
     const night = state.sky === 'night';
@@ -246,7 +248,11 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
       windowSkyDay.addColorStop(0, '#8ecff0');
       windowSkyDay.addColorStop(1, '#cdeaf7');
     }
-    for (const wx of [60, 310, 560, 810]) {
+    // Windows repeat every 250px for as long as the (team-count-dependent)
+    // wall lasts; the classic 960-wide scene reproduces [60, 310, 560, 810].
+    const windowXs = [];
+    for (let wx = 60; wx + 104 <= width - 8; wx += 250) windowXs.push(wx);
+    for (const wx of windowXs) {
       px(wx - 4, 12, 104, 66, '#3d4852');
       ctx.fillStyle = night ? windowSkyNight : windowSkyDay;
       ctx.fillRect(wx, 16, 96, 58);
@@ -285,20 +291,21 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     // oak plank floor with staggered seams
     for (let ty = 96; ty < height; ty += 24) {
       const row = (ty - 96) / 24;
-      px(0, ty, CANVAS_WIDTH, 24, row % 2 === 0 ? '#d6b489' : '#cfab7e');
+      px(0, ty, width, 24, row % 2 === 0 ? '#d6b489' : '#cfab7e');
       ctx.fillStyle = 'rgba(90, 62, 40, 0.14)';
-      ctx.fillRect(0, ty, CANVAS_WIDTH, 2);
-      for (let sx = (row % 3) * 110; sx < CANVAS_WIDTH; sx += 320) {
+      ctx.fillRect(0, ty, width, 2);
+      for (let sx = (row % 3) * 110; sx < width; sx += 320) {
         ctx.fillRect(sx, ty, 2, 24);
       }
     }
     // soft shadow the wall casts on the floor
-    px(0, 96, CANVAS_WIDTH, 5, 'rgba(0, 0, 0, 0.10)');
-    drawResidentRoom(time);
+    px(0, 96, width, 5, 'rgba(0, 0, 0, 0.10)');
+    drawTeamRooms(time, layout);
+    drawAddTeamSlot(layout);
     drawBreakArea(layout);
-    // plants (the left edge is now the resident room, so only the right stays)
-    drawPlant(930, 180);
-    drawPlant(930, height - 30);
+    // plants (the left edge holds the team rooms, so only the right stays)
+    drawPlant(width - 30, 180);
+    drawPlant(width - 30, height - 30);
     // entrance door, spanning the same y band as the break area
     const door = doorPosition(layout);
     const doorTop = layout.breakTop + 10;
@@ -364,49 +371,68 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     }
   }
 
-  // The resident team's corner on the left edge: an open (wall-less) carpeted
-  // patch holding an island of six always-present full-size desks (three
-  // columns of two). A seat with no resident assigned keeps the neutral gray
-  // avatar; an assigned seat wears its CLI's colors, faces the room while
-  // idle, and turns to the monitor while a run is in progress. Residents
-  // never walk to the break room or the exit — they live at their desk.
-  function drawResidentRoom(time) {
-    const room = RESIDENT_ROOM;
-    // a sage carpet-tile patch marks the area off from the oak floor while
-    // staying in the office's warm, low-saturation palette. Clipped to a
-    // soft-cornered rect so the checker stops cleanly without partition walls.
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(room.x, room.y, room.width, room.height, 10);
-    ctx.clip();
-    const bottom = room.y + room.height;
-    const right = room.x + room.width;
-    for (let ty = room.y; ty < bottom; ty += 48) {
-      for (let tx = room.x; tx < right; tx += 48) {
-        const even = ((tx + ty) / 48) % 2 === 0;
-        px(tx, ty, 48, 48, even ? '#a9bfa4' : '#a0b69a');
-      }
-    }
-    ctx.restore();
-
+  // The team rooms along the left edge: open (wall-less) carpeted patches,
+  // one per team, each holding its island of always-present full-size desks.
+  // A seat with no resident assigned keeps the neutral gray avatar; an
+  // assigned seat wears its CLI's colors, faces the room while idle, and
+  // turns to the monitor while a run is in progress. Residents never walk to
+  // the break room or the exit — they live at their desk.
+  function drawTeamRooms(time, layout) {
     const residents = state.residents ?? [];
-    for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
-      const desk = residentDeskPosition(index);
-      const resident = residents.find((r) => r.seat === index);
-      if (!resident) {
-        // Unassigned: gray avatar facing the room, screen off.
-        drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
-        drawAvatar(UNSET_SPEC, desk.x, desk.y + 18, { time });
-        continue;
+    for (const room of layout.rooms) {
+      // a sage carpet-tile patch marks the area off from the oak floor while
+      // staying in the office's warm, low-saturation palette. Clipped to a
+      // soft-cornered rect so the checker stops cleanly without partitions.
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(room.x, room.y, room.width, room.height, 10);
+      ctx.clip();
+      const bottom = room.y + room.height;
+      const right = room.x + room.width;
+      for (let ty = room.y; ty < bottom; ty += 48) {
+        for (let tx = room.x; tx < right; tx += 48) {
+          const even = ((tx + ty) / 48) % 2 === 0;
+          px(tx, ty, 48, 48, even ? '#a9bfa4' : '#a0b69a');
+        }
       }
-      drawResidentSeat(resident, desk, time);
-    }
+      ctx.restore();
 
-    // sign (dark so it reads on the sage carpet)
-    ctx.fillStyle = '#3c4a38';
+      for (let index = 0; index < room.seatCount; index += 1) {
+        const desk = roomDeskPosition(room, index);
+        const resident = residents.find((r) => r.teamId === room.id && r.seat === index);
+        if (!resident) {
+          // Unassigned: gray avatar facing the room, screen off.
+          drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
+          drawAvatar(UNSET_SPEC, desk.x, desk.y + 18, { time });
+          continue;
+        }
+        drawResidentSeat(resident, desk, time);
+      }
+
+      // sign: the team's name (dark so it reads on the sage carpet)
+      ctx.fillStyle = '#3c4a38';
+      ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(room.name, room.x + 8, room.y + 22);
+    }
+  }
+
+  // The dashed ghost slot inviting a new team, right of the last room.
+  function drawAddTeamSlot(layout) {
+    const slot = layout.addSlot;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(90, 80, 60, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.roundRect(slot.x, slot.y, slot.width, slot.height, 10);
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(90, 80, 60, 0.7)';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('常駐チーム', room.x + 8, room.y + 22);
+    ctx.textAlign = 'center';
+    ctx.fillText('＋', slot.x + slot.width / 2, slot.y + slot.height / 2 - 4);
+    ctx.fillText('チーム追加', slot.x + slot.width / 2, slot.y + slot.height / 2 + 14);
   }
 
   // One assigned resident seat: nameplate in the vendor color, and the
@@ -744,7 +770,7 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     if (truncated) lines[1] += '…';
     const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
     const height = lines.length * 15 + 10;
-    const left = Math.min(Math.max(x - width / 2, 6), CANVAS_WIDTH - 6 - width);
+    const left = Math.min(Math.max(x - width / 2, 6), currentLayout.width - 6 - width);
     // white bubble with a thin outline so it stays visible on light floors
     ctx.lineWidth = 1.5;
     roundRect(left, y - height, width, height, 7, '#ffffff', 'rgba(60, 54, 72, 0.45)');
@@ -851,33 +877,56 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     );
   }
 
-  function residentSeatAt(point) {
-    for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
-      if (isInside(point, residentDeskHitRect(index))) return index;
+  function teamLabelAt(point) {
+    for (const room of currentLayout.rooms) {
+      if (isInside(point, teamLabelHitRect(room))) return room;
     }
     return null;
   }
 
-  // The whiteboard and the resident desks open panels owned by app.js; the
+  function teamDeskAt(point) {
+    for (const room of currentLayout.rooms) {
+      for (let index = 0; index < room.seatCount; index += 1) {
+        if (isInside(point, roomDeskHitRect(room, index))) return { room, index };
+      }
+    }
+    return null;
+  }
+
+  // The whiteboard, team labels and desks open panels owned by app.js; the
   // canvas only reports the hits as window events to stay DOM-agnostic.
+  // Order matters: labels sit above the desk band, the add slot last.
   canvas.addEventListener('click', (event) => {
     const point = canvasPoint(event);
     if (isInside(point, WHITEBOARD)) {
       window.dispatchEvent(new CustomEvent('office:whiteboard-open'));
       return;
     }
-    const seat = residentSeatAt(point);
-    if (seat !== null) {
-      const resident = (state.residents ?? []).find((r) => r.seat === seat);
+    const labelRoom = teamLabelAt(point);
+    if (labelRoom !== null) {
+      window.dispatchEvent(
+        new CustomEvent('office:team-open', { detail: { teamId: labelRoom.id } })
+      );
+      return;
+    }
+    if (isInside(point, currentLayout.addSlot)) {
+      window.dispatchEvent(new CustomEvent('office:team-open', { detail: { teamId: null } }));
+      return;
+    }
+    const hit = teamDeskAt(point);
+    if (hit !== null) {
+      const resident = (state.residents ?? []).find(
+        (r) => r.teamId === hit.room.id && r.seat === hit.index
+      );
       // An assigned monitor opens the activity view; the avatar (and any
       // vacant seat) opens the settings panel to add or edit the resident.
       const eventName =
-        resident && isInside(point, residentMonitorHitRect(seat))
+        resident && isInside(point, roomMonitorHitRect(hit.room, hit.index))
           ? 'office:resident-activity-open'
           : 'office:resident-seat-open';
       window.dispatchEvent(
         new CustomEvent(eventName, {
-          detail: { seat, name: resident?.name ?? null },
+          detail: { seat: hit.index, name: resident?.name ?? null, teamId: hit.room.id },
         })
       );
     }
@@ -885,7 +934,11 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
 
   canvas.addEventListener('mousemove', (event) => {
     const point = canvasPoint(event);
-    const clickable = isInside(point, WHITEBOARD) || residentSeatAt(point) !== null;
+    const clickable =
+      isInside(point, WHITEBOARD) ||
+      teamLabelAt(point) !== null ||
+      isInside(point, currentLayout.addSlot) ||
+      teamDeskAt(point) !== null;
     canvas.style.cursor = clickable ? 'pointer' : 'default';
   });
 
@@ -907,15 +960,19 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
   }
 
   // The desks avatars must route around: every furnished free-address seat,
-  // any overflow seat in use, and the fixed resident island. Rebuilt each
-  // frame (cheap — a dozen rects) so freed seats stop blocking immediately.
-  function deskObstacles() {
+  // any overflow seat in use, and every team-room desk. Rebuilt each frame
+  // (cheap — a few dozen rects) so freed seats stop blocking immediately.
+  function deskObstacles(layout) {
     const seats = new Set(usedSeats);
     for (let seat = 0; seat < SEAT_COUNT; seat += 1) seats.add(seat);
     const obstacles = [];
-    for (const seat of seats) obstacles.push(deskFootprint(deskPosition(seat)));
-    for (let index = 0; index < RESIDENT_DESK_COUNT; index += 1) {
-      obstacles.push(deskFootprint(residentDeskPosition(index)));
+    for (const seat of seats) {
+      obstacles.push(deskFootprint(deskPosition(seat, layout.freeGridX)));
+    }
+    for (const room of layout.rooms) {
+      for (let index = 0; index < room.seatCount; index += 1) {
+        obstacles.push(deskFootprint(roomDeskPosition(room, index)));
+      }
     }
     return obstacles;
   }
@@ -952,17 +1009,21 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
         : Math.min((time - lastFrameTime) / REFERENCE_FRAME_MS, MAX_FRAME_STEP);
     lastFrameTime = time;
 
-    const layout = computeLayout(usedSeats);
-    if (canvas.height !== layout.height) {
+    const layout = computeLayout(usedSeats, state.teams ?? []);
+    currentLayout = layout;
+    // Resizing clears the canvas and resets context state; re-pin the pixel
+    // look. Width follows the team count, height the deepest desk row.
+    if (canvas.width !== layout.width || canvas.height !== layout.height) {
+      canvas.width = layout.width;
       canvas.height = layout.height;
       ctx.imageSmoothingEnabled = false;
     }
     drawRoom(time, layout);
-    // The eight free-address seats are furnished up front; vacant ones show
-    // an empty desk until a session clocks in and claims the seat.
+    // The free-address seats are furnished up front; vacant ones show an
+    // empty desk until a session clocks in and claims the seat.
     for (let seat = 0; seat < SEAT_COUNT; seat += 1) {
       if (!usedSeats.has(seat)) {
-        const desk = deskPosition(seat);
+        const desk = deskPosition(seat, layout.freeGridX);
         drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
       }
     }
@@ -970,8 +1031,8 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
     smallTalk.update(time, restingKeys);
 
     const door = doorPosition(layout);
-    const obstacles = deskObstacles();
-    const bounds = { width: CANVAS_WIDTH, height: layout.height };
+    const obstacles = deskObstacles(layout);
+    const bounds = { width: layout.width, height: layout.height };
     let breakIndex = 0;
     const nowResting = [];
 
@@ -1001,7 +1062,7 @@ import { deskFootprint, findPath } from './office/pathfinding.js';
 
       const seat = seatByKey.get(key);
       if (seat === undefined) continue;
-      const desk = deskPosition(seat);
+      const desk = deskPosition(seat, layout.freeGridX);
       // "blocked" (a tool call awaiting a result, e.g. command permission)
       // stays seated at the desk just like active work.
       const working =

@@ -22,10 +22,11 @@ test('database: openDatabase migrates a fresh database to the latest schema', ()
     .map((row) => row.name);
   assert.deepEqual(tables, ['cards', 'meta', 'reports', 'residents', 'session_bindings', 'teams']);
 
-  // The default team is seeded by the migration itself.
-  const team = database.prepare('SELECT id, name FROM teams').get();
+  // The default team is seeded by v2 and renamed/sized by v3.
+  const team = database.prepare('SELECT id, name, seat_count FROM teams').get();
   assert.equal(team.id, 'default');
-  assert.equal(team.name, 'office');
+  assert.equal(team.name, '常駐チーム');
+  assert.equal(team.seat_count, 6);
 
   database
     .prepare(

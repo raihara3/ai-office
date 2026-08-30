@@ -138,6 +138,15 @@ export const MIGRATIONS = [
   ALTER TABLE reports_v2 RENAME TO reports;
   CREATE INDEX reports_active ON reports (created_at DESC) WHERE archived_at IS NULL;
   `,
+  // Version 3: teams become user-managed — a per-team seat count arrives, and
+  // the seeded default team takes over the label the canvas used to hardcode.
+  // The rename only fires while the name is still the seeded 'office', so a
+  // team the user has renamed stays untouched.
+  `
+  ALTER TABLE teams ADD COLUMN seat_count INTEGER NOT NULL DEFAULT 6
+    CHECK (seat_count BETWEEN 1 AND 12);
+  UPDATE teams SET name = '常駐チーム' WHERE id = 'default' AND name = 'office';
+  `,
 ];
 
 export function openDatabase({ location }) {

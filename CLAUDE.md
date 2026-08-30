@@ -62,7 +62,10 @@ Electron's Node 24 needs no flag).
   resident belongs to one team, default id `default`), session bindings
   (`session_bindings`), reports and cards. Cards/reports reference residents
   by foreign-keyed id; the HTTP API stays name-based (`'user'` = the human's
-  column). Archiving sets `archived_at` — rows are never deleted, and
+  column). Teams are user-managed (name + seat count 1..12, both editable;
+  deleting a team with residents or the last team is refused); the canvas
+  draws one room per team side by side, and seats are unique per
+  (team, seat). Archiving sets `archived_at` — rows are never deleted, and
   listings filter to active rows. See `docs/database.md` for the ER diagram.
 - Task queue: the kanban board (`board.js`; rows in the `cards` table,
   columns = assignee). An idle resident whose

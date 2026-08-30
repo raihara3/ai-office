@@ -106,6 +106,10 @@
       async moveCard(id, assignee, index) {
         return postBoardAction('move', { id, assignee, index });
       },
+      // Moves a card into the 完了 column; it stays on the board until archived.
+      async markCardDone(id) {
+        return postBoardAction('done', { id });
+      },
       // Takes a card off the board (the file is archived, not deleted).
       async archiveCard(id) {
         return postBoardAction('archive', { id });

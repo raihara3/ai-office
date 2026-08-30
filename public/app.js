@@ -451,10 +451,12 @@
   }
 
   // --- kanban board -------------------------------------------------------
-  // Columns are assignees: the user first, then the residents in seat order.
-  // The compact strip under the app bar mirrors the board (a few cards per
-  // column); the full board is the "ボード" view, where cards are dragged to
-  // reorder (top card = worked next) or to reassign.
+  // Columns are the user first, then one per team (creation order), then a 完了
+  // column collecting finished cards. A card still names the resident it is
+  // assigned to (shown as an avatar tag), so a team column with several cards
+  // makes each owner obvious. The compact strip under the app bar mirrors the
+  // board; the full board is the "ボード" view, where cards are dragged to
+  // reorder, reassign (drop onto a teammate's card) or complete (drop in 完了).
 
   const boardColumnsElement = document.getElementById('board-columns');
   const stripElement = document.getElementById('kanban-strip');
@@ -466,45 +468,93 @@
   // the canvas describe the same coworker in the same hue.
   const VENDOR_COLORS = { claude: '#d97757', codex: '#24292f', gemini: '#4285f4' };
   const USER_COLOR = '#64748b';
+  const TEAM_COLOR = '#475569';
+  const DONE_COLOR = '#16a34a';
+  const DONE_COLUMN = 'done';
 
   let latestSnapshot = null;
   let boardCards = [];
   let draggingCardId = null;
 
-  function boardColumns() {
-    // Columns group by team (creation order), then seat within the team.
-    const teamOrder = new Map((latestSnapshot?.teams ?? []).map((team, index) => [team.id, index]));
-    const residents = [...(latestSnapshot?.residents ?? [])].sort(
-      (a, b) =>
-        (teamOrder.get(a.teamId) ?? 99) - (teamOrder.get(b.teamId) ?? 99) || a.seat - b.seat
+  // Resident name → its avatar tag data (display name, vendor color, team).
+  function residentIndex() {
+    return new Map(
+      (latestSnapshot?.residents ?? []).map((resident) => [
+        resident.name,
+        {
+          label: resident.displayName,
+          color: VENDOR_COLORS[resident.cli] ?? USER_COLOR,
+          teamId: resident.teamId,
+          busy: resident.busy === true,
+        },
+      ])
     );
-    return [
-      { key: 'user', label: 'あなた(社長)', color: USER_COLOR, busy: false },
-      ...residents.map((resident) => ({
-        key: resident.name,
-        label: resident.displayName,
-        color: VENDOR_COLORS[resident.cli] ?? USER_COLOR,
-        busy: resident.busy === true,
-      })),
+  }
+
+  // The avatar tag data for a card's assignee ('user' or a resident name);
+  // null means the resident no longer exists (orphaned card).
+  function assigneeMeta(name, index = residentIndex()) {
+    if (name === 'user') return { label: 'あなた(社長)', color: USER_COLOR };
+    return index.get(name) ?? null;
+  }
+
+  function boardColumns() {
+    const residents = latestSnapshot?.residents ?? [];
+    const columns = [
+      { key: 'user', type: 'user', label: 'あなた(社長)', color: USER_COLOR, busy: false, addAssignee: 'user' },
     ];
+    for (const team of latestSnapshot?.teams ?? []) {
+      const members = residents
+        .filter((resident) => resident.teamId === team.id)
+        .sort((a, b) => a.seat - b.seat);
+      columns.push({
+        key: `team:${team.id}`,
+        type: 'team',
+        teamId: team.id,
+        label: team.name,
+        color: TEAM_COLOR,
+        busy: members.some((resident) => resident.busy === true),
+        // A quick-add from a team column files to its first-seat resident.
+        addAssignee: members[0]?.name ?? null,
+      });
+    }
+    columns.push({ key: DONE_COLUMN, type: 'done', label: '完了', color: DONE_COLOR, busy: false, addAssignee: null });
+    return columns;
   }
 
   function assigneeChip(column) {
     return `<span class="assignee-chip" style="background:${escapeHtml(column.color)}">${escapeHtml([...column.label][0] ?? '?')}</span>`;
   }
 
+  // The avatar tag shown on a card in team and 完了 columns so its owner is
+  // obvious even when a column mixes several residents.
+  function cardAssigneeTag(card, index) {
+    const meta = assigneeMeta(card.assignee, index);
+    const color = meta?.color ?? USER_COLOR;
+    const label = meta?.label ?? card.assignee;
+    return `<span class="card-assignee"><span class="assignee-dot" style="background:${escapeHtml(color)}"></span>${escapeHtml(label)}</span>`;
+  }
+
+  // The column a card belongs to: 完了 when done, the user column, or the team
+  // of its assignee. A card whose resident is gone falls back to the user column.
+  function columnKeyForCard(card, index) {
+    if (card.done) return DONE_COLUMN;
+    if (card.assignee === 'user') return 'user';
+    const meta = index.get(card.assignee);
+    return meta === undefined ? 'user' : `team:${meta.teamId}`;
+  }
+
   // Group the cards into their columns once; both the full board and the
-  // compact strip render from this. Cards assigned to a resident that no
-  // longer exists land in the user column with a warning badge.
+  // compact strip render from this.
   function groupedCards() {
     const columns = boardColumns();
-    const known = new Set(columns.map((column) => column.key));
+    const index = residentIndex();
     const grouped = new Map(columns.map((column) => [column.key, []]));
     for (const card of boardCards) {
-      const key = known.has(card.assignee) ? card.assignee : 'user';
-      grouped.get(key).push({ ...card, orphaned: !known.has(card.assignee) });
+      const orphaned = !card.done && card.assignee !== 'user' && !index.has(card.assignee);
+      grouped.get(columnKeyForCard(card, index)).push({ ...card, orphaned });
     }
-    return { columns, grouped };
+    return { columns, grouped, index };
   }
 
   async function refreshBoard() {
@@ -522,9 +572,10 @@
   // "作業中" badge while the resident's run is going, the first few cards and
   // a quick-add button that files a task to that assignee.
   function renderStrip() {
-    const { columns, grouped } = groupedCards();
+    const { columns, grouped, index } = groupedCards();
     stripElement.innerHTML = columns
       .map((column) => {
+        const showAssignee = column.type === 'team' || column.type === 'done';
         const cards = grouped.get(column.key);
         const preview = cards
           .slice(0, STRIP_CARD_LIMIT)
@@ -532,6 +583,7 @@
             (card) => `
               <div class="strip-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}">
                 <span class="strip-card-title">${escapeHtml(card.title)}</span>
+                ${showAssignee ? cardAssigneeTag(card, index) : ''}
                 ${cardBadges(card)}
               </div>`
           )
@@ -541,6 +593,10 @@
             ? `<div class="strip-more">ほか ${cards.length - STRIP_CARD_LIMIT} 件</div>`
             : '';
         const empty = cards.length === 0 ? '<div class="strip-empty">タスクなし</div>' : '';
+        const addButton =
+          column.addAssignee === null
+            ? ''
+            : `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" title="${escapeHtml(column.label)}にタスクを起票">＋</button>`;
         return `
           <div class="strip-column">
             <div class="strip-column-head">
@@ -548,7 +604,7 @@
               <span class="strip-column-name">${escapeHtml(column.label)}</span>
               <span class="strip-column-count">${cards.length}</span>
               ${column.busy ? '<span class="strip-busy">作業中</span>' : ''}
-              <button type="button" class="strip-add" data-assignee="${escapeHtml(column.key)}" title="${escapeHtml(column.label)}にタスクを起票">＋</button>
+              ${addButton}
             </div>
             ${preview}${overflow}${empty}
           </div>`;
@@ -579,10 +635,11 @@
   }
 
   function renderBoard() {
-    const { columns, grouped } = groupedCards();
+    const { columns, grouped, index } = groupedCards();
     boardColumnsElement.innerHTML = columns
-      .map(
-        (column) => `
+      .map((column) => {
+        const showAssignee = column.type === 'team' || column.type === 'done';
+        return `
           <div class="board-column">
             <div class="board-column-head">
               ${assigneeChip(column)}
@@ -594,15 +651,15 @@
                 .get(column.key)
                 .map(
                   (card) => `
-                    <div class="board-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}" draggable="${card.working ? 'false' : 'true'}">
+                    <div class="board-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}">
                       <div class="board-card-title">${escapeHtml(card.title)}</div>
-                      <div class="board-card-meta">${cardBadges(card)}<span class="board-card-time">${formatTime(card.createdAt)}</span></div>
+                      <div class="board-card-meta">${showAssignee ? cardAssigneeTag(card, index) : ''}${cardBadges(card)}<span class="board-card-time">${formatTime(card.createdAt)}</span></div>
                     </div>`
                 )
                 .join('')}
             </div>
-          </div>`
-      )
+          </div>`;
+      })
       .join('');
     attachBoardHandlers();
   }
@@ -662,24 +719,54 @@
     }
   }
 
-  // Drop the dragged card into `column`, before `beforeId` (null = at the
-  // end). The index sent to the server counts positions in the target column
-  // with the dragged card excluded — the same list the server splices into.
-  async function dropCard(column, beforeId) {
+  // Resolve a drop into a team/user column to the concrete resident (or 'user')
+  // the card should be assigned to, plus its index within that resident's cards.
+  // Dropping onto a teammate's card reassigns to that teammate; dropping at the
+  // end of a team column keeps the current resident when it belongs to the team,
+  // otherwise falls back to the team's first-seat resident. Positions count
+  // only the target resident's cards, matching the list the server splices into.
+  function resolveDrop(column, id, beforeId) {
+    const cards = [
+      ...boardColumnsElement.querySelectorAll(
+        `.board-cards[data-column="${CSS.escape(column.key)}"] .board-card`
+      ),
+    ].filter((element) => element.dataset.id !== id);
+    if (column.type === 'user') {
+      const at = beforeId === null ? -1 : cards.findIndex((element) => element.dataset.id === beforeId);
+      return { assignee: 'user', index: at === -1 ? cards.length : at };
+    }
+    let assignee;
+    if (beforeId !== null) {
+      assignee = cards.find((element) => element.dataset.id === beforeId)?.dataset.assignee ?? null;
+    } else {
+      const dragged = boardColumnsElement.querySelector(`.board-card[data-id="${CSS.escape(id)}"]`);
+      const current = dragged?.dataset.assignee ?? null;
+      assignee = residentIndex().get(current)?.teamId === column.teamId ? current : column.addAssignee;
+    }
+    if (assignee === null || assignee === undefined) assignee = column.addAssignee;
+    if (assignee === null) return { assignee: null, index: 0 };
+    const peers = cards.filter((element) => element.dataset.assignee === assignee);
+    const at = beforeId === null ? -1 : peers.findIndex((element) => element.dataset.id === beforeId);
+    return { assignee, index: at === -1 ? peers.length : at };
+  }
+
+  // Drop the dragged card into `columnKey`, before `beforeId` (null = at the
+  // end). The 完了 column marks the card done; any other column reassigns and
+  // reorders it (which also clears the done state server-side).
+  async function dropCard(columnKey, beforeId) {
     const id = draggingCardId;
     draggingCardId = null;
     clearDropMarkers();
     if (id === null || id === beforeId) return;
-    const columnIds = [
-      ...boardColumnsElement.querySelectorAll(
-        `.board-cards[data-column="${CSS.escape(column)}"] .board-card`
-      ),
-    ]
-      .map((element) => element.dataset.id)
-      .filter((cardId) => cardId !== id);
-    const beforeAt = beforeId === null ? -1 : columnIds.indexOf(beforeId);
+    const column = boardColumns().find((entry) => entry.key === columnKey);
+    if (column === undefined) return;
     try {
-      await client.moveCard(id, column, beforeAt === -1 ? columnIds.length : beforeAt);
+      if (column.type === 'done') {
+        await client.markCardDone(id);
+      } else {
+        const { assignee, index } = resolveDrop(column, id, beforeId);
+        if (assignee !== null) await client.moveCard(id, assignee, index);
+      }
     } catch {
       // Fall through: reload so the board reflects what is really on disk.
     }
@@ -690,16 +777,30 @@
 
   const cardForm = document.getElementById('card-form');
 
+  // The filing form assigns to a concrete resident (grouped by team) or the
+  // user — a card always names one owner, even though the board groups by team.
   function fillCardAssignees(preselect) {
     const select = field('card-assignee');
-    const columns = boardColumns();
-    select.innerHTML = columns
-      .map(
-        (column) =>
-          `<option value="${escapeHtml(column.key)}">${escapeHtml(column.label)}</option>`
-      )
-      .join('');
-    if (preselect && columns.some((column) => column.key === preselect)) {
+    const residents = latestSnapshot?.residents ?? [];
+    const options = ['<option value="user">あなた(社長)</option>'];
+    for (const team of latestSnapshot?.teams ?? []) {
+      const members = residents
+        .filter((resident) => resident.teamId === team.id)
+        .sort((a, b) => a.seat - b.seat);
+      if (members.length === 0) continue;
+      options.push(
+        `<optgroup label="${escapeHtml(team.name)}">` +
+          members
+            .map(
+              (resident) =>
+                `<option value="${escapeHtml(resident.name)}">${escapeHtml(resident.displayName)}</option>`
+            )
+            .join('') +
+          '</optgroup>'
+      );
+    }
+    select.innerHTML = options.join('');
+    if (preselect && [...select.options].some((option) => option.value === preselect)) {
       select.value = preselect;
       return;
     }
@@ -738,13 +839,17 @@
   function openCardDetail(id) {
     const card = boardCards.find((c) => c.id === id);
     if (!card) return;
-    const column =
-      boardColumns().find((entry) => entry.key === card.assignee) ??
-      { key: card.assignee, label: card.assignee, color: USER_COLOR };
+    const meta = assigneeMeta(card.assignee) ?? { label: card.assignee, color: USER_COLOR };
+    const chip = `<span class="assignee-chip" style="background:${escapeHtml(meta.color)}">${escapeHtml([...meta.label][0] ?? '?')}</span>`;
+    // An active card is completed (moved to 完了); a done card is archived
+    // (removed from the board). Completion never deletes — the human archives.
+    const action = card.done
+      ? `<button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>アーカイブ(ボードから削除)</button>`
+      : `<button type="button" id="card-detail-done"${card.working ? ' disabled' : ''}>完了にする</button>`;
     cardDetailElement.innerHTML = `
       <div class="card-detail-head">
         <span class="card-detail-title">${escapeHtml(card.title)}</span>
-        <span class="card-detail-assignee">${assigneeChip(column)} ${escapeHtml(column.label)}${card.working ? ' <span class="card-badge working">作業中</span>' : ''}</span>
+        <span class="card-detail-assignee">${chip} ${escapeHtml(meta.label)}${card.working ? ' <span class="card-badge working">作業中</span>' : ''}${card.done ? ' <span class="card-badge done">完了</span>' : ''}</span>
       </div>
       <div class="card-detail-body">${linkify(escapeHtml(card.body || '(本文なし)'))}</div>
       <div id="card-reports"><div class="report-empty">報告を読み込み中…</div></div>
@@ -752,7 +857,7 @@
         <textarea id="card-note-text" rows="2" placeholder="追記(次回実行のプロンプトに含まれます)"></textarea>
         <div class="form-actions">
           <button type="submit" class="primary-button">追記する</button>
-          <button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>完了(ボードから外す)</button>
+          ${action}
         </div>
       </form>`;
     openDrawer('card-detail', 'タスク詳細');
@@ -768,15 +873,30 @@
       }
       openCardDetail(id);
     });
-    field('card-detail-archive').addEventListener('click', async () => {
-      try {
-        await client.archiveCard(id);
-      } catch {
-        // Fall through: the board reload below shows what really happened.
-      }
-      closeDrawer();
-      refreshBoard();
-    });
+    const done = field('card-detail-done');
+    if (done !== null) {
+      done.addEventListener('click', async () => {
+        try {
+          await client.markCardDone(id);
+        } catch {
+          // Fall through: the board reload below shows what really happened.
+        }
+        closeDrawer();
+        refreshBoard();
+      });
+    }
+    const archive = field('card-detail-archive');
+    if (archive !== null) {
+      archive.addEventListener('click', async () => {
+        try {
+          await client.archiveCard(id);
+        } catch {
+          // Fall through: the board reload below shows what really happened.
+        }
+        closeDrawer();
+        refreshBoard();
+      });
+    }
     renderCardReports(id);
   }
 

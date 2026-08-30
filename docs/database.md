@@ -4,7 +4,7 @@ Teams, residents, session bindings, whiteboard reports and kanban cards are
 persisted in a single SQLite database at
 `~/Library/Application Support/ai-office/office.db`, opened by
 `server/residents/database.js` (built-in `node:sqlite`, WAL mode, schema
-versioned with `PRAGMA user_version` — currently **3**).
+versioned with `PRAGMA user_version` — currently **4**).
 
 ## ER diagram
 
@@ -60,6 +60,7 @@ erDiagram
         INTEGER position       "NOT NULL DEFAULT 0; display order within the column"
         INTEGER created_at     "NOT NULL"
         INTEGER updated_at     "NOT NULL"
+        INTEGER done_at        "NULL until completed; set moves the card to the 完了 column, kept until archived"
         INTEGER archived_at    "NULL while on the board"
     }
 
@@ -122,6 +123,10 @@ erDiagram
   listings and counts filter to active rows and cap at 100. **One sanctioned
   exception**: `session_bindings` prunes past 200 rows with DELETE — bindings
   are an operational cache (transcripts expire after ~3 days), not user data.
+- **Done is not archived**: `cards.done_at` moves a finished card to the
+  board's 完了 column without removing it. It keeps naming its resident but
+  drops out of counts and the top-card work queue; the human archives it
+  explicitly. Moving a done card back onto a column clears `done_at`.
 - **Foreign keys are enforced** (`node:sqlite` has `PRAGMA foreign_keys = ON`
   by default). `openDatabase` turns them OFF only while migrations run — the
   v2 rebuild briefly holds name strings in id columns until the resident

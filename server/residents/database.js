@@ -147,6 +147,14 @@ export const MIGRATIONS = [
     CHECK (seat_count BETWEEN 1 AND 12);
   UPDATE teams SET name = '常駐チーム' WHERE id = 'default' AND name = 'office';
   `,
+  // Version 4: cards gain a done state. A finished ok run now moves its card
+  // into the board's 完了 column (done_at set) instead of archiving it, so the
+  // human sees what was completed and archives it explicitly. done_at is
+  // independent of assignee_id: a done card keeps naming its resident, and the
+  // per-column ordering/top-card lookup skips done cards.
+  `
+  ALTER TABLE cards ADD COLUMN done_at INTEGER;
+  `,
 ];
 
 export function openDatabase({ location }) {

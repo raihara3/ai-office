@@ -618,6 +618,29 @@ textarea:focus-visible {
   color: var(--warning);
 }
 
+.card-badge.done {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* The avatar tag on a card: which coworker owns it, so a team column that
+   mixes several residents still reads at a glance. */
+.card-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.assignee-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
 .board-card-time {
   margin-left: auto;
   color: var(--text-faint);

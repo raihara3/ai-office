@@ -108,6 +108,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     listBoard: residents.listBoardCards,
     createBoardCard: residents.createBoardCard,
     moveBoardCard: residents.moveBoardCard,
+    markBoardCardDone: residents.markBoardCardDone,
     archiveBoardCard: residents.archiveBoardCard,
     appendBoardNote: residents.appendBoardNote,
   };

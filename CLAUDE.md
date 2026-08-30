@@ -67,10 +67,13 @@ Electron's Node 24 needs no flag).
   draws one room per team, three rooms per band wrapping to the next band
   below, and seats are unique per (team, seat). Archiving sets `archived_at` — rows are never deleted, and
   listings filter to active rows. See `docs/database.md` for the ER diagram.
-- Task queue: the kanban board (`board.js`; rows in the `cards` table,
-  columns = assignee). An idle resident whose
-  trigger is not due works the **top card** of its column (precheck is
-  skipped — the card is the trigger). An ok run auto-archives the card; a
+- Task queue: the kanban board (`board.js`; rows in the `cards` table, each
+  card assigned to one resident or the user). The UI groups columns by team —
+  user first, one per team (each card tagged with its assignee's avatar), then
+  a 完了 column of done cards. An idle resident whose trigger is not due works
+  the **top card** of its column (precheck is skipped — the card is the
+  trigger). An ok run marks the card done (it moves to 完了 and stays there
+  until the human archives it explicitly — completion never deletes); a
   review-needed or failed run moves it to the user column. A trigger-driven
   run ending review-needed auto-files a card in the user column.
 

@@ -152,7 +152,9 @@ export function createResidents({
       task: taskId,
     });
     if (task !== null) {
-      if (reportLevel === 'info') board.archiveCard(task.id);
+      // An ok run moves the card into the 完了 column (it stays on the board
+      // until the human archives it); a review-needed run hands it back.
+      if (reportLevel === 'info') board.markCardDone(task.id);
       else board.moveCard(task.id, { assignee: USER_COLUMN });
     }
     residentStore.saveState(entry.name, {
@@ -395,6 +397,13 @@ export function createResidents({
     return changed;
   }
 
+  function markBoardCardDone(id) {
+    if (isWorkingCard(id)) return false;
+    const changed = board.markCardDone(id);
+    if (changed) state.refresh();
+    return changed;
+  }
+
   function archiveBoardCard(id) {
     if (isWorkingCard(id)) return false;
     const changed = board.archiveCard(id);
@@ -429,6 +438,7 @@ export function createResidents({
     listBoardCards,
     createBoardCard,
     moveBoardCard,
+    markBoardCardDone,
     archiveBoardCard,
     appendBoardNote,
     boardCounts: board.counts,

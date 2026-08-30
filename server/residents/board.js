@@ -34,7 +34,7 @@ export function createBoard({ database, now = () => Date.now() }) {
     listActive: database.prepare(
       `SELECT c.id, c.title, COALESCE(a.name, '${USER_COLUMN}') AS assignee,
               COALESCE(o.name, '${USER_COLUMN}') AS origin,
-              c.body, c.created_at, c.updated_at
+              c.body, c.created_at, c.updated_at, c.done_at
        FROM cards c
        LEFT JOIN residents a ON a.id = c.assignee_id
        LEFT JOIN residents o ON o.id = c.origin_id
@@ -53,17 +53,25 @@ export function createBoard({ database, now = () => Date.now() }) {
     setAssignee: database.prepare('UPDATE cards SET assignee_id = ?, updated_at = ? WHERE id = ?'),
     setPosition: database.prepare('UPDATE cards SET position = ? WHERE id = ?'),
     setBody: database.prepare('UPDATE cards SET body = ?, updated_at = ? WHERE id = ?'),
+    // Moving a card back onto an active column clears any done state; marking
+    // done sets it. Both leave assignee/position alone.
+    clearDone: database.prepare('UPDATE cards SET done_at = NULL WHERE id = ?'),
+    markDone: database.prepare(
+      'UPDATE cards SET done_at = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL AND done_at IS NULL'
+    ),
     archive: database.prepare(
       'UPDATE cards SET archived_at = ? WHERE id = ? AND archived_at IS NULL'
     ),
+    // The next task for a resident skips done cards — a completed card sits in
+    // the 完了 column until the human archives it, and must never be reworked.
     top: database.prepare(
       `SELECT c.id, c.title, COALESCE(a.name, '${USER_COLUMN}') AS assignee,
               COALESCE(o.name, '${USER_COLUMN}') AS origin,
-              c.body, c.created_at, c.updated_at
+              c.body, c.created_at, c.updated_at, c.done_at
        FROM cards c
        LEFT JOIN residents a ON a.id = c.assignee_id
        LEFT JOIN residents o ON o.id = c.origin_id
-       WHERE c.assignee_id IS ? AND c.archived_at IS NULL
+       WHERE c.assignee_id IS ? AND c.archived_at IS NULL AND c.done_at IS NULL
        ORDER BY c.position, c.created_at LIMIT 1`
     ),
     // Counted over the same capped window the listing shows, mirroring the
@@ -72,7 +80,7 @@ export function createBoard({ database, now = () => Date.now() }) {
       `SELECT COUNT(*) AS total, COALESCE(SUM(assignee_id IS NULL), 0) AS "user"
        FROM (SELECT c.assignee_id FROM cards c
              LEFT JOIN residents a ON a.id = c.assignee_id
-             WHERE c.archived_at IS NULL
+             WHERE c.archived_at IS NULL AND c.done_at IS NULL
              ORDER BY COALESCE(a.name, '${USER_COLUMN}'), c.position, c.created_at LIMIT ${MAX_CARDS})`
     ),
   };
@@ -110,6 +118,7 @@ export function createBoard({ database, now = () => Date.now() }) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       body: row.body,
+      done: row.done_at !== null,
     };
   }
 
@@ -151,6 +160,8 @@ export function createBoard({ database, now = () => Date.now() }) {
       }
       const columnId = targetColumnId !== undefined ? targetColumnId : row.assignee_id;
       if (columnId !== row.assignee_id) statements.setAssignee.run(columnId, now(), id);
+      // A move onto any active column brings the card back from 完了.
+      statements.clearDone.run(id);
       const columnIds = statements.columnIdsExcept.all(columnId, id).map((entry) => entry.id);
       const insertAt = Number.isInteger(index)
         ? Math.max(0, Math.min(index, columnIds.length))
@@ -167,6 +178,13 @@ export function createBoard({ database, now = () => Date.now() }) {
       }
       throw error;
     }
+  }
+
+  // Mark a card done: it moves to the 完了 column but stays on the board,
+  // keeping its assignee, until the human archives it. Idempotent.
+  function markCardDone(id) {
+    const at = now();
+    return statements.markDone.run(at, at, id).changes > 0;
   }
 
   function archiveCard(id) {
@@ -202,5 +220,5 @@ export function createBoard({ database, now = () => Date.now() }) {
     return { total: row.total, user: row.user };
   }
 
-  return { createCard, listCards, moveCard, archiveCard, appendNote, topCardFor, counts };
+  return { createCard, listCards, moveCard, markCardDone, archiveCard, appendNote, topCardFor, counts };
 }

@@ -138,6 +138,37 @@ test('board: archiveCard takes the card off the board but keeps the row', () => 
   assert.equal(board.archiveCard('no-such-card'), false);
 });
 
+test('board: markCardDone keeps the card on the board but out of the work queue', () => {
+  const { board } = boardWith(5_000_000);
+  const first = board.createCard({
+    title: 'タスク1',
+    body: '',
+    assignee: 'task-runner',
+    origin: 'user',
+    createdAt: 1_000_000,
+  });
+  const second = board.createCard({
+    title: 'タスク2',
+    body: '',
+    assignee: 'task-runner',
+    origin: 'user',
+    createdAt: 2_000_000,
+  });
+
+  assert.equal(board.markCardDone(first), true);
+  const doneCard = board.listCards().find((card) => card.id === first);
+  assert.equal(doneCard.done, true); // still listed, now in the 完了 column
+  assert.deepEqual(board.counts(), { total: 1, user: 0 }); // done cards drop out of the count
+  // The next card is worked, never the done one.
+  assert.equal(board.topCardFor('task-runner').id, second);
+  assert.equal(board.markCardDone(first), false); // already done
+
+  // Moving a done card back onto a column clears the done state.
+  assert.equal(board.moveCard(first, { assignee: 'issue-watcher', index: 0 }), true);
+  assert.equal(board.listCards().find((card) => card.id === first).done, false);
+  assert.equal(board.topCardFor('issue-watcher').id, first);
+});
+
 test('board: appendNote accumulates 追記 sections in the body', () => {
   const { board } = boardWith();
   const id = board.createCard({

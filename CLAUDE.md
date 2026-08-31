@@ -62,6 +62,11 @@ Electron's Node 24 needs no flag).
   Codex refuses to start when the working directory is not a git repo
   (`Not inside a trusted directory…`); the `--sandbox` flag
   (`read-only`/`workspace-write`) still bounds what the run may touch.
+  `workspace-write` makes the working directory writable but still denies
+  writes to `.git/` (guarding history), so `git commit` fails to create
+  `.git/index.lock`; edit-mode Codex runs therefore re-add `.git` to the
+  writable roots (`-c sandbox_workspace_write.writable_roots=[".git"]`,
+  resolved against the working directory) so residents can commit.
 - The run's final message is posted to the whiteboard; `LEVEL: review-needed`
   on its first line flags it for a human. A report stays on the board until
   the human archives it or the card it links to is archived — archiving a

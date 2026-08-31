@@ -54,7 +54,15 @@ test('buildHeadlessCommand: codex maps mode to the sandbox flag', () => {
   );
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'codex', mode: 'edit', prompt: 'p', sessionId: 's' }).args,
-    ['exec', '--skip-git-repo-check', '--sandbox', 'workspace-write', 'p']
+    [
+      'exec',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'workspace-write',
+      '-c',
+      'sandbox_workspace_write.writable_roots=[".git"]',
+      'p',
+    ]
   );
 });
 

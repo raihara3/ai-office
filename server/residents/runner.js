@@ -50,6 +50,14 @@ export function buildHeadlessCommand({ cli, model, mode, prompt, sessionId }) {
     // mirror the gemini --skip-trust rationale below. The sandbox flag still
     // bounds what the run may touch, so read-only stays read-only.
     const sandbox = mode === 'edit' ? 'workspace-write' : 'read-only';
+    // workspace-write makes the working directory writable but still denies
+    // writes to `.git/` (to guard history), so `git commit` cannot create
+    // `.git/index.lock`. Re-add `.git` (resolved against the working directory)
+    // to the writable roots so edit-mode residents can commit.
+    const writableGitRoot =
+      sandbox === 'workspace-write'
+        ? ['-c', 'sandbox_workspace_write.writable_roots=[".git"]']
+        : [];
     return {
       command: 'codex',
       args: [
@@ -57,6 +65,7 @@ export function buildHeadlessCommand({ cli, model, mode, prompt, sessionId }) {
         '--skip-git-repo-check',
         '--sandbox',
         sandbox,
+        ...writableGitRoot,
         ...(model ? ['--model', model] : []),
         prompt,
       ],

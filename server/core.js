@@ -3,7 +3,7 @@
 // transport adapter consumes the returned handle; tests can drive the core
 // directly without a network layer.
 
-import { createState } from './state.js';
+import { createState, presenceAwareStatus } from './state.js';
 import { createResidents, DEFAULT_DATA_DIRECTORY } from './residents/residents.js';
 import { startClaudeWatcher } from './watchers/claude.js';
 import { startCodexWatcher } from './watchers/codex.js';
@@ -46,13 +46,33 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
   // resident island instead of the free-address grid) and attach the resident
   // roster and the whiteboard unread counts.
   function augmentSnapshot(snap) {
+    const residentData = residents.snapshotData();
+    const busyResidents = new Set(
+      residentData.filter((entry) => entry.busy).map((entry) => entry.name),
+    );
     return {
       ...snap,
-      employees: snap.employees.map((employee) => ({
-        ...employee,
-        resident: residents.residentForFile(filePathOfEmployee(employee)),
-      })),
-      residents: residents.snapshotData(),
+      employees: snap.employees.map((employee) => {
+        const resident = residents.residentForFile(filePathOfEmployee(employee));
+        const status = presenceAwareStatus(employee.status, {
+          resident,
+          residentBusy: resident !== null && busyResidents.has(resident),
+        });
+        if (status === employee.status) return { ...employee, resident };
+        // Clocked off: match snapshot()'s break contract — a resting avatar
+        // carries no task, activity flow or subagent crew.
+        return {
+          ...employee,
+          resident,
+          status,
+          task: null,
+          activity: null,
+          activityKind: null,
+          activityLog: [],
+          subagents: [],
+        };
+      }),
+      residents: residentData,
       teams: residents.listTeams(),
       whiteboard: residents.whiteboardCounts(),
       board: residents.boardCounts(),

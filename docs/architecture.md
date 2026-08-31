@@ -153,6 +153,15 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 `deriveStatus(session, now)` は独立した純粋関数として export され、セッションと
 現在時刻を `working` / `break` / `blocked` / `waiting` にマップします。
 
+`presenceAwareStatus(status, { resident, residentBusy })` も純粋関数として export
+され、常駐員に紐づくアバターは対応する run プロセスが生きている間だけ「稼働中」
+であるという前提を適用します。run が終了(完了・タイムアウト・緊急停止のいずれ
+でも `residentBusy` が偽)すると、kill されて `working`(一時的)→`blocked`(ログ
+失効まで数日)と居残るのを防ぐため `break` に落とします。core の `augmentSnapshot`
+が `residentForFile` と `snapshotData().busy` を突き合わせて各アバターへ適用し、
+`break` に落ちたアバターは snapshot の break 契約に合わせて task/activity/subagents
+を空にします。常駐員に紐づかないセッション(利用者本人の対話セッション)は対象外。
+
 ### `tail.js`
 
 ディレクトリツリーに対する汎用 JSONL 追従。パターンに一致する最近更新された

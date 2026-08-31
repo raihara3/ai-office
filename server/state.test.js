@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createState, deriveStatus, CLI_INFO } from './state.js';
+import { createState, deriveStatus, presenceAwareStatus, CLI_INFO } from './state.js';
 
 const WORKING_IDLE_TIMEOUT_MS = 90_000;
 const TURN_COMPLETE_GRACE_MS = 5_000;
@@ -59,6 +59,48 @@ test('deriveStatus: recent activity, no completed turn -> working', () => {
 test('deriveStatus: turn completed within grace -> still working', () => {
   const session = makeSession({ lastEventAt: 0, turnCompletedAt: 0 });
   assert.equal(deriveStatus(session, TURN_COMPLETE_GRACE_MS - 1), 'working');
+});
+
+test('presenceAwareStatus: stranded resident session (run gone) -> break', () => {
+  // Emergency stop / timeout freezes the transcript mid-tool, so the raw
+  // status is working or blocked while the run is no longer live.
+  for (const status of ['working', 'blocked']) {
+    assert.equal(
+      presenceAwareStatus(status, { resident: 'test', residentBusy: false }),
+      'break',
+    );
+  }
+});
+
+test('presenceAwareStatus: live resident run keeps its status', () => {
+  assert.equal(
+    presenceAwareStatus('working', { resident: 'test', residentBusy: true }),
+    'working',
+  );
+  assert.equal(
+    presenceAwareStatus('blocked', { resident: 'test', residentBusy: true }),
+    'blocked',
+  );
+});
+
+test('presenceAwareStatus: non-resident sessions are untouched', () => {
+  for (const status of ['working', 'blocked', 'break', 'waiting']) {
+    assert.equal(
+      presenceAwareStatus(status, { resident: null, residentBusy: false }),
+      status,
+    );
+  }
+});
+
+test('presenceAwareStatus: idle resident session already break/waiting is left as-is', () => {
+  assert.equal(
+    presenceAwareStatus('break', { resident: 'test', residentBusy: false }),
+    'break',
+  );
+  assert.equal(
+    presenceAwareStatus('waiting', { resident: 'test', residentBusy: false }),
+    'waiting',
+  );
 });
 
 test('CLI_INFO exposes the three supported CLIs', () => {

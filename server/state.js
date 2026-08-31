@@ -47,6 +47,26 @@ export function deriveStatus(session, now) {
   return 'working';
 }
 
+// A resident avatar mirrors a headless run process, not a person: it is only
+// "at work" while that run is live. Once the run ends — finished, timed out,
+// or emergency-stopped — the CLI is killed mid-tool, freezing its transcript
+// in a state deriveStatus reads as working (briefly) then blocked (for days,
+// until the log expires). This clocks such a stranded resident session off the
+// moment its run is gone, so an emergency stop actually stops the avatar.
+// `resident` is the owning resident's name (or null for free-address sessions);
+// `residentBusy` is whether that resident's run process is still live. Non-
+// resident sessions and live runs keep their derived status untouched.
+// By design a resident archived mid-run reads as not-busy (snapshotData lists
+// active residents only, while the registry keeps binding its session), so its
+// avatar is clocked off here even while the CLI still runs — an archived
+// resident has no seat to keep working, and its run still finishes and reports.
+export function presenceAwareStatus(status, { resident, residentBusy }) {
+  if (resident !== null && !residentBusy && (status === 'working' || status === 'blocked')) {
+    return 'break';
+  }
+  return status;
+}
+
 // A fresh session shell. Split out so `reportEvent` reads as "get or create,
 // then apply the observation" rather than inlining a 20-field literal.
 function createSession(key, cli, filePath, eventAt) {

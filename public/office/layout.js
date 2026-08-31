@@ -12,11 +12,14 @@ export const ROW_SPACING = 172;
 
 // Team rooms: fixed partitions pinned to the top-left edge, laid left to
 // right in team order and wrapping to a new band after every third room so
-// the scene grows downward instead of running ever wider. Every room is
-// three desk columns wide (124px pitch plus a 20px margin each side — the
-// same footprint the single resident room had), and grows downward by rows
-// of ceil(seatCount / deskColumns).
+// the scene grows downward instead of running ever wider. A room is only as
+// wide as its desk grid (deskColumns wide at 124px pitch plus a 16px margin
+// each side), so a small team gets a narrower carpet instead of its desks
+// centered in a wide room, and it grows downward by rows of
+// ceil(seatCount / deskColumns).
 export const ROOM_Y = 104;
+// The full three-column room width (a 5–6 seat team, the footprint the single
+// resident room once had); narrower teams shrink via roomWidth().
 export const ROOM_WIDTH = 404;
 export const ROOM_GAP = 40;
 export const ROOM_COLUMNS = 3;
@@ -32,6 +35,9 @@ const DESK_OFFSET_Y = FIRST_ROW_Y - ROOM_Y;
 // Mirrors MAX_TEAM_SEATS in server/residents/resident-store.js.
 export const MAX_TEAM_SEATS = 12;
 const DESK_COLUMN_PITCH = 124;
+// Horizontal padding inside a room, left and right of the desk columns:
+// 3 × 124 + 2 × 16 = 404 = ROOM_WIDTH.
+const ROOM_SIDE_MARGIN = 16;
 const MIN_WIDTH = 960;
 // Clearance between the widest room band and the right wall, keeping room
 // for the wall-side plants.
@@ -53,6 +59,14 @@ export function deskColumns(seatCount) {
   return Math.min(ROOM_COLUMNS, Math.max(1, Math.ceil(seatCount / 2)));
 }
 
+// A room is only as wide as its desk grid needs: deskColumns(seatCount)
+// columns at DESK_COLUMN_PITCH plus a side margin each side. Small teams get a
+// narrower carpet (1 column → 156, 2 → 280) rather than a full ROOM_WIDTH room
+// with the desks centered inside it.
+export function roomWidth(seatCount) {
+  return deskColumns(seatCount) * DESK_COLUMN_PITCH + 2 * ROOM_SIDE_MARGIN;
+}
+
 // One room rect per team, in snapshot (creation) order. Rooms fill a band
 // left to right and wrap after TEAMS_PER_ROW; each band sits below the
 // tallest room of the band above it, so seat-heavy teams never clip.
@@ -60,12 +74,15 @@ export function teamRooms(teams) {
   const rooms = [];
   let bandTop = ROOM_Y;
   let bandHeight = 0;
+  let bandLeft = 8;
   teams.forEach((team, index) => {
     const column = index % TEAMS_PER_ROW;
     if (index > 0 && column === 0) {
       bandTop += bandHeight + ROOM_ROW_GAP;
       bandHeight = 0;
+      bandLeft = 8;
     }
+    const width = roomWidth(team.seatCount);
     const rows = Math.max(1, Math.ceil(team.seatCount / deskColumns(team.seatCount)));
     // 6 seats → 2 rows → 344, pixel-identical to the pre-teams room.
     const height = rows * ROW_SPACING;
@@ -74,11 +91,12 @@ export function teamRooms(teams) {
       name: team.name,
       seatCount: team.seatCount,
       rows,
-      x: 8 + column * (ROOM_WIDTH + ROOM_GAP),
+      x: bandLeft,
       y: bandTop,
-      width: ROOM_WIDTH,
+      width,
       height,
     });
+    bandLeft += width + ROOM_GAP;
     bandHeight = Math.max(bandHeight, height);
   });
   return rooms;

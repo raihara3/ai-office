@@ -71,19 +71,22 @@ test('roomDeskPosition: three upright columns over spaced rows', () => {
 });
 
 test('roomDeskPosition: desks pack into a near-square grid by seat count', () => {
-  // 4 seats → a 2×2 grid centered on the room midline (x 148 / 272).
+  // 4 seats → a 2×2 grid centered in a 2-column room (width 280, x 86 / 210).
   const [four] = teamRooms([{ id: 'a', name: 'A', seatCount: 4 }]);
-  assert.deepEqual(roomDeskPosition(four, 0), { x: 148, y: 240 });
-  assert.deepEqual(roomDeskPosition(four, 1), { x: 272, y: 240 });
-  assert.deepEqual(roomDeskPosition(four, 2), { x: 148, y: 412 });
-  assert.deepEqual(roomDeskPosition(four, 3), { x: 272, y: 412 });
+  assert.equal(four.width, 280);
+  assert.deepEqual(roomDeskPosition(four, 0), { x: 86, y: 240 });
+  assert.deepEqual(roomDeskPosition(four, 1), { x: 210, y: 240 });
+  assert.deepEqual(roomDeskPosition(four, 2), { x: 86, y: 412 });
+  assert.deepEqual(roomDeskPosition(four, 3), { x: 210, y: 412 });
   // 3 seats share the 4-seat layout: two columns, second row half full.
   const [three] = teamRooms([{ id: 'b', name: 'B', seatCount: 3 }]);
-  assert.deepEqual(roomDeskPosition(three, 2), { x: 148, y: 412 });
-  // 2 seats → a single centered column, one desk per row (1×2).
+  assert.equal(three.width, 280);
+  assert.deepEqual(roomDeskPosition(three, 2), { x: 86, y: 412 });
+  // 2 seats → a single column in a narrow 1-column room (width 156, x 86).
   const [two] = teamRooms([{ id: 'c', name: 'C', seatCount: 2 }]);
-  assert.deepEqual(roomDeskPosition(two, 0), { x: 210, y: 240 });
-  assert.deepEqual(roomDeskPosition(two, 1), { x: 210, y: 412 });
+  assert.equal(two.width, 156);
+  assert.deepEqual(roomDeskPosition(two, 0), { x: 86, y: 240 });
+  assert.deepEqual(roomDeskPosition(two, 1), { x: 86, y: 412 });
 });
 
 test('teamRooms: small teams grow taller as desks stack into rows', () => {
@@ -117,8 +120,9 @@ test('computeLayout: a full band of rooms widens the world past MIN_WIDTH', () =
     { id: 'b', name: 'B', seatCount: 3 },
     { id: 'c', name: 'C', seatCount: 3 },
   ]);
-  // Third room ends at 896 + 404; the right margin clears the wall plants.
-  assert.equal(layout.width, 896 + 404 + 136);
+  // Each 3-seat room shrinks to 2 columns (width 280); the third ends at
+  // 648 + 280, and the right margin clears the wall plants.
+  assert.equal(layout.width, 648 + 280 + 136);
 });
 
 test('a room contains every desk row including the chairs', () => {

@@ -586,6 +586,45 @@ textarea:focus-visible {
   border-bottom: 2px solid var(--primary);
 }
 
+/* Drop-time owner picker: shown when a card is dropped into a team column with
+   several members, so the human chooses which teammate takes it. */
+.assignee-menu {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  z-index: 50;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-raised);
+  background: var(--surface);
+}
+
+.assignee-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assignee-menu-item:hover,
+.assignee-menu-item:focus-visible {
+  background: var(--primary-soft);
+}
+
+.assignee-menu-item.current {
+  color: var(--primary);
+}
+
 .board-card-title {
   color: var(--text);
   font-size: 12px;

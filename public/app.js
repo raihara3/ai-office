@@ -501,15 +501,20 @@
     return index.get(name) ?? null;
   }
 
+  // A team's residents ordered by seat — the roster shared by the board
+  // columns, the filing form and the drop-time assignee picker.
+  function teamMembers(teamId) {
+    return (latestSnapshot?.residents ?? [])
+      .filter((resident) => resident.teamId === teamId)
+      .sort((a, b) => a.seat - b.seat);
+  }
+
   function boardColumns() {
-    const residents = latestSnapshot?.residents ?? [];
     const columns = [
       { key: 'user', type: 'user', label: 'あなた(社長)', color: USER_COLOR, busy: false, addAssignee: 'user' },
     ];
     for (const team of latestSnapshot?.teams ?? []) {
-      const members = residents
-        .filter((resident) => resident.teamId === team.id)
-        .sort((a, b) => a.seat - b.seat);
+      const members = teamMembers(team.id);
       columns.push({
         key: `team:${team.id}`,
         type: 'team',
@@ -706,7 +711,7 @@
       cardElement.addEventListener('drop', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        dropCard(cardElement.closest('.board-cards').dataset.column, insertBeforeId(cardElement, event), root);
+        dropCard(cardElement.closest('.board-cards').dataset.column, insertBeforeId(cardElement, event), root, event);
       });
     }
     for (const listElement of root.querySelectorAll('.board-cards')) {
@@ -715,7 +720,7 @@
       });
       listElement.addEventListener('drop', (event) => {
         event.preventDefault();
-        dropCard(listElement.dataset.column, null, root);
+        dropCard(listElement.dataset.column, null, root, event);
       });
     }
   }
@@ -751,10 +756,65 @@
     return { assignee, index: at === -1 ? peers.length : at };
   }
 
+  // The position a card takes at the end of a chosen teammate's cards within a
+  // team column — the natural landing spot once its owner is picked explicitly.
+  function teamAppendIndex(column, assignee, id, root) {
+    return [
+      ...root.querySelectorAll(
+        `.board-cards[data-column="${CSS.escape(column.key)}"] .board-card`
+      ),
+    ].filter((element) => element.dataset.id !== id && element.dataset.assignee === assignee).length;
+  }
+
+  // A floating picker anchored at the drop point listing a team's members, so
+  // the human chooses the card's owner when a column move is ambiguous.
+  // Resolves to the chosen resident name, or null if dismissed (Escape or a
+  // click outside). `defaultName` is highlighted as the current pick.
+  function chooseTeamAssignee(members, event, defaultName) {
+    return new Promise((resolve) => {
+      const menu = document.createElement('div');
+      menu.className = 'assignee-menu';
+      menu.setAttribute('role', 'menu');
+      menu.innerHTML = members
+        .map(
+          (resident) =>
+            `<button type="button" class="assignee-menu-item${resident.name === defaultName ? ' current' : ''}" role="menuitem" data-name="${escapeHtml(resident.name)}">` +
+            `<span class="assignee-dot" style="background:${escapeHtml(VENDOR_COLORS[resident.cli] ?? USER_COLOR)}"></span>` +
+            `${escapeHtml(resident.displayName)}</button>`
+        )
+        .join('');
+      document.body.appendChild(menu);
+      // Anchor at the pointer, then clamp so the menu stays on screen.
+      const margin = 8;
+      const rect = menu.getBoundingClientRect();
+      menu.style.left = `${Math.max(margin, Math.min(event.clientX, window.innerWidth - rect.width - margin))}px`;
+      menu.style.top = `${Math.max(margin, Math.min(event.clientY, window.innerHeight - rect.height - margin))}px`;
+      const finish = (value) => {
+        menu.remove();
+        document.removeEventListener('pointerdown', onOutside, true);
+        document.removeEventListener('keydown', onKey, true);
+        resolve(value);
+      };
+      const onOutside = (pointerEvent) => {
+        if (!menu.contains(pointerEvent.target)) finish(null);
+      };
+      const onKey = (keyEvent) => {
+        if (keyEvent.key === 'Escape') finish(null);
+      };
+      menu.addEventListener('click', (clickEvent) => {
+        const item = clickEvent.target.closest('.assignee-menu-item');
+        if (item !== null) finish(item.dataset.name);
+      });
+      document.addEventListener('pointerdown', onOutside, true);
+      document.addEventListener('keydown', onKey, true);
+      (menu.querySelector('.assignee-menu-item.current') ?? menu.querySelector('.assignee-menu-item'))?.focus();
+    });
+  }
+
   // Drop the dragged card into `columnKey`, before `beforeId` (null = at the
   // end). The 完了 column marks the card done; any other column reassigns and
   // reorders it (which also clears the done state server-side).
-  async function dropCard(columnKey, beforeId, root) {
+  async function dropCard(columnKey, beforeId, root, event) {
     const id = draggingCardId;
     draggingCardId = null;
     clearDropMarkers();
@@ -765,7 +825,22 @@
       if (column.type === 'done') {
         await client.markCardDone(id);
       } else {
-        const { assignee, index } = resolveDrop(column, id, beforeId, root);
+        let { assignee, index } = resolveDrop(column, id, beforeId, root);
+        // Dropping into a team column's open area (not onto a specific
+        // teammate's card) is ambiguous when the team has several members: the
+        // default first-seat fallback otherwise leaves later seats unreachable
+        // by drag. Ask who should own the card instead of guessing.
+        if (column.type === 'team' && beforeId === null) {
+          const members = teamMembers(column.teamId);
+          if (members.length > 1) {
+            const chosen = await chooseTeamAssignee(members, event, assignee);
+            if (chosen === null) assignee = null;
+            else if (chosen !== assignee) {
+              assignee = chosen;
+              index = teamAppendIndex(column, chosen, id, root);
+            }
+          }
+        }
         if (assignee !== null) await client.moveCard(id, assignee, index);
       }
     } catch {
@@ -782,12 +857,9 @@
   // user — a card always names one owner, even though the board groups by team.
   function fillCardAssignees(preselect) {
     const select = field('card-assignee');
-    const residents = latestSnapshot?.residents ?? [];
     const options = ['<option value="user">あなた(社長)</option>'];
     for (const team of latestSnapshot?.teams ?? []) {
-      const members = residents
-        .filter((resident) => resident.teamId === team.id)
-        .sort((a, b) => a.seat - b.seat);
+      const members = teamMembers(team.id);
       if (members.length === 0) continue;
       options.push(
         `<optgroup label="${escapeHtml(team.name)}">` +

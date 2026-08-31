@@ -187,7 +187,7 @@
 
   const drawerElement = document.getElementById('drawer');
   const drawerTitleElement = document.getElementById('drawer-title');
-  const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form', 'team-form'];
+  const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form', 'team-form', 'settings-form'];
 
   function openDrawer(sectionId, title) {
     for (const id of DRAWER_SECTION_IDS) field(id).hidden = id !== sectionId;
@@ -1179,6 +1179,29 @@
       closeDrawer();
     } catch (error) {
       showTeamError(error.message);
+    }
+  });
+
+  // --- office settings (drawer) -------------------------------------------
+
+  const settingsForm = document.getElementById('settings-form');
+  const settingsError = document.getElementById('settings-error');
+
+  function openSettingsPanel() {
+    field('office-name').value = latestSnapshot?.officeName ?? '';
+    settingsError.hidden = true;
+    openDrawer('settings-form', 'オフィス設定');
+  }
+  document.getElementById('settings-open').addEventListener('click', openSettingsPanel);
+
+  settingsForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await client.saveOfficeName(field('office-name').value.trim());
+      closeDrawer();
+    } catch (error) {
+      settingsError.textContent = error.message;
+      settingsError.hidden = false;
     }
   });
 

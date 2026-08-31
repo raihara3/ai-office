@@ -1,10 +1,10 @@
 # Database schema (office.db)
 
-Teams, residents, session bindings, whiteboard reports and kanban cards are
-persisted in a single SQLite database at
+Teams, residents, session bindings, whiteboard reports, kanban cards and
+user-editable office settings are persisted in a single SQLite database at
 `~/Library/Application Support/ai-office/office.db`, opened by
 `server/residents/database.js` (built-in `node:sqlite`, WAL mode, schema
-versioned with `PRAGMA user_version` — currently **4**).
+versioned with `PRAGMA user_version` — currently **5**).
 
 ## ER diagram
 
@@ -81,6 +81,11 @@ erDiagram
         TEXT key   PK "'legacyImportedAt', 'residentsImportedAt'"
         TEXT value    "NOT NULL"
     }
+
+    settings {
+        TEXT key   PK "user-editable preference key, e.g. 'officeName'"
+        TEXT value    "NOT NULL"
+    }
 ```
 
 ## Identity and relationships
@@ -99,6 +104,11 @@ erDiagram
   and the display name survives (`resident-import.js` / `ensureResidentId`).
 - **The human is not a resident**: `cards.assignee_id IS NULL` is the user's
   kanban column, `origin_id IS NULL` marks human-filed cards.
+- **`settings` vs `meta`**: both are standalone key-value tables with no
+  foreign keys. `settings` holds user-editable preferences set in-app (the
+  office name on the entrance sign, `officeName`); `meta` holds internal
+  import markers. An unset key falls back to a default in `settings-store.js`
+  rather than being seeded.
 - **reports.task → cards.id stays a soft link** (no FK): the card may be
   long archived and imported ids may not resolve; rows are never deleted so
   referential cleanup is unnecessary. A report stays on the board until the

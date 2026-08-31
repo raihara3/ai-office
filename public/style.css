@@ -976,7 +976,8 @@ textarea:focus-visible {
 #card-form[hidden],
 #activity-wrap[hidden],
 #resident-form[hidden],
-#team-form[hidden] {
+#team-form[hidden],
+#settings-form[hidden] {
   display: none;
 }
 
@@ -1107,6 +1108,7 @@ textarea:focus-visible {
 
 #resident-form,
 #team-form,
+#settings-form,
 #card-form {
   display: flex;
   flex-direction: column;
@@ -1115,6 +1117,7 @@ textarea:focus-visible {
 
 #resident-form label,
 #team-form label,
+#settings-form label,
 #card-form label {
   display: flex;
   flex-direction: column;
@@ -1128,6 +1131,7 @@ textarea:focus-visible {
 #resident-form select,
 #resident-form textarea,
 #team-form input,
+#settings-form input,
 #card-form input,
 #card-form select,
 #card-form textarea,

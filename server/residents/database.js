@@ -155,6 +155,16 @@ export const MIGRATIONS = [
   `
   ALTER TABLE cards ADD COLUMN done_at INTEGER;
   `,
+  // Version 5: user-editable office settings. A key-value table for the
+  // handful of preferences the human sets in-app (currently just the office
+  // name shown on the entrance sign). Kept separate from `meta`, which holds
+  // internal import markers rather than user data.
+  `
+  CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDatabase({ location }) {

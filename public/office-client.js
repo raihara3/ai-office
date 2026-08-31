@@ -67,6 +67,17 @@
         return requestJson(`/api/teams/${encodeURIComponent(id)}`, { method: 'DELETE' });
       },
 
+      // Office settings: persists the office name shown on the entrance sign.
+      // The current value also rides on every state snapshot, so reading is
+      // done from there rather than a GET.
+      async saveOfficeName(officeName) {
+        return requestJson('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ officeName }),
+        });
+      },
+
       // The whiteboard: full reports (bodies included) and read receipts.
       async listReports() {
         return (await fetch('/api/whiteboard')).json();

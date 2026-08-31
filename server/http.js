@@ -210,6 +210,36 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
+    // User-editable office settings (currently just the office name on the
+    // entrance sign). GET reads, PUT saves.
+    if (urlPath === '/api/settings') {
+      if (request.method === 'GET') {
+        sendJson(response, 200, { officeName: core.getOfficeName() });
+        return;
+      }
+      if (request.method !== 'PUT') {
+        response.writeHead(405).end();
+        return;
+      }
+      if (isForbiddenOrigin(request)) {
+        response.writeHead(403).end();
+        return;
+      }
+      readJsonBody(request, 4 * 1024, (parsed) => {
+        if (parsed === null) {
+          sendJson(response, 400, { error: 'invalid JSON body' });
+          return;
+        }
+        try {
+          const officeName = core.saveOfficeName(parsed.officeName);
+          sendJson(response, 200, { ok: true, officeName });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      });
+      return;
+    }
+
     // Resident team management: list/save/unassign/run. The rows in office.db
     // are the source of truth; these endpoints only read and write them
     // through the core.

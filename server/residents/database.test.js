@@ -20,7 +20,7 @@ test('database: openDatabase migrates a fresh database to the latest schema', ()
     .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
     .all()
     .map((row) => row.name);
-  assert.deepEqual(tables, ['cards', 'meta', 'reports', 'residents', 'session_bindings', 'teams']);
+  assert.deepEqual(tables, ['cards', 'meta', 'reports', 'residents', 'session_bindings', 'settings', 'teams']);
 
   // The default team is seeded by v2 and renamed/sized by v3.
   const team = database.prepare('SELECT id, name, seat_count FROM teams').get();

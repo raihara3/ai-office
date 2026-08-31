@@ -13,6 +13,7 @@ import { openDatabase } from "./database.js";
 import { importLegacyData } from "./legacy-import.js";
 import { importResidents } from "./resident-import.js";
 import { createResidentStore } from "./resident-store.js";
+import { createSettingsStore } from "./settings-store.js";
 import { createSessionRegistry } from "./registry.js";
 import {
   createRunner,
@@ -103,6 +104,7 @@ export function createResidents({
   runPrecheck = defaultRunPrecheck,
   database = null,
   residentStore = null,
+  settingsStore = null,
   registry = null,
   whiteboard = null,
   board = null,
@@ -115,6 +117,7 @@ export function createResidents({
   let ownedDatabase = null;
   if (
     residentStore === null ||
+    settingsStore === null ||
     registry === null ||
     whiteboard === null ||
     board === null
@@ -128,6 +131,7 @@ export function createResidents({
     importResidents(database, { dataDirectory, now });
     importLegacyData(database, { dataDirectory, now });
     residentStore ??= createResidentStore({ database, now });
+    settingsStore ??= createSettingsStore({ database });
     registry ??= createSessionRegistry({ database, now });
     whiteboard ??= createWhiteboard({ database, now });
     board ??= createBoard({ database, now });
@@ -498,6 +502,12 @@ export function createResidents({
     return changed;
   }
 
+  function saveOfficeName(name) {
+    const saved = settingsStore.setOfficeName(name);
+    state.refresh();
+    return saved;
+  }
+
   return {
     start,
     stop,
@@ -523,5 +533,7 @@ export function createResidents({
     archiveBoardCard,
     appendBoardNote,
     boardCounts: board.counts,
+    getOfficeName: settingsStore.getOfficeName,
+    saveOfficeName,
   };
 }

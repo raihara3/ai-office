@@ -62,6 +62,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
       teams: residents.listTeams(),
       whiteboard: residents.whiteboardCounts(),
       board: residents.boardCounts(),
+      officeName: residents.getOfficeName(),
       sky: skyPhaseFor(clock()),
     };
   }
@@ -110,5 +111,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     markBoardCardDone: residents.markBoardCardDone,
     archiveBoardCard: residents.archiveBoardCard,
     appendBoardNote: residents.appendBoardNote,
+    getOfficeName: residents.getOfficeName,
+    saveOfficeName: residents.saveOfficeName,
   };
 }

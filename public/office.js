@@ -190,27 +190,36 @@ import { findPath } from './office/pathfinding.js';
     { x: 8, y: 30 }, { x: 62, y: 40 },
   ];
 
-  // Shadow-blurred text is expensive to rasterize, so the neon sign is
-  // rendered once into an offscreen sprite and stamped each frame.
-  let neonSignSprite = null;
-  function drawNeonSign(x, y) {
-    if (!neonSignSprite) {
-      neonSignSprite = document.createElement('canvas');
-      neonSignSprite.width = 122;
-      neonSignSprite.height = 34;
-      const sign = neonSignSprite.getContext('2d');
+  // The office sign: the user-configurable name on a black plate in white,
+  // rendered once into an offscreen sprite and stamped each frame. The sprite
+  // is rebuilt only when the name changes.
+  const DEFAULT_OFFICE_NAME = 'AI OFFICE';
+  let officeSignSprite = null;
+  let officeSignName = null;
+  function drawOfficeSign(x, y) {
+    const name = state.officeName ?? DEFAULT_OFFICE_NAME;
+    if (officeSignSprite === null || officeSignName !== name) {
+      officeSignName = name;
+      officeSignSprite = document.createElement('canvas');
+      officeSignSprite.width = 122;
+      officeSignSprite.height = 34;
+      const sign = officeSignSprite.getContext('2d');
       sign.beginPath();
       sign.roundRect(0, 0, 122, 34, 6);
-      sign.fillStyle = '#2e3440';
+      sign.fillStyle = '#000000';
       sign.fill();
-      sign.font = 'bold 16px "Hiragino Sans", sans-serif';
+      // The name is capped at 10 characters; shrink the font until even a
+      // full-width 10-character name fits inside the plate.
+      let fontSize = 17;
       sign.textAlign = 'center';
-      sign.shadowColor = '#5ad1a0';
-      sign.shadowBlur = 8;
-      sign.fillStyle = '#7ee2b8';
-      sign.fillText('AI OFFICE', 61, 23);
+      do {
+        fontSize -= 1;
+        sign.font = `bold ${fontSize}px "Hiragino Sans", sans-serif`;
+      } while (fontSize > 8 && sign.measureText(name).width > 108);
+      sign.fillStyle = '#ffffff';
+      sign.fillText(name, 61, 23);
     }
-    ctx.drawImage(neonSignSprite, x, y);
+    ctx.drawImage(officeSignSprite, x, y);
   }
 
   function drawRoom(time, layout) {
@@ -526,8 +535,8 @@ import { findPath } from './office/pathfinding.js';
     px(OFFICE_DOOR_X + 4, top + 12, 36, 14, '#8d6e63');
     px(OFFICE_DOOR_X + 4, top + 30, 36, 12, '#8d6e63');
     px(OFFICE_DOOR_X + 36, top + 26, 4, 4, '#d9a441');
-    // the neon company sign, moved down from the top wall to greet visitors
-    drawNeonSign(150, top + 6);
+    // the office sign, moved down from the top wall to greet visitors
+    drawOfficeSign(150, top + 6);
     drawElevator(top);
     // reception counter, with a call bell and a small potted plant
     px(RECEPTION.x, top + RECEPTION.y, RECEPTION.width, RECEPTION.height, '#4e342e');

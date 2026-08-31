@@ -52,8 +52,14 @@ test('validateResident rejects bad seat, cli, mode and trigger', () => {
   );
 });
 
+// Pinned so GC cannot finalize a fixture database's statements mid-test:
+// node:sqlite finalizes them once the DatabaseSync object is collected, and
+// tests destructuring only the store would otherwise drop the last reference.
+const openedDatabases = [];
+
 function storeWith(nowValue = 1000) {
   const database = openDatabase({ location: ':memory:' });
+  openedDatabases.push(database);
   return { database, store: createResidentStore({ database, now: () => nowValue }) };
 }
 

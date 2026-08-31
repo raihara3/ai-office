@@ -10,8 +10,14 @@ import { openDatabase } from './database.js';
 import { createResidentStore } from './resident-store.js';
 import { createSessionRegistry } from './registry.js';
 
+// Pinned so GC cannot finalize a fixture database's statements mid-test:
+// node:sqlite finalizes them once the DatabaseSync object is collected, and
+// tests destructuring only the store would otherwise drop the last reference.
+const openedDatabases = [];
+
 function registryWith() {
   const database = openDatabase({ location: ':memory:' });
+  openedDatabases.push(database);
   const store = createResidentStore({ database, now: () => 1000 });
   let tick = 0;
   const registry = createSessionRegistry({ database, now: () => (tick += 1) });

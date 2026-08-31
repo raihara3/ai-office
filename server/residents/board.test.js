@@ -9,8 +9,14 @@ import { openDatabase } from './database.js';
 import { createBoard } from './board.js';
 import { createResidentStore } from './resident-store.js';
 
+// Pinned so GC cannot finalize a fixture database's statements mid-test:
+// node:sqlite finalizes them once the DatabaseSync object is collected, and
+// tests destructuring only the store would otherwise drop the last reference.
+const openedDatabases = [];
+
 function boardWith(nowValue = 10_000_000) {
   const database = openDatabase({ location: ':memory:' });
+  openedDatabases.push(database);
   const residentStore = createResidentStore({ database, now: () => nowValue });
   for (const [index, name] of ['task-runner', 'issue-watcher', 'log-analyst'].entries()) {
     residentStore.save(name, {

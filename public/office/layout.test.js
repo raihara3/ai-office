@@ -121,8 +121,8 @@ test('computeLayout: a full band of rooms widens the world past MIN_WIDTH', () =
     { id: 'c', name: 'C', seatCount: 3 },
   ]);
   // Each 3-seat room shrinks to 2 columns (width 280); the third ends at
-  // 648 + 280, and the right margin clears the wall plants.
-  assert.equal(layout.width, 648 + 280 + 136);
+  // 648 + 280, and the right margin (one room gap) clears the wall.
+  assert.equal(layout.width, 648 + 280 + 40);
 });
 
 test('a room contains every desk row including the chairs', () => {

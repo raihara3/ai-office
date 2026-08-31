@@ -242,9 +242,6 @@ import { findPath } from './office/pathfinding.js';
     px(0, 96, width, 5, 'rgba(0, 0, 0, 0.10)');
     drawTeamRooms(time, layout);
     drawEntrance(layout);
-    // plants (the left edge holds the team rooms, so only the right stays)
-    drawPlant(width - 30, 180);
-    drawPlant(width - 30, height - 30);
 
     // wall clock (real time)
     ctx.save();
@@ -502,23 +499,6 @@ import { findPath } from './office/pathfinding.js';
     ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('ENTRANCE', OFFICE_DOOR_X + 64, top + 30);
-  }
-
-  function drawPlant(x, y) {
-    // terracotta pot with layered monstera-like foliage
-    px(x - 11, y - 16, 22, 16, '#c96f4a');
-    px(x - 11, y - 16, 22, 4, '#b35f3d');
-    ctx.fillStyle = '#3e8e52';
-    ctx.beginPath();
-    ctx.arc(x - 8, y - 22, 9, 0, Math.PI * 2);
-    ctx.arc(x + 8, y - 22, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#5cb86e';
-    ctx.beginPath();
-    ctx.arc(x, y - 30, 11, 0, Math.PI * 2);
-    ctx.arc(x - 10, y - 32, 6, 0, Math.PI * 2);
-    ctx.arc(x + 10, y - 32, 6, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   // --- avatar ----------------------------------------------------------

@@ -39,9 +39,9 @@ const DESK_COLUMN_PITCH = 124;
 // 3 × 124 + 2 × 16 = 404 = ROOM_WIDTH.
 const ROOM_SIDE_MARGIN = 16;
 const MIN_WIDTH = 960;
-// Clearance between the widest room band and the right wall, keeping room
-// for the wall-side plants.
-const RIGHT_MARGIN = 136;
+// Clearance between the widest room band and the right wall, one room gap
+// wide so the rightmost room never abuts the wall.
+const RIGHT_MARGIN = ROOM_GAP;
 // The entrance lobby band pinned to the bottom edge of the scene, walled off
 // from the work area by a partition; visitors arrive and leave through the
 // elevator on its left side.

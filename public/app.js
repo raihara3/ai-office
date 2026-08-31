@@ -164,11 +164,17 @@
   const drawerElement = document.getElementById('drawer');
   const drawerTitleElement = document.getElementById('drawer-title');
   const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form', 'team-form', 'settings-form'];
+  // Every opener (board card, canvas seat/desk/label, header add button) runs
+  // inside a click that then bubbles to the outside-click closer below. This
+  // flag lets that opening click through so it does not immediately re-close
+  // the drawer it just opened; the closer consumes it on the same event.
+  let drawerJustOpened = false;
 
   function openDrawer(sectionId, title) {
     for (const id of DRAWER_SECTION_IDS) field(id).hidden = id !== sectionId;
     drawerTitleElement.textContent = title;
     drawerElement.hidden = false;
+    drawerJustOpened = true;
   }
 
   function closeDrawer() {
@@ -180,6 +186,19 @@
   document.getElementById('drawer-close').addEventListener('click', closeDrawer);
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !drawerElement.hidden) closeDrawer();
+  });
+  // Clicking anywhere outside the open drawer closes it — every section (card
+  // detail, task filing, resident/team/office settings, activity) is dismissed
+  // this way, in any view. Clicks inside the drawer are ignored, and the click
+  // that opened it is let through once via drawerJustOpened.
+  document.addEventListener('click', (event) => {
+    if (drawerElement.hidden) return;
+    if (drawerJustOpened) {
+      drawerJustOpened = false;
+      return;
+    }
+    if (event.target.closest('#drawer')) return;
+    closeDrawer();
   });
 
   // --- view tabs: office canvas / full board ------------------------------
@@ -908,17 +927,6 @@
   // --- card detail (drawer) -----------------------------------------------
 
   const cardDetailElement = document.getElementById('card-detail');
-
-  // In the office tab, clicking outside the open task-detail drawer closes it.
-  // The board card that opens it is excluded so the opening click does not
-  // immediately dismiss the drawer; other drawer sections and views are left
-  // untouched (the strip-add and canvas openers swap the visible section first,
-  // so card-detail is already hidden by the time this listener runs).
-  document.addEventListener('click', (event) => {
-    if (cardDetailElement.hidden || officeWrapElement.hidden) return;
-    if (event.target.closest('#drawer, .board-card')) return;
-    closeDrawer();
-  });
 
   function openCardDetail(id) {
     const card = boardCards.find((c) => c.id === id);

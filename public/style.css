@@ -85,10 +85,6 @@
   background: #c02b47;
 }
 
-:root[data-theme="dark"] .status-pill.connected {
-  border-color: rgba(76, 195, 138, 0.4);
-}
-
 body {
   height: 100vh;
   overflow: hidden;
@@ -205,21 +201,6 @@ textarea:focus-visible {
   align-items: center;
   gap: 10px;
   margin-left: auto;
-}
-
-.status-pill {
-  padding: 3px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.status-pill.connected {
-  border-color: rgba(23, 153, 95, 0.35);
-  background: var(--success-soft);
-  color: var(--success);
 }
 
 #theme-toggle {

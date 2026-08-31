@@ -6,14 +6,11 @@
 (() => {
   function createOfficeClient() {
     return {
-      // Subscribe to state snapshots. onSnapshot(snapshot) fires per frame;
-      // onStatus('connected' | 'reconnecting') fires on connection changes.
+      // Subscribe to state snapshots. onSnapshot(snapshot) fires per frame.
       // Reconnection is automatic (native EventSource behaviour).
-      connect({ onSnapshot, onStatus }) {
+      connect({ onSnapshot }) {
         const source = new EventSource('/events');
-        source.onopen = () => onStatus?.('connected');
         source.onmessage = (event) => onSnapshot?.(JSON.parse(event.data));
-        source.onerror = () => onStatus?.('reconnecting');
         return source;
       },
 

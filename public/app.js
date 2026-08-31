@@ -2,7 +2,6 @@
 // drawer (card detail / task filing / resident settings / activity).
 
 (() => {
-  const connectionElement = document.getElementById('connection');
   const client = window.OFFICE_CLIENT.create();
 
   // Soft, low-volume chime for when the boss (@社長) is freshly mentioned.
@@ -1363,10 +1362,6 @@
       if (activityName !== null && !field('activity-wrap').hidden) renderActivity();
       maybeRefreshBoard(snapshot);
       maybeRefreshInbox(snapshot);
-    },
-    onStatus: (status) => {
-      connectionElement.textContent = status === 'connected' ? '接続中' : '再接続待ち…';
-      connectionElement.classList.toggle('connected', status === 'connected');
     },
   });
 })();

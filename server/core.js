@@ -102,6 +102,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     moveBoardCard: residents.moveBoardCard,
     markBoardCardDone: residents.markBoardCardDone,
     archiveBoardCard: residents.archiveBoardCard,
+    updateBoardCard: residents.updateBoardCard,
     appendBoardNote: residents.appendBoardNote,
     getOfficeName: residents.getOfficeName,
     saveOfficeName: residents.saveOfficeName,

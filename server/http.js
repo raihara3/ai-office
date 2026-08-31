@@ -300,7 +300,7 @@ export function createHttpServer(core, { publicDirectory }) {
       sendJson(response, 200, { cards: core.listBoard() });
       return;
     }
-    const boardAction = urlPath.match(/^\/api\/board\/(create|move|done|archive|note)$/)?.[1];
+    const boardAction = urlPath.match(/^\/api\/board\/(create|move|done|archive|edit|note)$/)?.[1];
     if (boardAction) {
       if (request.method !== 'POST') {
         response.writeHead(405).end();
@@ -348,6 +348,17 @@ export function createHttpServer(core, { publicDirectory }) {
             sendJson(response, 200, { ok: core.markBoardCardDone(parsed.id) });
           } else if (boardAction === 'archive') {
             sendJson(response, 200, { ok: core.archiveBoardCard(parsed.id) });
+          } else if (boardAction === 'edit') {
+            if (typeof parsed.title !== 'string' || parsed.title.trim() === '') {
+              sendJson(response, 400, { error: 'title is required' });
+              return;
+            }
+            sendJson(response, 200, {
+              ok: core.updateBoardCard(parsed.id, {
+                title: parsed.title,
+                body: typeof parsed.body === 'string' ? parsed.body : '',
+              }),
+            });
           } else {
             if (typeof parsed.text !== 'string' || parsed.text.trim() === '') {
               sendJson(response, 400, { error: 'text is required' });

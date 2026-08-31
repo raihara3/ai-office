@@ -500,6 +500,16 @@ export function createResidents({
     return changed;
   }
 
+  // Rewriting a card's title/body is a human edit, allowed only while no run
+  // holds the card — mirroring the move/done/archive guards so an edit never
+  // races the finishing handler that reworks the same card.
+  function updateBoardCard(id, { title, body }) {
+    if (isWorkingCard(id)) return false;
+    const changed = board.updateCard(id, { title, body });
+    if (changed) state.refresh();
+    return changed;
+  }
+
   function appendBoardNote(id, text) {
     const changed = board.appendNote(id, text);
     if (changed) state.refresh();
@@ -535,6 +545,7 @@ export function createResidents({
     moveBoardCard,
     markBoardCardDone,
     archiveBoardCard,
+    updateBoardCard,
     appendBoardNote,
     boardCounts: board.counts,
     getOfficeName: settingsStore.getOfficeName,

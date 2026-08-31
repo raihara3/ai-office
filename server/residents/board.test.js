@@ -190,6 +190,25 @@ test('board: appendNote accumulates 追記 sections in the body', () => {
   assert.equal(board.appendNote('no-such-card', 'x'), false);
 });
 
+test('board: updateCard rewrites the title and body, collapsing title newlines', () => {
+  const { board } = boardWith();
+  const id = board.createCard({
+    title: 'もとの件名',
+    body: 'もとの本文',
+    assignee: 'task-runner',
+    origin: 'user',
+    createdAt: 1_000_000,
+  });
+
+  assert.equal(board.updateCard(id, { title: '新しい\n件名', body: '新しい本文' }), true);
+  const card = board.listCards().find((c) => c.id === id);
+  assert.equal(card.title, '新しい 件名');
+  assert.equal(card.body, '新しい本文');
+
+  assert.equal(board.updateCard(id, { title: '   ' }), false);
+  assert.equal(board.updateCard('no-such-card', { title: 'x' }), false);
+});
+
 test('board: an archived resident keeps naming its leftover cards but never works them', () => {
   const { board, residentStore } = boardWith();
   const id = board.createCard({

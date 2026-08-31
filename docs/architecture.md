@@ -66,7 +66,7 @@ server/                バックエンド(npm 依存なし。永続化は node:s
     whiteboard.js      ホワイトボード(reports テーブルの報告 + 既読・ピン管理)
     whiteboard.test.js 報告の掲示・既読・アーカイブ・ピンのテスト
     board.js           カンバンボード(cards テーブルのカードストア + 並び順)
-    board.test.js      カードの起票・並び替え・アーカイブ・追記のテスト
+    board.test.js      カードの起票・並び替え・アーカイブ・編集・追記のテスト
     legacy-import.js   旧 Markdown ストアからの一回限りのインポート
     legacy-import.test.js インポートとクリーンアップのテスト
   watchers/
@@ -127,7 +127,7 @@ Server-Sent Events(`/events`)でストリームし、常駐チーム管理
 `POST /api/residents/:name/run`)、チーム管理(`GET`/`POST /api/teams`、
 `PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
 `POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)、カンバンボード
-(`GET /api/board`、`POST /api/board/create`/`move`/`archive`/`note`)を公開します。状態を変更するリクエストには
+(`GET /api/board`、`POST /api/board/create`/`move`/`done`/`archive`/`edit`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 すべて core にあり、本ファイルは配管(plumbing)に徹します。
 

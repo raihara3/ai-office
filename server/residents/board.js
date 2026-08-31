@@ -53,6 +53,9 @@ export function createBoard({ database, now = () => Date.now() }) {
     setAssignee: database.prepare('UPDATE cards SET assignee_id = ?, updated_at = ? WHERE id = ?'),
     setPosition: database.prepare('UPDATE cards SET position = ? WHERE id = ?'),
     setBody: database.prepare('UPDATE cards SET body = ?, updated_at = ? WHERE id = ?'),
+    setTitleBody: database.prepare(
+      'UPDATE cards SET title = ?, body = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL'
+    ),
     // Moving a card back onto an active column clears any done state; marking
     // done sets it. Both leave assignee/position alone.
     clearDone: database.prepare('UPDATE cards SET done_at = NULL WHERE id = ?'),
@@ -192,6 +195,18 @@ export function createBoard({ database, now = () => Date.now() }) {
     return statements.archive.run(now(), id).changes > 0;
   }
 
+  // Replace an active card's title and body — a human edit of a task that has
+  // not been touched by a run yet. Refused upstream (residents.js) while the
+  // card's run is in flight. An empty title is rejected, mirroring createCard.
+  function updateCard(id, { title, body }) {
+    const row = statements.getActive.get(id);
+    if (row === undefined) return false;
+    const cleanTitle = String(title).replace(/\s+/g, ' ').trim();
+    if (cleanTitle === '') return false;
+    statements.setTitleBody.run(cleanTitle, String(body ?? '').trim(), now(), id);
+    return true;
+  }
+
   // A follow-up note from the human, appended to the card body so the next
   // run sees the full history in its prompt.
   function appendNote(id, note) {
@@ -221,5 +236,5 @@ export function createBoard({ database, now = () => Date.now() }) {
     return { total: row.total, user: row.user };
   }
 
-  return { createCard, listCards, moveCard, markCardDone, archiveCard, appendNote, topCardFor, counts };
+  return { createCard, listCards, moveCard, markCardDone, archiveCard, updateCard, appendNote, topCardFor, counts };
 }

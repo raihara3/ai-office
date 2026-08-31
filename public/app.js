@@ -858,9 +858,14 @@
     const action = card.done
       ? `<button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>アーカイブ(ボードから削除)</button>`
       : `<button type="button" id="card-detail-done"${card.working ? ' disabled' : ''}>完了にする</button>`;
+    // Editing a card's title/body is a human-only action, refused while a run
+    // holds the card — the server enforces this too (updateBoardCard).
+    const editButton = card.working
+      ? ''
+      : '<button type="button" id="card-detail-edit" class="card-detail-edit">編集</button>';
     cardDetailElement.innerHTML = `
       <div class="card-detail-head">
-        <span class="card-detail-title">${escapeHtml(card.title)}</span>
+        <span class="card-detail-title">${escapeHtml(card.title)}${editButton}</span>
         <span class="card-detail-assignee">${chip} ${escapeHtml(meta.label)}${card.working ? ' <span class="card-badge working">作業中</span>' : ''}${card.done ? ' <span class="card-badge done">完了</span>' : ''}</span>
       </div>
       <div class="card-detail-body">${linkify(escapeHtml(card.body || '(本文なし)'))}</div>
@@ -909,7 +914,48 @@
         refreshBoard();
       });
     }
+    const edit = field('card-detail-edit');
+    if (edit !== null) edit.addEventListener('click', () => openCardEdit(id));
     renderCardReports(id);
+  }
+
+  // Swap the detail drawer into an edit form for the card's title and body.
+  // Saving rewrites the card and returns to the detail view; the server
+  // refuses the write if a run has meanwhile taken the card.
+  function openCardEdit(id) {
+    const card = boardCards.find((c) => c.id === id);
+    if (!card) return;
+    cardDetailElement.innerHTML = `
+      <form id="card-edit-form">
+        <label>件名
+          <input id="card-edit-title" placeholder="タスクの件名" required>
+        </label>
+        <label>内容・手順(担当のプロンプトにそのまま入ります)
+          <textarea id="card-edit-body" rows="8"></textarea>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary-button">保存する</button>
+          <button type="button" id="card-edit-cancel">キャンセル</button>
+        </div>
+      </form>`;
+    openDrawer('card-detail', 'タスクを編集');
+    // Set values via the DOM so titles/bodies with markup need no escaping.
+    field('card-edit-title').value = card.title;
+    field('card-edit-body').value = card.body || '';
+    field('card-edit-title').focus();
+    field('card-edit-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const title = field('card-edit-title').value.trim();
+      if (title === '') return;
+      try {
+        await client.updateCard(id, { title, body: field('card-edit-body').value });
+        await refreshBoard();
+      } catch {
+        // Fall through: reopening shows the card as it really is.
+      }
+      openCardDetail(id);
+    });
+    field('card-edit-cancel').addEventListener('click', () => openCardDetail(id));
   }
 
   // Reports whose frontmatter carries this card's id, newest first. Viewing

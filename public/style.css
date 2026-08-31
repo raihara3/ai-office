@@ -973,6 +973,23 @@ textarea:focus-visible {
   word-break: break-word;
 }
 
+.card-detail-edit {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.card-detail-edit:hover {
+  color: var(--text);
+}
+
 .card-detail-assignee {
   display: flex;
   align-items: center;

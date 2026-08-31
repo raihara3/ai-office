@@ -111,6 +111,10 @@
       async archiveCard(id) {
         return postBoardAction('archive', { id });
       },
+      // Rewrites a card's title/body; refused server-side while a run holds it.
+      async updateCard(id, { title, body }) {
+        return postBoardAction('edit', { id, title, body });
+      },
       async appendCardNote(id, text) {
         return postBoardAction('note', { id, text });
       },

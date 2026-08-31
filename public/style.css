@@ -504,7 +504,14 @@ textarea:focus-visible {
   flex: 1;
   min-width: 0;
   padding: 16px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+#board-view::-webkit-scrollbar,
+#board-view .board-cards::-webkit-scrollbar {
+  display: none;
 }
 
 #board-view[hidden] {
@@ -513,15 +520,16 @@ textarea:focus-visible {
 
 #board-columns {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 12px;
-  min-height: 100%;
+  height: 100%;
 }
 
 .board-column {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  min-height: 0;
   width: 248px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -565,6 +573,15 @@ textarea:focus-visible {
   padding: 10px;
   background: var(--surface-muted);
   border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* The full board's card area fills the fixed-height column and scrolls on its
+   own, so vertical overflow stays per-column instead of scrolling the view. */
+#board-view .board-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .board-card {

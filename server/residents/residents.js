@@ -157,12 +157,6 @@ export function createResidents({
   // precheck from letting the same tick pick up a board card concurrently.
   const launching = new Set();
 
-  function formatRunDate(at) {
-    const date = new Date(at);
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
   function handleFinished(entry, { outcome, resultText }, task = null) {
     const { configuration } = entry;
     activeCards.delete(entry.name);
@@ -175,11 +169,11 @@ export function createResidents({
         : outcome === "stopped"
           ? `緊急停止されました。\n\n${body}`.trim()
           : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
-    // Reports are titled by author and time; a card-driven run leads with the
-    // task title so the inbox says which task the report is about at a glance.
-    const runLabel = `${configuration.displayName} ${formatRunDate(finishedAt)}`;
-    const title =
-      task !== null ? `${task.title} — ${runLabel}` : runLabel;
+    // Keep the task, team and avatar visible at a glance in every inbox title.
+    const teamName =
+      residentStore.listTeams().find((team) => team.id === entry.teamId)?.name ??
+      entry.teamId;
+    const title = `${task?.title ?? "定期実行"}@${teamName}/${configuration.displayName}`;
     // A trigger-driven run that needs a human joins the board as a card in
     // the user column, so follow-up is tracked like any other task. Filed
     // before the report so the report can carry the card id.

@@ -66,8 +66,34 @@ test('roomDeskPosition: three upright columns over spaced rows', () => {
   assert.deepEqual(roomDeskPosition(room, 3), { x: 86, y: 412 });
   assert.deepEqual(roomDeskPosition(room, 5), { x: 334, y: 412 });
   // A second room's desks shift with the room.
-  const second = teamRooms([...DEFAULT_TEAMS, { id: 'b', name: 'B', seatCount: 3 }])[1];
+  const second = teamRooms([...DEFAULT_TEAMS, { id: 'b', name: 'B', seatCount: 6 }])[1];
   assert.deepEqual(roomDeskPosition(second, 0), { x: 530, y: 240 });
+});
+
+test('roomDeskPosition: desks pack into a near-square grid by seat count', () => {
+  // 4 seats → a 2×2 grid centered on the room midline (x 148 / 272).
+  const [four] = teamRooms([{ id: 'a', name: 'A', seatCount: 4 }]);
+  assert.deepEqual(roomDeskPosition(four, 0), { x: 148, y: 240 });
+  assert.deepEqual(roomDeskPosition(four, 1), { x: 272, y: 240 });
+  assert.deepEqual(roomDeskPosition(four, 2), { x: 148, y: 412 });
+  assert.deepEqual(roomDeskPosition(four, 3), { x: 272, y: 412 });
+  // 3 seats share the 4-seat layout: two columns, second row half full.
+  const [three] = teamRooms([{ id: 'b', name: 'B', seatCount: 3 }]);
+  assert.deepEqual(roomDeskPosition(three, 2), { x: 148, y: 412 });
+  // 2 seats → a single centered column, one desk per row (1×2).
+  const [two] = teamRooms([{ id: 'c', name: 'C', seatCount: 2 }]);
+  assert.deepEqual(roomDeskPosition(two, 0), { x: 210, y: 240 });
+  assert.deepEqual(roomDeskPosition(two, 1), { x: 210, y: 412 });
+});
+
+test('teamRooms: small teams grow taller as desks stack into rows', () => {
+  const rooms = teamRooms([
+    { id: 'a', name: 'A', seatCount: 2 }, // 1 column → 2 rows
+    { id: 'b', name: 'B', seatCount: 4 }, // 2 columns → 2 rows
+    { id: 'c', name: 'C', seatCount: 5 }, // 3 columns → 2 rows
+  ]);
+  assert.deepEqual([rooms[0].rows, rooms[1].rows, rooms[2].rows], [2, 2, 2]);
+  assert.equal(rooms[0].height, 344);
 });
 
 test('computeLayout: one 6-seat team reproduces the classic scene heights', () => {

@@ -194,6 +194,7 @@ import { findPath } from './office/pathfinding.js';
   // rendered once into an offscreen sprite and stamped each frame. The sprite
   // is rebuilt only when the name changes.
   const DEFAULT_OFFICE_NAME = 'AI OFFICE';
+  const OFFICE_SIGN_WIDTH = 122;
   let officeSignSprite = null;
   let officeSignName = null;
   function drawOfficeSign(x, y) {
@@ -201,11 +202,11 @@ import { findPath } from './office/pathfinding.js';
     if (officeSignSprite === null || officeSignName !== name) {
       officeSignName = name;
       officeSignSprite = document.createElement('canvas');
-      officeSignSprite.width = 122;
+      officeSignSprite.width = OFFICE_SIGN_WIDTH;
       officeSignSprite.height = 34;
       const sign = officeSignSprite.getContext('2d');
       sign.beginPath();
-      sign.roundRect(0, 0, 122, 34, 6);
+      sign.roundRect(0, 0, OFFICE_SIGN_WIDTH, 34, 6);
       sign.fillStyle = '#000000';
       sign.fill();
       // The name is capped at 10 characters; shrink the font until even a
@@ -217,7 +218,7 @@ import { findPath } from './office/pathfinding.js';
         sign.font = `bold ${fontSize}px "Hiragino Sans", sans-serif`;
       } while (fontSize > 8 && sign.measureText(name).width > 108);
       sign.fillStyle = '#ffffff';
-      sign.fillText(name, 61, 23);
+      sign.fillText(name, OFFICE_SIGN_WIDTH / 2, 23);
     }
     ctx.drawImage(officeSignSprite, x, y);
   }
@@ -535,8 +536,9 @@ import { findPath } from './office/pathfinding.js';
     px(OFFICE_DOOR_X + 4, top + 12, 36, 14, '#8d6e63');
     px(OFFICE_DOOR_X + 4, top + 30, 36, 12, '#8d6e63');
     px(OFFICE_DOOR_X + 36, top + 26, 4, 4, '#d9a441');
-    // the office sign, moved down from the top wall to greet visitors
-    drawOfficeSign(150, top + 6);
+    // the office sign, moved down from the top wall to greet visitors and
+    // centered horizontally over the reception counter
+    drawOfficeSign(RECEPTION.x + (RECEPTION.width - OFFICE_SIGN_WIDTH) / 2, top + 6);
     drawElevator(top);
     // reception counter, with a call bell and a small potted plant
     px(RECEPTION.x, top + RECEPTION.y, RECEPTION.width, RECEPTION.height, '#4e342e');

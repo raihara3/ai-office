@@ -170,6 +170,15 @@ export const MIGRATIONS = [
   `
   ALTER TABLE residents ADD COLUMN model TEXT;
   `,
+  // Version 7: each resident has an explicit role deciding where its work
+  // comes from. 'board' residents work assigned kanban cards whenever idle
+  // (the trigger is ignored); 'scheduled' residents run their own role
+  // instructions on the trigger, ignoring the board. Existing residents keep
+  // the board-working behaviour they already had.
+  `
+  ALTER TABLE residents ADD COLUMN role TEXT NOT NULL DEFAULT 'board'
+    CHECK (role IN ('board', 'scheduled'));
+  `,
 ];
 
 export function openDatabase({ location }) {

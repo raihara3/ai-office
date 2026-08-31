@@ -132,35 +132,43 @@
         <label>作業ディレクトリ
           <input id="resident-working-directory" placeholder="~/dev/repo" required>
         </label>
-        <label>トリガー
-          <select id="resident-trigger-type">
-            <option value="schedule">曜日と時刻を指定</option>
-            <option value="interval">一定間隔</option>
+        <label>役割
+          <select id="resident-role">
+            <option value="board">カンバン(担当カードを実行)</option>
+            <option value="scheduled">定期実行(指示書を実行)</option>
           </select>
         </label>
-        <div id="trigger-schedule">
-          <div class="weekday-row" id="schedule-days"></div>
-          <label>時刻(カンマ区切り)
-            <input id="schedule-times" placeholder="09:00">
+        <div id="role-scheduled-fields" hidden>
+          <label>トリガー
+            <select id="resident-trigger-type">
+              <option value="schedule">曜日と時刻を指定</option>
+              <option value="interval">一定間隔</option>
+            </select>
           </label>
-        </div>
-        <div id="trigger-interval" hidden>
-          <label>間隔(分)
-            <input id="interval-minutes" type="number" min="1" value="30">
-          </label>
-          <div class="weekday-row" id="interval-days"></div>
-          <div class="form-row">
-            <label>稼働開始
-              <input id="interval-start" type="time">
-            </label>
-            <label>稼働終了
-              <input id="interval-end" type="time">
+          <div id="trigger-schedule">
+            <div class="weekday-row" id="schedule-days"></div>
+            <label>時刻(カンマ区切り)
+              <input id="schedule-times" placeholder="09:00">
             </label>
           </div>
+          <div id="trigger-interval" hidden>
+            <label>間隔(分)
+              <input id="interval-minutes" type="number" min="1" value="30">
+            </label>
+            <div class="weekday-row" id="interval-days"></div>
+            <div class="form-row">
+              <label>稼働開始
+                <input id="interval-start" type="time">
+              </label>
+              <label>稼働終了
+                <input id="interval-end" type="time">
+              </label>
+            </div>
+          </div>
+          <label>事前チェックコマンド(出力が空なら実行をスキップ。空欄なら毎回実行)
+            <input id="resident-precheck" placeholder="gh issue list --label needs-ai">
+          </label>
         </div>
-        <label>事前チェックコマンド(出力が空なら実行をスキップ。空欄なら毎回実行)
-          <input id="resident-precheck" placeholder="gh issue list --label needs-ai">
-        </label>
         <label>指示書(INSTRUCTIONS.md)
           <textarea id="resident-instructions" rows="8" placeholder="この常駐員の役割・手順を書いてください"></textarea>
         </label>

@@ -12,6 +12,11 @@ import { WEEKDAY_KEYS, parseTimeOfDay } from './scheduler.js';
 export const RESIDENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const RESIDENT_CLIS = ['claude', 'codex', 'gemini'];
 export const RESIDENT_MODES = ['read-only', 'edit'];
+// Where a resident's work comes from. 'board' residents work assigned kanban
+// cards whenever idle (their trigger is ignored); 'scheduled' residents run
+// their own role instructions on the trigger, ignoring the board.
+export const RESIDENT_ROLES = ['board', 'scheduled'];
+export const DEFAULT_RESIDENT_ROLE = 'board';
 // Mirrors MAX_TEAM_SEATS in public/office/layout.js (3 columns × 4 rows);
 // the effective per-team bound is the team's seat_count.
 export const MIN_TEAM_SEATS = 1;
@@ -84,6 +89,14 @@ export function validateResident(configuration) {
   if (!RESIDENT_MODES.includes(configuration?.mode)) {
     errors.push(`mode must be one of ${RESIDENT_MODES.join(', ')}`);
   }
+  // Optional for backward compatibility: an absent role defaults to 'board'
+  // on save, matching the residents.role column default.
+  if (
+    configuration?.role !== undefined &&
+    !RESIDENT_ROLES.includes(configuration.role)
+  ) {
+    errors.push(`role must be one of ${RESIDENT_ROLES.join(', ')}`);
+  }
   if (typeof configuration?.workingDirectory !== 'string' || configuration.workingDirectory.trim() === '') {
     errors.push('workingDirectory is required');
   }
@@ -103,7 +116,7 @@ export function validateResident(configuration) {
 
 export function createResidentStore({ database, now = () => Date.now() }) {
   const COLUMNS =
-    'id, team_id, name, display_name, cli, model, mode, seat, working_directory, "trigger", precheck, enabled, last_run_at, last_outcome, last_finished_at';
+    'id, team_id, name, display_name, cli, model, mode, role, seat, working_directory, "trigger", precheck, enabled, last_run_at, last_outcome, last_finished_at';
   const statements = {
     read: database.prepare(
       `SELECT ${COLUMNS} FROM residents WHERE name = ? AND archived_at IS NULL`
@@ -152,13 +165,13 @@ export function createResidentStore({ database, now = () => Date.now() }) {
       'SELECT COUNT(*) AS n FROM teams WHERE archived_at IS NULL'
     ),
     insert: database.prepare(
-      `INSERT INTO residents (id, team_id, name, display_name, cli, model, mode, seat, working_directory, "trigger", precheck, enabled, instructions, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO residents (id, team_id, name, display_name, cli, model, mode, role, seat, working_directory, "trigger", precheck, enabled, instructions, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ),
     // Editing preserves id, created_at and the run-state columns; the team
     // follows the desk the drawer was opened from.
     update: database.prepare(
-      `UPDATE residents SET team_id = ?, display_name = ?, cli = ?, model = ?, mode = ?, seat = ?, working_directory = ?,
+      `UPDATE residents SET team_id = ?, display_name = ?, cli = ?, model = ?, mode = ?, role = ?, seat = ?, working_directory = ?,
         "trigger" = ?, precheck = ?, enabled = ?, instructions = ?, updated_at = ?
        WHERE name = ? AND archived_at IS NULL`
     ),
@@ -192,6 +205,7 @@ export function createResidentStore({ database, now = () => Date.now() }) {
         cli: row.cli,
         model: row.model,
         mode: row.mode,
+        role: row.role,
         workingDirectory: row.working_directory,
         trigger: JSON.parse(row.trigger),
         precheck: row.precheck,
@@ -244,6 +258,7 @@ export function createResidentStore({ database, now = () => Date.now() }) {
       configuration.cli,
       configuration.model?.trim() || null,
       configuration.mode,
+      configuration.role ?? DEFAULT_RESIDENT_ROLE,
       configuration.seat,
       configuration.workingDirectory,
       JSON.stringify(configuration.trigger),

@@ -232,12 +232,11 @@ export function createResidents({
       .sort((first, second) => first.createdAt - second.createdAt);
   }
 
-  // Start one run. `gateOnPrecheck` is true for scheduled ticks and false for
-  // the panel's 今すぐ実行 button. A gated trigger run only starts when there is
-  // actually work to do: a card must be assigned to this resident on the board
-  // AND, if a precheck command is set, its output must be non-empty. Either
-  // gate empty means "nothing to do" and the agent is skipped entirely. A board
-  // card passed as `task` bypasses both gates — the card's existence is the
+  // Start one run. `gateOnPrecheck` is true for a scheduled resident's trigger
+  // tick and false for the panel's 今すぐ実行 button. A gated trigger run only
+  // starts when there is actually work to do: if a precheck command is set, its
+  // output must be non-empty, else the run is skipped as "nothing to do". A
+  // board card passed as `task` bypasses the gate — the card's existence is the
   // trigger.
   async function launch(entry, { gateOnPrecheck, task = null }) {
     const { configuration } = entry;
@@ -248,20 +247,6 @@ export function createResidents({
       // trigger on the next tick.
       entry.state = { ...entry.state, lastRunAt: startedAt };
       residentStore.saveState(entry.name, entry.state);
-
-      // A firing trigger is not enough on its own: with no assigned card the
-      // team stays quiet instead of filing a meaningless report every interval.
-      if (
-        gateOnPrecheck &&
-        task === null &&
-        board.topCardFor(entry.name) === null
-      ) {
-        residentStore.saveState(entry.name, {
-          ...entry.state,
-          lastOutcome: "skipped",
-        });
-        return false;
-      }
 
       let precheckOutput = null;
       if (configuration.precheck && task === null) {
@@ -348,14 +333,25 @@ export function createResidents({
     for (const entry of residentStore.list()) {
       if (!entry.configuration.enabled) continue;
       if (runner.isRunning(entry.name) || launching.has(entry.name)) continue;
-      if (
-        isDue(entry.configuration.trigger, entry.state.lastRunAt ?? null, now())
-      ) {
-        launch(entry, { gateOnPrecheck: true });
+      // A scheduled resident runs its own role instructions when its trigger is
+      // due and never touches the board; a board resident works its assigned
+      // cards whenever idle and ignores its trigger. This split is the resident's
+      // role — a scheduled slot fires even with an empty board (that was the bug:
+      // a weekly instruction never ran because no card was assigned).
+      if (entry.configuration.role === "scheduled") {
+        if (
+          isDue(
+            entry.configuration.trigger,
+            entry.state.lastRunAt ?? null,
+            now(),
+          )
+        ) {
+          launch(entry, { gateOnPrecheck: true });
+        }
         continue;
       }
-      // Idle with no trigger due: work the board. The top card of this
-      // resident's column is the next task — column order is priority.
+      // Board resident: work the board. The top card of this resident's column
+      // is the next task — column order is priority.
       const card = board.topCardFor(entry.name);
       if (card !== null) launch(entry, { gateOnPrecheck: false, task: card });
     }
@@ -408,6 +404,7 @@ export function createResidents({
       seat: entry.configuration.seat,
       cli: entry.configuration.cli,
       mode: entry.configuration.mode,
+      role: entry.configuration.role,
       enabled: entry.configuration.enabled,
       busy: runner.isRunning(entry.name),
       // The title of the board card the resident is working, so the activity
@@ -415,13 +412,17 @@ export function createResidents({
       activeTask: activeCards.get(entry.name)?.title ?? null,
       lastRunAt: entry.state.lastRunAt ?? null,
       lastOutcome: entry.state.lastOutcome ?? null,
-      nextRunAt: entry.configuration.enabled
-        ? nextRunAt(
-            entry.configuration.trigger,
-            entry.state.lastRunAt ?? null,
-            currentTime,
-          )
-        : null,
+      // Only a scheduled resident's run is trigger-timed; a board resident runs
+      // whenever a card waits, so there is no fixed next-run moment to show.
+      nextRunAt:
+        entry.configuration.enabled &&
+        entry.configuration.role === "scheduled"
+          ? nextRunAt(
+              entry.configuration.trigger,
+              entry.state.lastRunAt ?? null,
+              currentTime,
+            )
+          : null,
     }));
   }
 

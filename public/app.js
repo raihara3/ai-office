@@ -1134,6 +1134,16 @@
     showTriggerSection(event.target.value)
   );
 
+  // A board resident works assigned kanban cards; only a scheduled resident
+  // runs its instructions on a trigger, so the trigger/precheck fields show
+  // only for that role.
+  function showRoleSection(role) {
+    document.getElementById('role-scheduled-fields').hidden = role !== 'scheduled';
+  }
+  field('resident-role').addEventListener('change', (event) =>
+    showRoleSection(event.target.value)
+  );
+
   function updateResidentModelOptions(cli) {
     field('resident-model-options').innerHTML = RESIDENT_MODELS[cli]
       .map((model) => `<option value="${model}"></option>`)
@@ -1153,6 +1163,8 @@
     field('resident-model').value = configuration?.model ?? '';
     updateResidentModelOptions(field('resident-cli').value);
     field('resident-mode').value = configuration?.mode ?? 'read-only';
+    field('resident-role').value = configuration?.role ?? 'board';
+    showRoleSection(field('resident-role').value);
     field('resident-working-directory').value = configuration?.workingDirectory ?? '';
     field('resident-precheck').value = configuration?.precheck ?? '';
     field('resident-instructions').value = entry?.instructions ?? '';
@@ -1237,6 +1249,7 @@
           cli: field('resident-cli').value,
           model: field('resident-model').value.trim() || null,
           mode: field('resident-mode').value,
+          role: field('resident-role').value,
           workingDirectory: field('resident-working-directory').value.trim(),
           trigger: collectTrigger(),
           precheck: field('resident-precheck').value.trim() || null,

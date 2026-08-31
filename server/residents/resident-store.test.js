@@ -31,6 +31,10 @@ test('validateResident rejects bad seat, cli, mode and trigger', () => {
   assert.ok(validateResident(validConfiguration({ seat: 12 })).length > 0);
   assert.ok(validateResident(validConfiguration({ cli: 'gpt' })).length > 0);
   assert.ok(validateResident(validConfiguration({ mode: 'yolo' })).length > 0);
+  assert.ok(validateResident(validConfiguration({ role: 'whatever' })).length > 0);
+  // role is optional: an absent one defaults to 'board' on save.
+  assert.deepEqual(validateResident(validConfiguration({ role: undefined })), []);
+  assert.deepEqual(validateResident(validConfiguration({ role: 'scheduled' })), []);
   assert.ok(validateResident(validConfiguration({ model: '--help' })).length > 0);
   assert.ok(validateResident(validConfiguration({ model: 'model with spaces' })).length > 0);
   assert.ok(validateResident(validConfiguration({ model: 'm'.repeat(201) })).length > 0);
@@ -77,6 +81,13 @@ test('resident store round-trips save/read/list and validates on save', () => {
   const entry = store.read('log-analyst');
   assert.equal(entry.configuration.displayName, 'アナリスト');
   assert.equal(entry.configuration.model, null);
+  // An absent role defaults to 'board'; an explicit one round-trips.
+  assert.equal(entry.configuration.role, 'board');
+  store.save('log-analyst', {
+    configuration: validConfiguration({ role: 'scheduled' }),
+    instructions: '',
+  });
+  assert.equal(store.read('log-analyst').configuration.role, 'scheduled');
   assert.deepEqual(entry.configuration.trigger, { type: 'schedule', days: ['mon'], times: ['09:00'] });
   assert.equal(entry.instructions, '# 役割\n週次レポートを書く');
   assert.equal(entry.teamId, 'default');

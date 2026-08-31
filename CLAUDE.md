@@ -40,16 +40,22 @@ Electron's Node 24 needs no flag).
   each tick confirms ownership via the `resident_loop_owner` meta row
   (`loop-ownership.js`), and a surviving instance takes over within one tick
   (30 s) after the owner exits. This is what prevents double-run board cards.
+- Each resident has a **`role`** (`board` / `scheduled`, default `board`) that
+  decides where its work comes from. A **`board`** resident works the kanban
+  board: whenever idle it runs the top card of its column and ignores its
+  trigger. A **`scheduled`** resident ignores the board: when its trigger is
+  due it runs its own role instructions directly — no assigned card needed.
+  This split is the fix for a weekly instruction never running because no card
+  happened to be assigned.
 - `schedule` triggers fire at fixed weekday/time slots; a slot missed while
   the machine was asleep still fires up to **1 hour late**
   (`MISSED_RUN_GRACE_MS`); older slots are skipped, never caught up.
   `interval` triggers fire when the last run started ≥ N minutes ago, inside
   the optional active window. After the PC wakes from sleep, execution
-  resumes automatically on the next tick — no manual restart needed.
-  A trigger firing only starts a run when there is actually work to do: a
-  card must be assigned to the resident on the board **and**, if a precheck
-  command is set, its output must be non-empty. With no assigned card the
-  team stays quiet instead of filing a meaningless report every interval.
+  resumes automatically on the next tick — no manual restart needed. Triggers
+  drive `scheduled` residents only. When a `scheduled` trigger fires, a
+  `precheck` command (if set) still gates the run: its output must be
+  non-empty, else the run is skipped as "nothing to do".
 - Claude residents in `edit` mode run with `--permission-mode
   bypassPermissions` because headless runs cannot answer approval prompts;
   `read-only` mode is restricted to an inspection-tool allowlist. Gemini
@@ -85,13 +91,13 @@ Electron's Node 24 needs no flag).
 - Task queue: the kanban board (`board.js`; rows in the `cards` table, each
   card assigned to one resident or the user). The UI groups columns by team —
   user first, one per team (each card tagged with its assignee's avatar), then
-  a 完了 column of done cards. An idle resident whose trigger is not due works
-  the **top card** of its column (precheck is skipped — the card is the
-  trigger). An ok run marks the card done (it moves to 完了 and stays there
-  until the human archives it explicitly — completion never deletes); a
-  review-needed or failed run moves it to the user column. A trigger-driven
-  run ending review-needed auto-files a card in the user column (a run ended
-  by the activity view's emergency stop does not).
+  a 完了 column of done cards. An idle `board`-role resident works the **top
+  card** of its column (precheck is skipped — the card is the trigger). An ok
+  run marks the card done (it moves to 完了 and stays there until the human
+  archives it explicitly — completion never deletes); a review-needed or
+  failed run moves it to the user column. A `scheduled` run ending
+  review-needed auto-files a card in the user column (a run ended by the
+  activity view's emergency stop does not).
 
 ## Git / GitHub
 

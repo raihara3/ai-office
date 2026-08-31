@@ -72,7 +72,6 @@ function createSession(key, cli, filePath, eventAt) {
     pendingTool: false,
     isSubagent: false,
     clientKind: null,
-    reactionPendingMessageId: null,
   };
 }
 
@@ -158,19 +157,6 @@ function applyMcpCall(session, observation, eventAt) {
   if (session.mcpCalls.length > 10) session.mcpCalls.shift();
 }
 
-// Whether an observation is the agent visibly acting on the current task, used
-// to drop the 🫡 "picked it up" reaction. Tool activity, thinking, or even a
-// plain text answer count (Codex and Gemini often reply without any tool).
-function isTaskPickup(observation) {
-  return Boolean(
-    observation.activity ||
-      observation.activityKind ||
-      observation.turnComplete ||
-      observation.mcpCall ||
-      observation.subagentStarted
-  );
-}
-
 // `isResidentFile` marks session logs spawned by the resident team: their
 // runs are scheduled, not requested by the boss, so the #general request/
 // reply exchange is suppressed (the residents module posts its own report
@@ -243,19 +229,11 @@ export function createState({
   function postMessage({ authorKind, authorName, cli = null, text, at }) {
     const id = nextMessageId;
     nextMessageId += 1;
-    messages.push({ id, authorKind, authorName, cli, text, at, reactions: [] });
+    messages.push({ id, authorKind, authorName, cli, text, at });
     messages.sort((a, b) => a.at - b.at || a.id - b.id);
     if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
     scheduleBroadcast();
     return id;
-  }
-
-  function addReaction(messageId, emoji) {
-    const message = messages.find((m) => m.id === messageId);
-    if (message && !message.reactions.includes(emoji)) {
-      message.reactions.push(emoji);
-      scheduleBroadcast();
-    }
   }
 
   // A session dismissed by HR leaves a tombstone holding the clock-out cutoff:
@@ -274,39 +252,18 @@ export function createState({
     return false;
   }
 
-  // #general channel: user requests, 🫡 on pickup, agent replies. Subagent
-  // sessions stay silent — their requests are internal. `before` holds the
-  // task/turn/waiting flags captured before the observation was applied, so we
-  // can post only on the transitions (new task, turn just completed, just
-  // started waiting). Old replayed conversations are welcome as history: the
-  // log keeps the newest MAX_MESSAGES entries sorted by time.
+  // A session that has started waiting for the boss's answer or permission
+  // posts a fresh @社長 mention so the client rings the attention chime. The
+  // #general log is no longer rendered — this message exists only to drive that
+  // chime — and subagent sessions stay silent (their work is internal). `before`
+  // holds the waiting flag captured before the observation was applied, so the
+  // message fires only on the edge into waiting. The log keeps the newest
+  // MAX_MESSAGES entries sorted by time.
   function updateGeneralChannel(session, observation, eventAt, before) {
-    const displayName = `${CLI_INFO[session.cli].mention} (${session.project ?? '?'})`;
-    if (observation.task !== undefined && observation.task && observation.task !== before.task) {
-      session.reactionPendingMessageId = postMessage({
-        authorKind: 'user',
-        authorName: '社長',
-        cli: session.cli,
-        text: `@${displayName} ${observation.task}`,
-        at: eventAt,
-      });
-    } else if (session.reactionPendingMessageId && isTaskPickup(observation)) {
-      addReaction(session.reactionPendingMessageId, '🫡');
-      session.reactionPendingMessageId = null;
-    }
-    if (observation.turnComplete && !before.turnComplete && session.task) {
-      postMessage({
-        authorKind: 'agent',
-        authorName: displayName,
-        cli: session.cli,
-        text: '@社長 作業が完了しました',
-        at: eventAt,
-      });
-    }
     if (session.waitingForUser && !before.waiting && session.task) {
       postMessage({
         authorKind: 'agent',
-        authorName: displayName,
+        authorName: `${CLI_INFO[session.cli].mention} (${session.project ?? '?'})`,
         cli: session.cli,
         text: '@社長 確認をお願いします',
         at: eventAt,
@@ -326,11 +283,9 @@ export function createState({
       sessions.set(key, session);
     }
 
-    // Snapshot the transition-sensitive flags before the observation mutates
-    // them; #general messaging fires only on the edges.
+    // Snapshot the waiting flag before the observation mutates it; the
+    // attention-chime message fires only on the edge into waiting.
     const before = {
-      task: session.task,
-      turnComplete: session.turnCompletedAt !== null,
       waiting: session.waitingForUser,
     };
 

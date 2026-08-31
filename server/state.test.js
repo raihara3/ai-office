@@ -139,60 +139,40 @@ test('turnComplete clears pendingTool -> becomes break after grace, not blocked'
   assert.equal(employeeFor(ctx.state, key).status, 'break');
 });
 
-test('#general: task posts 社長 message, activity adds 🫡, turnComplete + waitingForUser post agent replies', () => {
+test('waitingForUser posts a single @社長 attention message; task/turn stay silent', () => {
   const ctx = withClock();
 
-  // New task -> a 社長 user message '@<display> <task>'.
+  // A new task and its activity/turn-completion drive the office view but post
+  // no message — the #general chat is no longer rendered.
   ctx.state.reportEvent('claude', '/log/c.jsonl', {
     project: 'demo',
     task: 'fix the bug',
     timestamp: ctx.value,
   });
-
-  let messages = ctx.state.snapshot().messages;
-  assert.equal(messages.length, 1);
-  const taskMessage = messages[0];
-  assert.equal(taskMessage.authorKind, 'user');
-  assert.equal(taskMessage.authorName, '社長');
-  assert.equal(taskMessage.text, '@Claude (demo) fix the bug');
-  assert.deepEqual(taskMessage.reactions, []);
-
-  // A following activity counts as pickup -> 🫡 reaction on that message.
   ctx.advance(1000);
   ctx.state.reportEvent('claude', '/log/c.jsonl', {
     activity: 'Thinking',
     activityKind: 'thinking',
     timestamp: ctx.value,
   });
-  messages = ctx.state.snapshot().messages;
-  const reacted = messages.find((m) => m.id === taskMessage.id);
-  assert.deepEqual(reacted.reactions, ['🫡']);
-
-  // turnComplete -> agent posts a completion reply.
   ctx.advance(1000);
   ctx.state.reportEvent('claude', '/log/c.jsonl', {
     turnComplete: true,
     timestamp: ctx.value,
   });
-  messages = ctx.state.snapshot().messages;
-  const completion = messages.find(
-    (m) => m.authorKind === 'agent' && m.text === '@社長 作業が完了しました'
-  );
-  assert.ok(completion, 'expected a completion reply');
-  assert.equal(completion.authorName, 'Claude (demo)');
+  assert.equal(ctx.state.snapshot().messages.length, 0);
 
-  // waitingForUser -> agent posts a confirmation-request reply.
+  // waitingForUser -> the only message: a @社長 mention that rings the chime.
   ctx.advance(1000);
   ctx.state.reportEvent('claude', '/log/c.jsonl', {
     waitingForUser: true,
     timestamp: ctx.value,
   });
-  messages = ctx.state.snapshot().messages;
-  const confirm = messages.find(
-    (m) => m.authorKind === 'agent' && m.text === '@社長 確認をお願いします'
-  );
-  assert.ok(confirm, 'expected a confirmation-request reply');
-  assert.equal(confirm.authorName, 'Claude (demo)');
+  const messages = ctx.state.snapshot().messages;
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].authorKind, 'agent');
+  assert.equal(messages[0].authorName, 'Claude (demo)');
+  assert.equal(messages[0].text, '@社長 確認をお願いします');
 });
 
 test('subagent sessions post no #general messages', () => {
@@ -206,7 +186,7 @@ test('subagent sessions post no #general messages', () => {
   });
   ctx.advance(1000);
   ctx.state.reportEvent('claude', '/log/sub.jsonl', {
-    turnComplete: true,
+    waitingForUser: true,
     isSubagent: true,
     timestamp: ctx.value,
   });

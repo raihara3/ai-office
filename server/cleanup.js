@@ -112,7 +112,6 @@ export function createCleanup({
   fileExists = fs.existsSync,
   // Resident-team sessions are permanent staff: HR never retires them.
   isProtected = () => false,
-  now = () => Date.now(),
 }) {
   function findProcessIds() {
     const processIds = { claude: [], codex: [], gemini: [] };
@@ -279,15 +278,6 @@ export function createCleanup({
         failed.push({ key: session.key, error: error.message });
       }
     }
-    state.postMessage({
-      authorKind: 'hr',
-      authorName: '人事',
-      text:
-        retired.length > 0
-          ? `@社長 ${retired.length}人退勤しました`
-          : '@社長 サボっている人はいませんでした',
-      at: now(),
-    });
     return { retired, failed };
   }
 

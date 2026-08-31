@@ -158,8 +158,7 @@
   });
 
   // The HR cleanup, kept as a single app-bar button: retire everyone with no
-  // work left, tagged with the boss's standing directive.
-  const CLEANUP_DIRECTIVE = '@here 仕事がない人は退勤してください';
+  // work left.
   const cleanupButton = document.getElementById('cleanup-run');
   let cleanupInFlight = false;
   cleanupButton.addEventListener('click', async () => {
@@ -167,7 +166,7 @@
     cleanupInFlight = true;
     cleanupButton.disabled = true;
     try {
-      const result = await client.runCleanup(CLEANUP_DIRECTIVE);
+      const result = await client.runCleanup();
       window.OFFICE.hrSay(
         result.retired.length > 0
           ? `${result.retired.length}人が退勤しました`

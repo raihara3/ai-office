@@ -114,7 +114,7 @@ Electron ビルドでは `package.json` の `!**/*.test.js` によって配布�
 
 state ストア・人事 cleanup・3 つの CLI watcher・常駐チームを、トランスポート
 非依存の 1 つのハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、
-`postMessage`、`previewCleanup`、`runCleanup`、常駐員 CRUD / 実行、
+`previewCleanup`、`runCleanup`、常駐員 CRUD / 実行、
 ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
 オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
 その席をチームルームの机に配置)、常駐員名簿とホワイトボードの未読数と
@@ -151,10 +151,12 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
   `<dataDirectory>/dismissed-sessions.json` に永続化され、起動時に読み込むため
   退勤状態はサーバー再起動をまたいで保持されます(セッション寿命
   `SESSION_EXPIRE_MS` を超えた古い墓標は読み込み時に破棄)。
-- `updateGeneralChannel` — 状態遷移に応じて `#general` メッセージ(依頼、🫡 の
-  受領リアクション、完了 / 確認依頼の返信)を投稿します。注入された
-  `isResidentFile` が真のセッション(常駐チームの実行)ではこのやり取りを
-  抑止します(報告通知は residents モジュールが自前で投稿するため)。
+- `updateGeneralChannel` — セッションが社長の確認待ち(`waitingForUser`)へ
+  遷移したとき `@社長 確認をお願いします` を `#general` に投稿します。この
+  メッセージはクライアントの注意チャイムを鳴らすためだけに存在し(チャット
+  自体は描画しません)、サブエージェントと、注入された `isResidentFile` が
+  真のセッション(常駐チームの実行)では抑止します(常駐員の報告通知は
+  residents モジュールが自前で投稿するため)。
 
 `deriveStatus(session, now)` は独立した純粋関数として export され、セッションと
 現在時刻を `working` / `break` / `blocked` / `waiting` にマップします。

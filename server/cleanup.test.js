@@ -23,21 +23,18 @@ function makeSession(overrides = {}) {
   };
 }
 
-// Hand-written state stub: full control over listSessions() output plus spies
-// for dismissSession()/postMessage(). `failOn` keys make dismissSession throw,
-// exercising the retirement failure path.
+// Hand-written state stub: full control over listSessions() output plus a spy
+// for dismissSession(). `failOn` keys make dismissSession throw, exercising the
+// retirement failure path.
 function makeState(sessions = [], { failOn = new Set() } = {}) {
   const dismissed = [];
-  const posted = [];
   return {
     listSessions: () => sessions,
     dismissSession: (key) => {
       if (failOn.has(key)) throw new Error('EACCES');
       dismissed.push(key);
     },
-    postMessage: (message) => posted.push(message),
     dismissed,
-    posted,
   };
 }
 
@@ -72,7 +69,6 @@ function setup({
     runOpenFiles: () => lsof,
     listLiveLockIds: () => liveLockIds,
     fileExists,
-    now: () => 12345,
   });
   return { cleanup, state };
 }
@@ -279,15 +275,11 @@ test('retireSessions retires only confirmed keys and reports headcount', () => {
   assert.deepEqual(keysOf(result.retired), ['a']);
   assert.deepEqual(result.failed, []);
   assert.deepEqual(state.dismissed, ['a']);
-  assert.equal(state.posted.length, 1);
-  assert.equal(state.posted[0].authorKind, 'hr');
-  assert.equal(state.posted[0].text, '@社長 1人退勤しました');
-  assert.equal(state.posted[0].at, 12345);
 });
 
-test('retireSessions posts the no-one-slacking message when nothing retires', () => {
+test('retireSessions retires nothing when every seat is live', () => {
   const session = makeSession({ key: 'seated', status: 'break' });
-  const { cleanup, state } = setup({
+  const { cleanup } = setup({
     sessions: [session],
     ps: makePs({ 100: '/usr/bin/claude' }),
     lsof: makeLsof({ 100: '/home/user/project' }),
@@ -295,7 +287,6 @@ test('retireSessions posts the no-one-slacking message when nothing retires', ()
   const result = cleanup.retireSessions();
 
   assert.deepEqual(result.retired, []);
-  assert.equal(state.posted[0].text, '@社長 サボっている人はいませんでした');
 });
 
 test('a dismissSession failure lands the key in failed, not retired', () => {

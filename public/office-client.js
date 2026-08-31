@@ -17,14 +17,14 @@
         return source;
       },
 
-      // Run the HR cleanup for everyone currently retirable, tagged with the
-      // boss's directive `text`. Resolves to the { retired, failed } result.
-      async runCleanup(text) {
+      // Run the HR cleanup for everyone currently retirable. Resolves to the
+      // { retired, failed } result.
+      async runCleanup() {
         const preview = await (await fetch('/api/cleanup/preview')).json();
         const response = await fetch('/api/cleanup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: preview.candidates.map((c) => c.key), text }),
+          body: JSON.stringify({ keys: preview.candidates.map((c) => c.key) }),
         });
         return response.json();
       },

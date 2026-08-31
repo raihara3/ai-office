@@ -91,7 +91,6 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     stop,
     subscribe: (listener) => state.onChange((snap) => listener(augmentSnapshot(snap))),
     getSnapshot: () => augmentSnapshot(state.snapshot()),
-    postMessage: state.postMessage,
     previewCleanup: cleanup.findRetirableSessions,
     runCleanup: cleanup.retireSessions,
     listResidents: residents.list,

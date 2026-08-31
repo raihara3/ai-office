@@ -136,18 +136,12 @@ export function createHttpServer(core, { publicDirectory }) {
       });
       request.on('end', () => {
         let selectedKeys = null;
-        let userText = '@here 仕事がない人は退勤してください';
         try {
           const parsed = JSON.parse(body || '{}');
           if (Array.isArray(parsed.keys)) selectedKeys = parsed.keys;
-          if (typeof parsed.text === 'string' && parsed.text.length <= 200) {
-            userText = parsed.text;
-          }
         } catch {
           // An empty or malformed body falls back to all retirable sessions.
         }
-        // The user's directive shows up in #general, then HR replies.
-        core.postMessage({ authorKind: 'user', authorName: '社長', text: userText, at: Date.now() });
         const result = core.runCleanup(selectedKeys);
         response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify(result));

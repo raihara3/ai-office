@@ -1,10 +1,9 @@
-// Application core: owns the state store, the HR cleanup, the CLI watchers
-// and the resident team, wired together and decoupled from any transport
-// (HTTP, IPC, …). A transport adapter consumes the returned handle; tests can
-// drive the core directly without a network layer.
+// Application core: owns the state store, the CLI watchers and the resident
+// team, wired together and decoupled from any transport (HTTP, IPC, …). A
+// transport adapter consumes the returned handle; tests can drive the core
+// directly without a network layer.
 
 import { createState } from './state.js';
-import { createCleanup } from './cleanup.js';
 import { createResidents, DEFAULT_DATA_DIRECTORY } from './residents/residents.js';
 import { startClaudeWatcher } from './watchers/claude.js';
 import { startCodexWatcher } from './watchers/codex.js';
@@ -35,11 +34,6 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     dataDirectory,
   });
   residents = createResidents({ state, now, dataDirectory });
-  const cleanup = createCleanup({
-    state,
-    now,
-    isProtected: (session) => residents.residentForFile(session.filePath) !== null,
-  });
   let refreshTimer = null;
 
   // Session keys are `${cli}:${filePath}`.
@@ -92,8 +86,6 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     stop,
     subscribe: (listener) => state.onChange((snap) => listener(augmentSnapshot(snap))),
     getSnapshot: () => augmentSnapshot(state.snapshot()),
-    previewCleanup: cleanup.findRetirableSessions,
-    runCleanup: cleanup.retireSessions,
     listResidents: residents.list,
     listTeams: residents.listTeams,
     saveTeam: residents.saveTeam,

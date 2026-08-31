@@ -1,6 +1,6 @@
-// HTTP/SSE transport adapter over the application core: serves the office UI,
-// streams state snapshots over Server-Sent Events, and exposes the HR cleanup
-// endpoints. All domain logic lives in the core; this file is only plumbing.
+// HTTP/SSE transport adapter over the application core: serves the office UI
+// and streams state snapshots over Server-Sent Events. All domain logic lives
+// in the core; this file is only plumbing.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -105,47 +105,6 @@ export function createHttpServer(core, { publicDirectory }) {
       sseClients.add(response);
       response.on('error', () => sseClients.delete(response));
       request.on('close', () => sseClients.delete(response));
-      return;
-    }
-
-    if (urlPath === '/api/cleanup/preview') {
-      const candidates = core.previewCleanup().map((session) => ({
-        key: session.key,
-        cli: session.cli,
-        project: session.project,
-        lastEventAt: session.lastEventAt,
-      }));
-      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify({ candidates }));
-      return;
-    }
-
-    if (urlPath === '/api/cleanup') {
-      if (request.method !== 'POST') {
-        response.writeHead(405).end();
-        return;
-      }
-      if (isForbiddenOrigin(request)) {
-        response.writeHead(403).end();
-        return;
-      }
-      let body = '';
-      request.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > 64 * 1024) request.destroy();
-      });
-      request.on('end', () => {
-        let selectedKeys = null;
-        try {
-          const parsed = JSON.parse(body || '{}');
-          if (Array.isArray(parsed.keys)) selectedKeys = parsed.keys;
-        } catch {
-          // An empty or malformed body falls back to all retirable sessions.
-        }
-        const result = core.runCleanup(selectedKeys);
-        response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        response.end(JSON.stringify(result));
-      });
       return;
     }
 

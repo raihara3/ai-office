@@ -6,12 +6,12 @@
 
 ## 設計原則
 
-アプリケーションの **core**(state + watchers + cleanup)は、いかなるトランスポートからも分離されています。
+アプリケーションの **core**(state + watchers + residents)は、いかなるトランスポートからも分離されています。
 そのため同じロジックを、HTTP/SSEアダプタから駆動したり、Electron に組み込んだり、テストから直接動かしたりできます。
 依存は内向き(inward)に向きます:
 
 ```
-index.js → core.js → state.js / watchers/* / cleanup.js / residents/*
+index.js → core.js → state.js / watchers/* / residents/*
 http.js  → core.js(公開ハンドルのみ)
 ```
 
@@ -28,9 +28,8 @@ CLI セッションログ (JSONL)                   ブラウザ / Electron ウ�
                                      │ observations  │
                                      ▼               │
                                   state.js  ──▶  core.js  ──▶  http.js
-                                  (sessions,        ▲
-                                   #general log)    │ cleanup API
-                                                cleanup.js
+                                  (sessions,
+                                   #general log)
 ```
 
 各 CLI は自身のセッショントランスクリプトを書き出します。`tail.js` は追記行を対応する watcher へ流し込み、watcher はそれをトランスポート非依存の*observation* にパースします。
@@ -45,13 +44,11 @@ tail → watcher → state の流れがそのまま実行を可視化します�
 ```
 server/                バックエンド(npm 依存なし。永続化は node:sqlite)
   index.js             エントリポイント + startServer()(Electron 埋め込み契約も兼ねる)
-  core.js              state + watchers + cleanup を合成; ライフサイクル(start/stop)
+  core.js              state + watchers + residents を合成; ライフサイクル(start/stop)
   http.js              HTTP 静的配信 + SSE + /api/* を core に橋渡しするアダプタ
   state.js             createState() ストア, deriveStatus()(純粋), #general ログ
   state.test.js        ストア + ステータス導出のテスト
   tail.js              汎用 JSONL 追従(fs.watch + 定期再スキャンのフォールバック)
-  cleanup.js           createCleanup(): 終了済みセッション検出(ps + lsof)
-  cleanup.test.js      人事(HR)退勤ヒューリスティックのテスト
   residents/           常駐チーム(スケジュール実行される常駐エージェント)
     residents.js       オーケストレータ: tick ループ + precheck + 報告生成
     resident-store.js  residents / teams テーブルの読み書きと検証
@@ -87,7 +84,7 @@ public/                フロントエンド(静的 ES モジュールとして�
     layout.test.js     幾何のテスト
     pathfinding.js     デスクを避けるグリッド経路探索(空きスペースのみを歩く)
     pathfinding.test.js 経路探索のテスト
-  office-client.js     トランスポートクライアント(SSE + cleanup API), IPC へ差し替え可能
+  office-client.js     トランスポートクライアント(SSE), IPC へ差し替え可能
   app.js               DOM 側 UI(ストリップ・ボード・インボックス・ドロワー)の描画と配線
 electron/              デスクトップラッパ
   main.js              Electron main: サーバを埋め込みウィンドウを開く
@@ -112,9 +109,9 @@ Electron ビルドでは `package.json` の `!**/*.test.js` によって配布�
 
 ### `core.js`
 
-state ストア・人事 cleanup・3 つの CLI watcher・常駐チームを、トランスポート
+state ストア・3 つの CLI watcher・常駐チームを、トランスポート
 非依存の 1 つのハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、
-`previewCleanup`、`runCleanup`、常駐員 CRUD / 実行、
+常駐員 CRUD / 実行、
 ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
 オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
 その席をチームルームの机に配置)、常駐員名簿とホワイトボードの未読数と
@@ -125,8 +122,7 @@ state ストア・人事 cleanup・3 つの CLI watcher・常駐チームを、�
 ### `http.js`
 
 HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態スナップショットを
-Server-Sent Events(`/events`)でストリームし、人事 cleanup のエンドポイント
-(`GET /api/cleanup/preview`、`POST /api/cleanup`)、常駐チーム管理
+Server-Sent Events(`/events`)でストリームし、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
 `POST /api/residents/:name/run`)、チーム管理(`GET`/`POST /api/teams`、
 `PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
@@ -147,10 +143,6 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
   適用。クロックや I/O を持たないため、ストアは決定的に保たれます。
   `applyActivityLog` は 1 ターン分の活動を配列に蓄積し(新しい指示でリセット)、
   作業状況ビューが最新の 1 件ではなく作業の流れを表示できるようにします。
-- `isDismissed` — 人事 cleanup が残す tombstone(墓標)を尊重します。tombstone は
-  `<dataDirectory>/dismissed-sessions.json` に永続化され、起動時に読み込むため
-  退勤状態はサーバー再起動をまたいで保持されます(セッション寿命
-  `SESSION_EXPIRE_MS` を超えた古い墓標は読み込み時に破棄)。
 - `updateGeneralChannel` — セッションが社長の確認待ち(`waitingForUser`)へ
   遷移したとき `@社長 確認をお願いします` を `#general` に投稿します。この
   メッセージはクライアントの注意チャイムを鳴らすためだけに存在し(チャット
@@ -167,21 +159,6 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 ファイルを発見し、追記行をコールバックへストリームします。即応性のための
 `fs.watch` に加え、定期再スキャンをフォールバックとして併用します(`fs.watch` は
 macOS でイベントを取りこぼすことがあるため)。3 つの watcher が共有します。
-
-### `cleanup.js`
-
-人事 cleanup。`createCleanup()` は state インスタンスに加え、OS 検査関数
-(プロセス一覧・オープンファイル・ファイル存在)を注入として受け取る
-ため、退勤ヒューリスティックを実プロセスに触れずに単体テストできます。実行中の
-プロセスは (CLI, 作業ディレクトリ) ごとに 1 つの「席」を付与し、直近に活動した
-セッションのみが席を保持、残りは退勤対象となります。`working` 表示中の
-セッションは決して退勤させず、曖昧なケースは「生存」側に倒します。注入された
-`isProtected` が真のセッション(常駐チームの実行)は常勤スタッフとして
-退勤対象から除外します。退勤時はログファイル(jsonl)を削除せずに残し、退勤
-状態は state の tombstone(退勤時点の最終イベント時刻)で管理します。以降、
-その時刻以前のログ行の再生は無視されるため再スキャンで復活せず、より新しい
-活動があった場合のみセッションが復帰します。tombstone はディスクに永続化される
-ため、退勤状態はサーバー再起動をまたいで維持されます。
 
 ### `watchers/`
 
@@ -284,7 +261,7 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 
 マークアップ:アプリバー(`#appbar`。AI OFFICE ブランド、ビュータブ
 「オフィス / ボード」、接続ステータスピル、テーマ切替ボタン(🌙/☀️)、
-アバター退勤ボタン、＋ タスク ボタン)、担当者別のカンバンストリップ
+＋ タスク ボタン)、担当者別のカンバンストリップ
 (`#kanban-strip`)、`<canvas>` とタブで切り替わるインプレースのフルボード
 (`#board-view`)、インボックスサイドバー(トレイアイコンと未読・要確認
 カウント付きヘッダと報告一覧)、および右スライドインドロワー(`#drawer`。
@@ -304,7 +281,7 @@ SaaS テーマ(ライト / ダーク。ダーク用トークンは
 ### `office.js`
 
 canvas 描画ループ。チームルーム・デスク・アバター・吹き出し・サブエージェント
-のミニアバター・受付アバターのフレームごとの描画と、来客アバターの移動を
+のミニアバターのフレームごとの描画と、来客アバターの移動を
 担います。ターミナル起動の CLI セッションは下端のエントランスロビーに
 「来客」として描画されます: セッションが働き始めるとエレベーターから登場し
 (扉は来客が近づくとスライドして開く)、ロビーの待機スポットでステータス
@@ -321,15 +298,15 @@ canvas 描画ループ。チームルーム・デスク・アバター・吹き�
 (`office:whiteboard-open`。常駐デスクは上下 2 領域に分かれ、モニタ側は
 作業状況ビューを開く `office:resident-activity-open`、アバター側は設定
 ドロワーを開く `office:resident-seat-open`)。
-`window.OFFICE` として `setState`、`faceDataUrl`、`hrSay` を公開します。
+`window.OFFICE` として `setState` を公開します。
 純粋で DOM 非依存のロジックは `office/` モジュールへ委譲しています。
 
 ### `office/specs.js`
 
 ベンダー別アバターの外観(`CLI_SPECS`、`UNSET_SPEC`):body/accent/head/eye の色と
 エンブレム。canvas のアバター描画の単一の真実の源です。
-`UNSET_SPEC` は中立のフォールバックアバターで、人事(HR)と、LLM が未設定の席
-(常駐チームの机)が共有します。
+`UNSET_SPEC` は中立のフォールバックアバターで、LLM が未設定の席
+(常駐チームの机)に使われます。
 
 ### `office/layout.js`
 
@@ -367,8 +344,7 @@ canvas も DOM も触れないため単体テスト可能です。
 ### `office-client.js`
 
 UI のトランスポート層。`connect({ onSnapshot, onStatus })` は SSE ストリーム
-(自動再接続)をラップし、`runCleanup(text)` は人事 cleanup エンドポイントを
-呼び出します。常駐チーム管理(`listResidents` / `saveResident` /
+(自動再接続)をラップします。常駐チーム管理(`listResidents` / `saveResident` /
 `deleteResident` / `runResident`)、ホワイトボード(`listReports` /
 `markReportRead` / `archiveReport`)、カンバンボード(`listBoard` /
 `createCard` / `moveCard` / `archiveCard` / `appendCardNote`)の API 呼び出しもここに集約します。将来 SSE を Electron
@@ -384,7 +360,7 @@ HTML5 drag & drop での並び替え・再アサイン。担当常駐が削除�
 ユーザー列に「担当不在」バッジ付きで表示)の切り替え、インボックス
 サイドバー(`snapshot.whiteboard` の報告一覧。ヘッダに未読・要確認
 カウント、展開でインライン表示 + 既読化、✕ でボードから外す)の描画、
-アバター退勤ボタンから人事 cleanup を起動する配線、社長(`@社長`)が
+社長(`@社長`)が
 新たにメンションされた際の WebAudio チャイム再生(`snapshot.messages` を
 参照。チャット自体の描画はしません)。クライアントストリームを
 `window.OFFICE.setState` へ橋渡しします。canvas の CustomEvent
@@ -415,7 +391,6 @@ Electron メインプロセス。`startServer` により同一サーバをプロ
 本来なら非決定的になる要素を注入することで得ています:
 
 - `createState` への **クロック** の注入(ステータス導出は経過時間に依存)。
-- `createCleanup` への **OS 検査関数のスタブ** 注入。
 - 各 watcher の `handleLine` への **`report` スタブ** 注入。
 - `createResidentStore` / `createSessionRegistry` / `createWhiteboard` /
   `createBoard` へは `openDatabase({ location: ':memory:' })` の

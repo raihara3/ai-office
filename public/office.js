@@ -55,60 +55,7 @@ import { findPath } from './office/pathfinding.js';
   // frame-rate independent. null until the first frame runs.
   let lastFrameTime = null;
 
-  // Small face icons for the chat sidebar, rendered once and cached.
-  const faceCache = new Map();
-  function faceDataUrl(kind) {
-    if (faceCache.has(kind)) return faceCache.get(kind);
-    const faceCanvas = document.createElement('canvas');
-    faceCanvas.width = 36;
-    faceCanvas.height = 36;
-    const face = faceCanvas.getContext('2d');
-    face.imageSmoothingEnabled = false;
-    if (kind === 'user') {
-      // The boss: a human silhouette in a calm neutral tone.
-      face.fillStyle = '#a9b1d6';
-      face.beginPath();
-      face.arc(18, 13, 7, 0, Math.PI * 2);
-      face.fill();
-      face.beginPath();
-      face.arc(18, 34, 12, Math.PI, Math.PI * 2);
-      face.fill();
-      const url = faceCanvas.toDataURL();
-      faceCache.set(kind, url);
-      return url;
-    }
-    const spec = kind === 'hr' ? UNSET_SPEC : CLI_SPECS[kind];
-    if (!spec) return null;
-    // head
-    face.beginPath();
-    face.roundRect(3, 9, 30, 24, 7);
-    face.fillStyle = spec.colors.head;
-    face.fill();
-    // face screen
-    face.beginPath();
-    face.roundRect(7, 14, 22, 15, 4);
-    face.fillStyle = '#14141c';
-    face.fill();
-    // eyes
-    face.fillStyle = spec.colors.eye;
-    face.fillRect(11, 18, 5, 5);
-    face.fillRect(20, 18, 5, 5);
-    // claude's antenna
-    if (spec.emblem === 'asterisk') {
-      face.fillStyle = spec.colors.head;
-      face.fillRect(16, 3, 4, 7);
-      face.fillStyle = spec.colors.body;
-      face.beginPath();
-      face.arc(18, 4, 3.5, 0, Math.PI * 2);
-      face.fill();
-    }
-    const url = faceCanvas.toDataURL();
-    faceCache.set(kind, url);
-    return url;
-  }
-
   window.OFFICE = {
-    faceDataUrl,
     setState(next) {
       state = next;
       const seen = new Set();

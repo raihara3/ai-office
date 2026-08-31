@@ -164,7 +164,11 @@ export function createResidents({
       outcome === "ok"
         ? body
         : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
-    const title = `${configuration.displayName} ${formatRunDate(finishedAt)}`;
+    // Reports are titled by author and time; a card-driven run leads with the
+    // task title so the inbox says which task the report is about at a glance.
+    const runLabel = `${configuration.displayName} ${formatRunDate(finishedAt)}`;
+    const title =
+      task !== null ? `${task.title} — ${runLabel}` : runLabel;
     // A trigger-driven run that needs a human joins the board as a card in
     // the user column, so follow-up is tracked like any other task. Filed
     // before the report so the report can carry the card id.

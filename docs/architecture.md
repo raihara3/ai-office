@@ -210,6 +210,11 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   トリガー起点の実行が review-needed で終わった場合はユーザー列にカードを
   自動起票します。報告の `task` 列には カード id を刻印してカードと
   紐付けます。実行中カードの移動・アーカイブはここで拒否します。
+  tick の先頭では `loop-ownership.js`(meta テーブルの
+  `resident_loop_owner` 行)でループの所有権を確認します。同じ office.db を
+  見るサーバーが 2 つ動いても(例: Electron アプリと別ポートの
+  `npm start`)、ループを回すのは所有者 1 プロセスだけで、カードの二重実行を
+  防ぎます。所有者が終了・死亡すると残った側が次の tick で引き継ぎます。
 - **`resident-store.js`** — residents / teams テーブルの読み書きと設定の
   検証。公開 API は名前ベース(save は席の重複を拒否、remove は
   `archived_at` の刻印でアーカイブ済みの名前は再利用可)。キャッシュせず

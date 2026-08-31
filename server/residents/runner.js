@@ -274,5 +274,14 @@ export function createRunner({
     return true;
   }
 
-  return { run, isRunning };
+  // Best-effort SIGTERM to every in-flight run, for server shutdown: an
+  // orphaned CLI would keep working its card while the next loop owner
+  // relaunches it. No SIGKILL escalation — the parent is exiting and cannot
+  // wait around; a CLI that traps SIGTERM ends up as the pre-existing
+  // crash-recovery case (the card stays put and is relaunched later).
+  function stopAll() {
+    for (const child of running.values()) child.kill('SIGTERM');
+  }
+
+  return { run, isRunning, stopAll };
 }

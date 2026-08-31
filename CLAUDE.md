@@ -24,7 +24,7 @@ Electron's Node 24 needs no flag).
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `settings-store.js` (user-editable office settings, e.g. office name), `registry.js` (session bindings), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `settings-store.js` (user-editable office settings, e.g. office name), `registry.js` (session bindings), `loop-ownership.js` (cross-instance tick-loop guard), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
 - `docs/architecture.md` — full architecture notes
 - `docs/database.md` — office.db schema (ER diagram, indexes, conventions)
 
@@ -32,6 +32,11 @@ Electron's Node 24 needs no flag).
 
 - A resident run is a headless CLI spawn from `runner.js` with a **30-minute
   timeout** (SIGTERM, then SIGKILL after 10 seconds).
+- Only **one server instance** runs the resident tick loop, even when several
+  (Electron app + standalone `npm start`, any ports) share the same office.db:
+  each tick confirms ownership via the `resident_loop_owner` meta row
+  (`loop-ownership.js`), and a surviving instance takes over within one tick
+  (30 s) after the owner exits. This is what prevents double-run board cards.
 - `schedule` triggers fire at fixed weekday/time slots; a slot missed while
   the machine was asleep still fires up to **1 hour late**
   (`MISSED_RUN_GRACE_MS`); older slots are skipped, never caught up.

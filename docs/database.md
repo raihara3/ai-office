@@ -78,7 +78,7 @@ erDiagram
     }
 
     meta {
-        TEXT key   PK "'legacyImportedAt', 'residentsImportedAt'"
+        TEXT key   PK "'legacyImportedAt', 'residentsImportedAt', 'resident_loop_owner'"
         TEXT value    "NOT NULL"
     }
 
@@ -107,7 +107,10 @@ erDiagram
 - **`settings` vs `meta`**: both are standalone key-value tables with no
   foreign keys. `settings` holds user-editable preferences set in-app (the
   office name on the entrance sign, `officeName`); `meta` holds internal
-  import markers. An unset key falls back to a default in `settings-store.js`
+  flags: the one-time import markers and `resident_loop_owner`, the pid of
+  the server instance currently owning the resident tick loop
+  (`loop-ownership.js` — two instances over one office.db must not both fire
+  triggers). An unset key falls back to a default in `settings-store.js`
   rather than being seeded.
 - **reports.task → cards.id stays a soft link** (no FK): the card may be
   long archived and imported ids may not resolve; rows are never deleted so

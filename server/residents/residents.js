@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { createBoard, USER_COLUMN } from "./board.js";
 import { openDatabase } from "./database.js";
+import { createLoopOwnership } from "./loop-ownership.js";
 import { importLegacyData } from "./legacy-import.js";
 import { importResidents } from "./resident-import.js";
 import { createResidentStore } from "./resident-store.js";
@@ -109,6 +110,7 @@ export function createResidents({
   whiteboard = null,
   board = null,
   runner = null,
+  loopOwnership = null,
 } = {}) {
   // The database only opens when a store actually needs it, so tests that
   // inject stubs never touch the disk. The one-time imports run right after
@@ -137,7 +139,14 @@ export function createResidents({
     board ??= createBoard({ database, now });
   }
   runner ??= createRunner({ registry, now });
+  // Stub-injected stores leave `database` null; those (test) setups have no
+  // second instance to guard against, so ownership is always granted.
+  loopOwnership ??=
+    database !== null
+      ? createLoopOwnership({ database, now })
+      : { acquire: () => true, release() {} };
   let tickTimer = null;
+  let deferralLogged = false;
   // Cards currently being worked, by resident name. In-memory on purpose:
   // if the server dies mid-run the card simply stays in its column and the
   // next tick relaunches it — no recovery bookkeeping needed. The card (not
@@ -300,6 +309,31 @@ export function createResidents({
   }
 
   function tick() {
+    // Another live server over the same office.db owns the loop (e.g. the
+    // Electron app next to a standalone `npm start`): stay quiet instead of
+    // double-running every card. When the owner exits, the next tick here
+    // takes the loop over. An ownership-check failure (the tick fires from
+    // setInterval, where a throw would take the whole server down) defers the
+    // same way.
+    let ownsLoop = false;
+    try {
+      ownsLoop = loopOwnership.acquire();
+    } catch (error) {
+      console.error(
+        `[ai-office] resident loop ownership check failed: ${error.message}`,
+      );
+      return;
+    }
+    if (!ownsLoop) {
+      if (!deferralLogged) {
+        deferralLogged = true;
+        console.log(
+          "[ai-office] resident loop deferred: another server instance owns it",
+        );
+      }
+      return;
+    }
+    deferralLogged = false;
     for (const entry of residentStore.list()) {
       if (!entry.configuration.enabled) continue;
       if (runner.isRunning(entry.name) || launching.has(entry.name)) continue;
@@ -327,6 +361,19 @@ export function createResidents({
     if (tickTimer !== null) {
       clearInterval(tickTimer);
       tickTimer = null;
+    }
+    // Stop in-flight CLI runs before handing the loop over: they would
+    // otherwise outlive this process as orphans while the surviving instance
+    // relaunches the same cards — the double run this guard exists to
+    // prevent.
+    runner.stopAll();
+    // Hand the loop to any surviving instance right away rather than making
+    // it wait out the stale-heartbeat window.
+    try {
+      loopOwnership.release();
+    } catch {
+      // Statements fail once the database is closed — stop() must stay
+      // idempotent.
     }
     // Closing checkpoints the WAL; only a database this module opened is ours
     // to close.

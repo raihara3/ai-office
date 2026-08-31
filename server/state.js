@@ -29,6 +29,11 @@ export function deriveStatus(session, now) {
   // Waiting for the user has no idle timeout — the human may take a while.
   if (session.waitingForUser) return 'waiting';
   if (now - session.lastEventAt > WORKING_IDLE_TIMEOUT_MS) {
+    // An MCP one-shot has no user to unblock it and no host process keeping
+    // it resident; a codex MCP call also ends without a task_complete. Once it
+    // falls idle it has finished, so it rides the elevator home instead of
+    // lingering forever as a blocked visitor.
+    if (session.clientKind === 'mcp') return 'break';
     // A tool call still in flight (e.g. a command awaiting permission) means
     // the member is blocked at their desk, not resting.
     return session.pendingTool ? 'blocked' : 'break';

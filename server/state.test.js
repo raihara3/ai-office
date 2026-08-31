@@ -41,6 +41,11 @@ test('deriveStatus: idle > timeout without pendingTool -> break', () => {
   assert.equal(deriveStatus(session, WORKING_IDLE_TIMEOUT_MS + 1), 'break');
 });
 
+test('deriveStatus: idle mcp one-shot retires -> break even with pendingTool', () => {
+  const session = makeSession({ lastEventAt: 0, pendingTool: true, clientKind: 'mcp' });
+  assert.equal(deriveStatus(session, WORKING_IDLE_TIMEOUT_MS + 1), 'break');
+});
+
 test('deriveStatus: turnCompletedAt older than grace -> break', () => {
   const session = makeSession({ lastEventAt: 0, turnCompletedAt: 0 });
   assert.equal(deriveStatus(session, TURN_COMPLETE_GRACE_MS + 1), 'break');

@@ -28,6 +28,9 @@ test('database: openDatabase migrates a fresh database to the latest schema', ()
   assert.equal(team.name, '常駐チーム');
   assert.equal(team.seat_count, 6);
 
+  const residentColumns = database.prepare('PRAGMA table_info(residents)').all();
+  assert.ok(residentColumns.some((column) => column.name === 'model'));
+
   database
     .prepare(
       `INSERT INTO residents (id, team_id, name, display_name, cli, mode, seat, working_directory, "trigger", created_at, updated_at)
@@ -102,6 +105,31 @@ test('database: reopening a migrated file keeps the data and re-runs nothing', (
     assert.equal(second.prepare('PRAGMA user_version').get().user_version, MIGRATIONS.length);
     assert.equal(second.prepare('SELECT title FROM cards WHERE id = ?').get('c1').title, 'タスク');
     second.close();
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('database: v5 residents migrate with their data and inherit a null model', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-office-db-'));
+  const location = path.join(directory, 'office.db');
+  try {
+    const versionFive = new DatabaseSync(location);
+    versionFive.exec(MIGRATIONS.slice(0, 5).join('\n'));
+    versionFive.exec('PRAGMA user_version = 5');
+    versionFive
+      .prepare(
+        `INSERT INTO residents (id, team_id, name, display_name, cli, mode, seat, working_directory, "trigger", created_at, updated_at)
+         VALUES ('r1', 'default', 'existing', 'Existing', 'claude', 'read-only', 0, '~', '{"type":"interval","minutes":10}', 1000, 1000)`
+      )
+      .run();
+    versionFive.close();
+
+    const database = openDatabase({ location });
+    const resident = database.prepare('SELECT display_name, model FROM residents WHERE id = ?').get('r1');
+    assert.equal(resident.display_name, 'Existing');
+    assert.equal(resident.model, null);
+    database.close();
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

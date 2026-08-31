@@ -142,8 +142,8 @@ survives a server restart. Endpoints:
 
 The team rooms in the top-left seat the
 resident team: permanently assigned agents, one role each. A resident's
-configuration (display name, seat, CLI, read-only/edit mode, working
-directory, trigger, optional precheck, enabled), role prompt and run
+configuration (display name, seat, CLI, optional model, read-only/edit mode,
+working directory, trigger, optional precheck, enabled), role prompt and run
 bookkeeping live as a row in
 `~/Library/Application Support/ai-office/office.db` (SQLite), edited through
 the in-app drawer opened by clicking a resident desk (create, edit,
@@ -159,9 +159,11 @@ to do" and the agent run is skipped.
 
 A due resident runs its CLI headlessly (`claude -p --session-id <uuid>`,
 `codex exec --sandbox …`, `gemini -p`); the read-only / edit mode maps to
-the CLI's permission flags. One run per resident at a time, with a
-30-minute timeout. The CLI writes its normal transcript, so the existing
-tail → watcher → state pipeline visualizes the run; a session registry
+the CLI's permission flags. The model field offers a curated list for the
+selected CLI and also accepts a full model ID; a non-empty value is passed as
+`--model`, while an empty field preserves the CLI default. One run per
+resident at a time, with a 30-minute timeout. The CLI writes its normal
+transcript, so the existing tail → watcher → state pipeline visualizes the run; a session registry
 (`session-registry.json`) binds the session to its resident so it seats at
 its resident's team desk — never appearing as a lobby visitor — is protected
 from HR

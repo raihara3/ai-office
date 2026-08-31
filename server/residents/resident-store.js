@@ -70,6 +70,17 @@ export function validateResident(configuration) {
   if (!RESIDENT_CLIS.includes(configuration?.cli)) {
     errors.push(`cli must be one of ${RESIDENT_CLIS.join(', ')}`);
   }
+  if (
+    configuration?.model !== undefined &&
+    configuration.model !== null &&
+    (typeof configuration.model !== 'string' ||
+      configuration.model.trim() === '' ||
+      configuration.model.trim().length > 200 ||
+      configuration.model.trim().startsWith('-') ||
+      /\s/.test(configuration.model.trim()))
+  ) {
+    errors.push('model must be 1..200 non-whitespace characters, must not start with "-", or null');
+  }
   if (!RESIDENT_MODES.includes(configuration?.mode)) {
     errors.push(`mode must be one of ${RESIDENT_MODES.join(', ')}`);
   }
@@ -92,7 +103,7 @@ export function validateResident(configuration) {
 
 export function createResidentStore({ database, now = () => Date.now() }) {
   const COLUMNS =
-    'id, team_id, name, display_name, cli, mode, seat, working_directory, "trigger", precheck, enabled, last_run_at, last_outcome, last_finished_at';
+    'id, team_id, name, display_name, cli, model, mode, seat, working_directory, "trigger", precheck, enabled, last_run_at, last_outcome, last_finished_at';
   const statements = {
     read: database.prepare(
       `SELECT ${COLUMNS} FROM residents WHERE name = ? AND archived_at IS NULL`
@@ -141,13 +152,13 @@ export function createResidentStore({ database, now = () => Date.now() }) {
       'SELECT COUNT(*) AS n FROM teams WHERE archived_at IS NULL'
     ),
     insert: database.prepare(
-      `INSERT INTO residents (id, team_id, name, display_name, cli, mode, seat, working_directory, "trigger", precheck, enabled, instructions, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO residents (id, team_id, name, display_name, cli, model, mode, seat, working_directory, "trigger", precheck, enabled, instructions, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ),
     // Editing preserves id, created_at and the run-state columns; the team
     // follows the desk the drawer was opened from.
     update: database.prepare(
-      `UPDATE residents SET team_id = ?, display_name = ?, cli = ?, mode = ?, seat = ?, working_directory = ?,
+      `UPDATE residents SET team_id = ?, display_name = ?, cli = ?, model = ?, mode = ?, seat = ?, working_directory = ?,
         "trigger" = ?, precheck = ?, enabled = ?, instructions = ?, updated_at = ?
        WHERE name = ? AND archived_at IS NULL`
     ),
@@ -179,6 +190,7 @@ export function createResidentStore({ database, now = () => Date.now() }) {
         displayName: row.display_name,
         seat: row.seat,
         cli: row.cli,
+        model: row.model,
         mode: row.mode,
         workingDirectory: row.working_directory,
         trigger: JSON.parse(row.trigger),
@@ -230,6 +242,7 @@ export function createResidentStore({ database, now = () => Date.now() }) {
     const values = [
       configuration.displayName,
       configuration.cli,
+      configuration.model?.trim() || null,
       configuration.mode,
       configuration.seat,
       configuration.workingDirectory,

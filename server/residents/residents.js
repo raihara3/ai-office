@@ -302,6 +302,7 @@ export function createResidents({
           name: entry.name,
           displayName: configuration.displayName,
           cli: configuration.cli,
+          model: configuration.model,
           mode: configuration.mode,
           workingDirectory: configuration.workingDirectory,
         },

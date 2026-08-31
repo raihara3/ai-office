@@ -33,9 +33,10 @@ export function expandHomeDirectory(directory) {
 // The headless invocation per CLI and permission mode. Claude accepts an
 // explicit session id (which names its transcript file); Codex and Gemini do
 // not, so their transcripts are discovered after spawn instead.
-export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
+export function buildHeadlessCommand({ cli, model, mode, prompt, sessionId }) {
   if (cli === 'claude') {
     const args = ['-p', prompt, '--session-id', sessionId, '--output-format', 'json'];
+    if (model) args.push('--model', model);
     // Headless runs cannot answer permission prompts, so edit mode skips them
     // entirely. This trusts the resident's instructions and everything it
     // reads — reserve edit mode for trusted directories and prompts.
@@ -51,7 +52,14 @@ export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
     const sandbox = mode === 'edit' ? 'workspace-write' : 'read-only';
     return {
       command: 'codex',
-      args: ['exec', '--skip-git-repo-check', '--sandbox', sandbox, prompt],
+      args: [
+        'exec',
+        '--skip-git-repo-check',
+        '--sandbox',
+        sandbox,
+        ...(model ? ['--model', model] : []),
+        prompt,
+      ],
     };
   }
   // Gemini refuses to start headless outside a trusted folder, and a headless
@@ -61,7 +69,14 @@ export function buildHeadlessCommand({ cli, mode, prompt, sessionId }) {
   // read-only mode pins the CLI's own read-only approval mode as the guard.
   return {
     command: 'gemini',
-    args: ['--approval-mode', mode === 'edit' ? 'yolo' : 'plan', '--skip-trust', '-p', prompt],
+    args: [
+      '--approval-mode',
+      mode === 'edit' ? 'yolo' : 'plan',
+      '--skip-trust',
+      ...(model ? ['--model', model] : []),
+      '-p',
+      prompt,
+    ],
   };
 }
 
@@ -189,6 +204,7 @@ export function createRunner({
     const sessionId = crypto.randomUUID();
     const { command, args } = buildHeadlessCommand({
       cli: resident.cli,
+      model: resident.model,
       mode: resident.mode,
       prompt,
       sessionId,

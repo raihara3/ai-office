@@ -96,8 +96,8 @@ export function importResidents(database, { dataDirectory, fileSystem = fs, now 
   );
 
   const insertResident = database.prepare(
-    `INSERT OR IGNORE INTO residents (id, team_id, name, display_name, cli, mode, seat, working_directory, "trigger", precheck, enabled, instructions, last_run_at, last_outcome, last_finished_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO residents (id, team_id, name, display_name, cli, model, mode, seat, working_directory, "trigger", precheck, enabled, instructions, last_run_at, last_outcome, last_finished_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertBinding = database.prepare(
     'INSERT OR IGNORE INTO session_bindings (fragment, resident_id, at) VALUES (?, ?, ?)'
@@ -114,6 +114,7 @@ export function importResidents(database, { dataDirectory, fileSystem = fs, now 
         name,
         configuration.displayName,
         configuration.cli,
+        configuration.model?.trim() || null,
         configuration.mode,
         configuration.seat,
         configuration.workingDirectory,

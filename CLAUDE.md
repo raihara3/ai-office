@@ -32,6 +32,9 @@ Electron's Node 24 needs no flag).
 
 - A resident run is a headless CLI spawn from `runner.js` with a **30-minute
   timeout** (SIGTERM, then SIGKILL after 10 seconds).
+- Each resident may pin a model. The drawer offers CLI-specific curated
+  suggestions but accepts any full model ID; `runner.js` passes a non-empty
+  value through `--model`, while `NULL` uses the CLI default.
 - Only **one server instance** runs the resident tick loop, even when several
   (Electron app + standalone `npm start`, any ports) share the same office.db:
   each tick confirms ownership via the `resident_loop_owner` meta row

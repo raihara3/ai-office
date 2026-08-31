@@ -1008,6 +1008,11 @@
 
   const residentForm = document.getElementById('resident-form');
   const residentError = document.getElementById('resident-error');
+  const RESIDENT_MODELS = {
+    claude: ['fable', 'opus', 'sonnet', 'haiku'],
+    codex: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+    gemini: ['gemini-3.1-pro-preview', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'],
+  };
 
   const WEEKDAYS = [
     ['mon', '月'],
@@ -1049,12 +1054,24 @@
     showTriggerSection(event.target.value)
   );
 
+  function updateResidentModelOptions(cli) {
+    field('resident-model-options').innerHTML = RESIDENT_MODELS[cli]
+      .map((model) => `<option value="${model}"></option>`)
+      .join('');
+  }
+  field('resident-cli').addEventListener('change', (event) => {
+    field('resident-model').value = '';
+    updateResidentModelOptions(event.target.value);
+  });
+
   function fillResidentForm(entry) {
     const configuration = entry?.configuration;
     field('resident-name').value = entry?.name ?? '';
     field('resident-name').disabled = entry !== null;
     field('resident-display-name').value = configuration?.displayName ?? '';
     field('resident-cli').value = configuration?.cli ?? 'claude';
+    field('resident-model').value = configuration?.model ?? '';
+    updateResidentModelOptions(field('resident-cli').value);
     field('resident-mode').value = configuration?.mode ?? 'read-only';
     field('resident-working-directory').value = configuration?.workingDirectory ?? '';
     field('resident-precheck').value = configuration?.precheck ?? '';
@@ -1138,6 +1155,7 @@
           displayName: field('resident-display-name').value.trim(),
           seat: panelSeat,
           cli: field('resident-cli').value,
+          model: field('resident-model').value.trim() || null,
           mode: field('resident-mode').value,
           workingDirectory: field('resident-working-directory').value.trim(),
           trigger: collectTrigger(),

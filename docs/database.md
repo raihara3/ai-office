@@ -4,7 +4,7 @@ Teams, residents, session bindings, whiteboard reports, kanban cards and
 user-editable office settings are persisted in a single SQLite database at
 `~/Library/Application Support/ai-office/office.db`, opened by
 `server/residents/database.js` (built-in `node:sqlite`, WAL mode, schema
-versioned with `PRAGMA user_version` — currently **5**).
+versioned with `PRAGMA user_version` — currently **6**).
 
 ## ER diagram
 
@@ -30,6 +30,7 @@ erDiagram
         TEXT    name              "NOT NULL; API identity, unique among active (partial index)"
         TEXT    display_name      "NOT NULL"
         TEXT    cli               "NOT NULL; CHECK: claude / codex / gemini"
+        TEXT    model             "nullable CLI model ID; NULL uses the CLI default"
         TEXT    mode              "NOT NULL; CHECK: read-only / edit"
         INTEGER seat              "NOT NULL; 0..team.seat_count-1, one active resident per (team, seat) (store-level check)"
         TEXT    working_directory "NOT NULL"

@@ -32,6 +32,21 @@ test('buildHeadlessCommand: claude edit mode bypasses permission prompts', () =>
   assert.ok(!args.includes('--allowedTools'));
 });
 
+test('buildHeadlessCommand: passes the selected model to every CLI', () => {
+  for (const cli of ['claude', 'codex', 'gemini']) {
+    const { args } = buildHeadlessCommand({
+      cli,
+      model: 'full-model-id',
+      mode: 'read-only',
+      prompt: 'p',
+      sessionId: 's',
+    });
+    const modelFlag = args.indexOf('--model');
+    assert.notEqual(modelFlag, -1);
+    assert.equal(args[modelFlag + 1], 'full-model-id');
+  }
+});
+
 test('buildHeadlessCommand: codex maps mode to the sandbox flag', () => {
   assert.deepEqual(
     buildHeadlessCommand({ cli: 'codex', mode: 'read-only', prompt: 'p', sessionId: 's' }).args,

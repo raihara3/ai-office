@@ -60,6 +60,7 @@ const VALID_CONFIGURATION = {
   displayName: 'タスク係',
   seat: 2,
   cli: 'claude',
+  model: 'sonnet',
   mode: 'edit',
   workingDirectory: '~/dev/',
   trigger: { type: 'interval', minutes: 10 },
@@ -97,6 +98,7 @@ test('resident import: disk residents become rows with id = name, files cleaned 
   assert.equal(row.id, 'task-runner'); // legacy slug becomes the id
   assert.equal(row.team_id, 'default');
   assert.equal(row.display_name, 'タスク係');
+  assert.equal(row.model, 'sonnet');
   assert.equal(row.instructions, 'タスクをこなす');
   assert.equal(JSON.parse(row.trigger).minutes, 10);
   assert.equal(row.last_run_at, 1000);

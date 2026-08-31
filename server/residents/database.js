@@ -165,6 +165,11 @@ export const MIGRATIONS = [
     value TEXT NOT NULL
   );
   `,
+  // Version 6: each resident can pin a CLI model. NULL preserves the CLI's
+  // default selection for existing residents and newly saved blank values.
+  `
+  ALTER TABLE residents ADD COLUMN model TEXT;
+  `,
 ];
 
 export function openDatabase({ location }) {

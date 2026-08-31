@@ -234,10 +234,11 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   ロビーの来客としてではなくチームルームの机に固定します。行単位の INSERT
   なので複数プロセスでも紐付けが失われません(照合は JS 側: パスは完全
   一致・セッション uuid は部分一致、新しい順)。
-- **`runner.js`** — ヘッドレス CLI 実行(`claude -p --session-id <uuid>`、
-  `codex exec --sandbox …`、`gemini --skip-trust -p`)。read-only / edit のモードを各 CLI の
-  権限フラグにマップし、30 分のタイムアウトと常駐員ごとの同時 1 実行を
-  強制します。コマンド構築と出力パースは純粋関数として export されます。
+- **`runner.js`** — Runs each CLI headlessly (`claude -p --session-id <uuid>`,
+  `codex exec --sandbox …`, or `gemini --skip-trust -p`). It maps read-only / edit
+  mode to CLI permission flags, passes a configured resident model through
+  `--model`, enforces a 30-minute timeout and one concurrent run per resident,
+  and exports command construction and output parsing as pure functions.
 - **`database.js`** — `<dataDirectory>/office.db` を `node:sqlite` の
   `DatabaseSync` で同期的に開き、WAL と `PRAGMA user_version` ベースの
   スキーマ移行を適用します。アプリより新しいバージョンの DB は推測せず

@@ -13,6 +13,7 @@ function validConfiguration(overrides = {}) {
     displayName: 'アナリスト',
     seat: 0,
     cli: 'claude',
+    model: null,
     mode: 'read-only',
     workingDirectory: '/tmp/repo',
     trigger: { type: 'schedule', days: ['mon'], times: ['09:00'] },
@@ -30,6 +31,9 @@ test('validateResident rejects bad seat, cli, mode and trigger', () => {
   assert.ok(validateResident(validConfiguration({ seat: 12 })).length > 0);
   assert.ok(validateResident(validConfiguration({ cli: 'gpt' })).length > 0);
   assert.ok(validateResident(validConfiguration({ mode: 'yolo' })).length > 0);
+  assert.ok(validateResident(validConfiguration({ model: '--help' })).length > 0);
+  assert.ok(validateResident(validConfiguration({ model: 'model with spaces' })).length > 0);
+  assert.ok(validateResident(validConfiguration({ model: 'm'.repeat(201) })).length > 0);
   assert.ok(
     validateResident(validConfiguration({ trigger: { type: 'schedule', days: [], times: ['09:00'] } }))
       .length > 0
@@ -72,6 +76,7 @@ test('resident store round-trips save/read/list and validates on save', () => {
   });
   const entry = store.read('log-analyst');
   assert.equal(entry.configuration.displayName, 'アナリスト');
+  assert.equal(entry.configuration.model, null);
   assert.deepEqual(entry.configuration.trigger, { type: 'schedule', days: ['mon'], times: ['09:00'] });
   assert.equal(entry.instructions, '# 役割\n週次レポートを書く');
   assert.equal(entry.teamId, 'default');
@@ -98,13 +103,14 @@ test('resident store: editing preserves id, team and creation time', () => {
   const before = database.prepare('SELECT id, created_at FROM residents WHERE name = ?').get('log-analyst');
 
   store.save('log-analyst', {
-    configuration: validConfiguration({ displayName: '改名後' }),
+    configuration: validConfiguration({ displayName: '改名後', model: 'claude-fable-5' }),
     instructions: 'v2',
   });
   const after = database.prepare('SELECT id, created_at FROM residents WHERE name = ?').get('log-analyst');
   assert.equal(after.id, before.id);
   assert.equal(after.created_at, before.created_at);
   assert.equal(store.read('log-analyst').configuration.displayName, '改名後');
+  assert.equal(store.read('log-analyst').configuration.model, 'claude-fable-5');
   assert.equal(store.list().length, 1);
 });
 

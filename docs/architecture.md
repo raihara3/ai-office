@@ -124,7 +124,7 @@ state ストア・3 つの CLI watcher・常駐チームを、トランスポー
 HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態スナップショットを
 Server-Sent Events(`/events`)でストリームし、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
-`POST /api/residents/:name/run`)、チーム管理(`GET`/`POST /api/teams`、
+`POST /api/residents/:name/run`/`stop`)、チーム管理(`GET`/`POST /api/teams`、
 `PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
 `POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)、カンバンボード
 (`GET /api/board`、`POST /api/board/create`/`move`/`done`/`archive`/`edit`/`note`)を公開します。状態を変更するリクエストには
@@ -208,7 +208,7 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   ます。人間が報告内容を手で追記へ引用する必要はありません。カード実行が info で完了すると
   カードを自動アーカイブ、review-needed または失敗ならユーザー列へ移動し、
   トリガー起点の実行が review-needed で終わった場合はユーザー列にカードを
-  自動起票します。報告の `task` 列には カード id を刻印してカードと
+  自動起票します(緊急停止による中断では起票しません)。報告の `task` 列には カード id を刻印してカードと
   紐付けます。実行中カードの移動・アーカイブはここで拒否します。
   tick の先頭では `loop-ownership.js`(meta テーブルの
   `resident_loop_owner` 行)でループの所有権を確認します。同じ office.db を
@@ -373,7 +373,8 @@ HTML5 drag & drop での並び替え・再アサイン。担当常駐が削除�
 右スライドインドロワー(`#drawer`)に 1 セクションずつ表示します:
 カード詳細(本文・紐付く報告・追記フォーム・完了ボタン)、カード起票
 フォーム(＋ タスク ボタン / 列の ＋ で開き、後者は担当を事前選択)、
-常駐員の作業状況ビュー、常駐員の割り当てフォーム(作成 / 編集 /
+常駐員の作業状況ビュー(実行中は緊急停止ボタン。実行中の run を kill し、
+人間が再度オンにするまで常駐員を無効化)、常駐員の割り当てフォーム(作成 / 編集 /
 割り当て解除 / 今すぐ実行)。
 
 ## デスクトップ(`electron/`)

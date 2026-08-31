@@ -199,19 +199,19 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
-    // Resident team management: list/save/unassign/run. The rows in office.db
-    // are the source of truth; these endpoints only read and write them
-    // through the core.
-    const residentMatch = urlPath.match(/^\/api\/residents(?:\/([a-z0-9][a-z0-9-]{0,63})(\/run)?)?$/);
+    // Resident team management: list/save/unassign/run/stop. The rows in
+    // office.db are the source of truth; these endpoints only read and write
+    // them through the core.
+    const residentMatch = urlPath.match(/^\/api\/residents(?:\/([a-z0-9][a-z0-9-]{0,63})(\/run|\/stop)?)?$/);
     if (residentMatch) {
-      const [, residentName, runSuffix] = residentMatch;
+      const [, residentName, actionSuffix] = residentMatch;
       if (request.method !== 'GET' && isForbiddenOrigin(request)) {
         response.writeHead(403).end();
         return;
       }
       if (request.method === 'GET' && !residentName) {
         sendJson(response, 200, { residents: core.listResidents() });
-      } else if (request.method === 'PUT' && residentName && !runSuffix) {
+      } else if (request.method === 'PUT' && residentName && !actionSuffix) {
         readJsonBody(request, 256 * 1024, (parsed) => {
           if (parsed === null) {
             sendJson(response, 400, { error: 'invalid JSON body' });
@@ -228,17 +228,26 @@ export function createHttpServer(core, { publicDirectory }) {
             sendJson(response, 400, { error: error.message });
           }
         });
-      } else if (request.method === 'DELETE' && residentName && !runSuffix) {
+      } else if (request.method === 'DELETE' && residentName && !actionSuffix) {
         try {
           core.deleteResident(residentName);
           sendJson(response, 200, { ok: true });
         } catch (error) {
           sendJson(response, 400, { error: error.message });
         }
-      } else if (request.method === 'POST' && residentName && runSuffix) {
+      } else if (request.method === 'POST' && residentName && actionSuffix === '/run') {
         try {
           core.runResident(residentName);
           sendJson(response, 200, { ok: true });
+        } catch (error) {
+          sendJson(response, 400, { error: error.message });
+        }
+      } else if (request.method === 'POST' && residentName && actionSuffix === '/stop') {
+        try {
+          // `stopped` is false when no run was killed here (idle resident, or
+          // the run lives in the loop-owning instance); disabling still took.
+          const stopped = core.stopResident(residentName);
+          sendJson(response, 200, { ok: true, stopped });
         } catch (error) {
           sendJson(response, 400, { error: error.message });
         }

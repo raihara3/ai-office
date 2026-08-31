@@ -38,7 +38,7 @@ erDiagram
         INTEGER enabled           "NOT NULL DEFAULT 1; CHECK 0/1"
         TEXT    instructions      "NOT NULL DEFAULT ''; role prompt, edited in-app"
         INTEGER last_run_at       "run bookkeeping, written by the tick loop"
-        TEXT    last_outcome      "ok / error / timeout / skipped"
+        TEXT    last_outcome      "ok / error / timeout / stopped / skipped"
         INTEGER last_finished_at  ""
         INTEGER created_at        "NOT NULL"
         INTEGER updated_at        "NOT NULL"

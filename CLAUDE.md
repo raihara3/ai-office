@@ -82,7 +82,8 @@ Electron's Node 24 needs no flag).
   trigger). An ok run marks the card done (it moves to 完了 and stays there
   until the human archives it explicitly — completion never deletes); a
   review-needed or failed run moves it to the user column. A trigger-driven
-  run ending review-needed auto-files a card in the user column.
+  run ending review-needed auto-files a card in the user column (a run ended
+  by the activity view's emergency stop does not).
 
 ## Git / GitHub
 

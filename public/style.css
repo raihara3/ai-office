@@ -1097,6 +1097,10 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.activity-actions {
+  margin-top: 14px;
+}
+
 /* --- forms (drawer) ----------------------------------------------------- */
 
 #resident-form,

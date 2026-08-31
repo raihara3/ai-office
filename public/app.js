@@ -1283,6 +1283,11 @@
     return `<div class="activity-field"><span class="activity-label">${escapeHtml(label)}</span>${value}</div>`;
   }
 
+  // Kills the in-flight run and disables the resident until the human turns
+  // it back on in the resident panel — rendered whenever a run is live.
+  const activityStopButton =
+    '<div class="form-actions activity-actions"><button type="button" id="activity-stop" class="danger-button">緊急停止</button></div>';
+
   function activityBody(resident, session) {
     if (resident === null) {
       return '<p class="activity-empty">常駐員が割り当てられていません。</p>';
@@ -1298,6 +1303,7 @@
         '<p class="activity-empty">セッションは動いていません。</p>',
         activityRow('状態', escapeHtml(state)),
         next ? activityRow('次回', escapeHtml(next)) : '',
+        resident.busy ? activityStopButton : '',
       ].join('');
     }
     const rows = [
@@ -1335,6 +1341,7 @@
         )
       );
     }
+    if (resident.busy) rows.push(activityStopButton);
     return rows.join('');
   }
 
@@ -1355,6 +1362,27 @@
   window.addEventListener('office:resident-activity-open', (event) =>
     openActivityPanel(event.detail.name)
   );
+
+  // The view re-renders on every snapshot while open, so the stop button is
+  // handled by delegation instead of re-binding per render.
+  activityView.addEventListener('click', async (event) => {
+    if (event.target.closest('#activity-stop') === null || activityName === null) return;
+    const resident =
+      (latestSnapshot?.residents ?? []).find((r) => r.name === activityName) ?? null;
+    const label = resident?.displayName ?? activityName;
+    if (
+      !window.confirm(
+        `${label} のセッションを緊急停止しますか?(稼働はオフになり、再度オンにするまで動きません)`
+      )
+    ) {
+      return;
+    }
+    try {
+      await client.stopResident(activityName);
+    } catch (error) {
+      window.alert(`緊急停止に失敗しました: ${error.message}`);
+    }
+  });
 
   // The strip and the inbox are always on screen, so both load on the first
   // snapshot and refresh only when their data actually changes: the board on

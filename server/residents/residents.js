@@ -172,7 +172,9 @@ export function createResidents({
     const reportBody =
       outcome === "ok"
         ? body
-        : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
+        : outcome === "stopped"
+          ? `緊急停止されました。\n\n${body}`.trim()
+          : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
     // Reports are titled by author and time; a card-driven run leads with the
     // task title so the inbox says which task the report is about at a glance.
     const runLabel = `${configuration.displayName} ${formatRunDate(finishedAt)}`;
@@ -182,7 +184,9 @@ export function createResidents({
     // the user column, so follow-up is tracked like any other task. Filed
     // before the report so the report can carry the card id.
     let taskId = task?.id ?? null;
-    if (taskId === null && reportLevel === "review-needed") {
+    // An emergency stop is the human's own action; filing a follow-up card
+    // for it would be noise.
+    if (taskId === null && reportLevel === "review-needed" && outcome !== "stopped") {
       taskId = board.createCard({
         title,
         body: "定期実行が要確認で終了しました。リンクされた報告を確認してください。",
@@ -214,9 +218,11 @@ export function createResidents({
       authorName: configuration.displayName,
       cli: configuration.cli,
       text:
-        reportLevel === "review-needed"
-          ? "@社長 確認をお願いします(ホワイトボードに報告を掲示しました)"
-          : `@社長 ${task !== null ? `タスク「${task.title}」` : "作業"}が完了しました(ホワイトボードに報告を掲示しました)`,
+        outcome === "stopped"
+          ? "@社長 緊急停止により作業を中断しました(ホワイトボードに報告を掲示しました)"
+          : reportLevel === "review-needed"
+            ? "@社長 確認をお願いします(ホワイトボードに報告を掲示しました)"
+            : `@社長 ${task !== null ? `タスク「${task.title}」` : "作業"}が完了しました(ホワイトボードに報告を掲示しました)`,
       at: finishedAt,
     });
     state.refresh();
@@ -274,6 +280,16 @@ export function createResidents({
             ...entry.state,
             lastOutcome: "skipped",
           });
+          return false;
+        }
+        // An emergency stop during the awaited precheck has nothing to kill
+        // yet; starting the run anyway would defeat the stop's guarantee, so
+        // a resident disabled since this launch began is not started.
+        if (
+          entry.configuration.enabled &&
+          residentStore.read(entry.name, { withInstructions: false })
+            ?.configuration.enabled !== true
+        ) {
           return false;
         }
       }
@@ -455,6 +471,24 @@ export function createResidents({
     return launch(entry, { gateOnPrecheck: false });
   }
 
+  // Emergency stop from the activity view: disable the resident first so the
+  // tick loop cannot relaunch it, then kill its in-flight run (if any). The
+  // resident stays off until the human re-enables it in the resident panel.
+  function stopNow(name) {
+    const entry = residentStore.read(name);
+    if (entry === null) throw new Error(`unknown resident: ${name}`);
+    if (entry.configuration.enabled) {
+      residentStore.save(name, {
+        configuration: { ...entry.configuration, enabled: false },
+        instructions: entry.instructions,
+        teamId: entry.teamId,
+      });
+    }
+    const stopped = runner.stop(name);
+    state.refresh();
+    return stopped;
+  }
+
   function markReportRead(id) {
     const changed = whiteboard.markRead(id);
     if (changed) state.refresh();
@@ -581,6 +615,7 @@ export function createResidents({
     save,
     remove,
     runNow,
+    stopNow,
     residentForFile: registry.residentForFile,
     listReports: whiteboard.listReports,
     markReportRead,

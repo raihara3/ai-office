@@ -155,6 +155,9 @@ export function createRunner({
   runTimeoutMs = RUN_TIMEOUT_MS,
 }) {
   const running = new Map();
+  // Residents whose in-flight run was stopped on purpose (the activity view's
+  // emergency stop), so `close` reports 'stopped' instead of a generic error.
+  const stopRequests = new Set();
 
   function isRunning(residentName) {
     return running.has(residentName);
@@ -179,7 +182,7 @@ export function createRunner({
 
   // Starts a headless run; returns false when this resident is already
   // running. `onFinished({outcome, resultText})` fires exactly once with
-  // outcome 'ok' | 'error' | 'timeout'.
+  // outcome 'ok' | 'error' | 'timeout' | 'stopped'.
   function run(resident, { prompt, onFinished }) {
     if (running.has(resident.name)) return false;
     const startedAt = now();
@@ -251,6 +254,7 @@ export function createRunner({
       finished = true;
       clearTimeout(timeout);
       running.delete(resident.name);
+      stopRequests.delete(resident.name);
       // finish() fires from child-process event handlers, where an exception
       // would escalate to an uncaughtException and take the server down.
       try {
@@ -265,6 +269,8 @@ export function createRunner({
       const resultText = extractResultText(resident.cli, stdout);
       if (timedOut) {
         finish('timeout', resultText || '実行がタイムアウトしました');
+      } else if (stopRequests.has(resident.name)) {
+        finish('stopped', resultText || '緊急停止しました');
       } else if (code === 0) {
         finish('ok', resultText || '(出力なし)');
       } else {
@@ -283,5 +289,21 @@ export function createRunner({
     for (const child of running.values()) child.kill('SIGTERM');
   }
 
-  return { run, isRunning, stopAll };
+  // Emergency stop for one resident's in-flight run; returns false when
+  // nothing is running. SIGTERM first, then SIGKILL — mirroring the timeout
+  // escalation so a CLI that traps SIGTERM cannot wedge the resident as busy.
+  function stop(residentName) {
+    const child = running.get(residentName);
+    if (child === undefined) return false;
+    stopRequests.add(residentName);
+    child.kill('SIGTERM');
+    const forceKill = setTimeout(() => {
+      // The map still holding this child means `close` has not fired yet.
+      if (running.get(residentName) === child) child.kill('SIGKILL');
+    }, KILL_ESCALATION_MS);
+    forceKill.unref?.();
+    return true;
+  }
+
+  return { run, isRunning, stop, stopAll };
 }

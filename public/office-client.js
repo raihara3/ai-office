@@ -33,6 +33,11 @@
       async runResident(name) {
         return requestJson(`/api/residents/${encodeURIComponent(name)}/run`, { method: 'POST' });
       },
+      // Emergency stop: kills the in-flight run and disables the resident
+      // until the human re-enables it in the resident panel.
+      async stopResident(name) {
+        return requestJson(`/api/residents/${encodeURIComponent(name)}/stop`, { method: 'POST' });
+      },
 
       // Team management: create, rename/resize and delete.
       async createTeam(payload) {

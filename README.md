@@ -181,7 +181,7 @@ the trigger — and receives the card body in its prompt. A run that ends ok
 archives the card (sets `archived_at`, never deletes the row); a
 review-needed or failed run moves the card to the user column, and a
 trigger-driven run that ends review-needed files a user-column card
-automatically. Reports carry a `task` column linking them to their card;
+automatically (not when the human emergency-stopped the run). Reports carry a `task` column linking them to their card;
 cards cannot be moved or archived while their run is in flight.
 
 Run results are saved as rows in the `reports` table of `office.db`; the
@@ -194,7 +194,7 @@ sidebar (read and pin state are plain columns). Each report row has a ✕
 button that takes it off the board — the row is flagged `archived_at`,
 never deleted.
 Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
-`POST /api/residents/:name/run`, `GET /api/whiteboard`,
+`POST /api/residents/:name/run`/`stop`, `GET /api/whiteboard`,
 `POST /api/whiteboard/read`, `POST /api/whiteboard/archive`,
 `GET /api/board`, `POST /api/board/create`/`move`/`archive`/`note`.
 

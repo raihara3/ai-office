@@ -203,21 +203,6 @@ textarea:focus-visible {
   margin-left: auto;
 }
 
-#theme-toggle {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
-  background: var(--surface);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-#theme-toggle:hover {
-  border-color: var(--text-muted);
-}
-
 #settings-open,
 #team-add {
   padding: 6px 12px;
@@ -1170,6 +1155,7 @@ textarea:focus-visible {
 #resident-form textarea,
 #team-form input,
 #settings-form input,
+#settings-form select,
 #card-form input,
 #card-form select,
 #card-form textarea,

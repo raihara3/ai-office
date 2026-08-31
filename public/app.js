@@ -137,18 +137,16 @@
     return document.getElementById(id);
   }
 
-  // Light/dark theme toggle. index.html already applied the stored (or
-  // system-preferred) theme before first paint; this only flips and persists.
-  const themeToggle = document.getElementById('theme-toggle');
-  function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme;
-    themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
-    themeToggle.title = theme === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え';
+  // Light/dark theme selector (lives in the settings drawer). index.html
+  // already applied the stored theme (light by default) before first paint;
+  // this only flips and persists on change.
+  const themeSelect = document.getElementById('theme-select');
+  function currentTheme() {
+    return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
   }
-  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
-  themeToggle.addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
+  themeSelect.addEventListener('change', () => {
+    const next = themeSelect.value === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
     try {
       localStorage.setItem('ai-office-theme', next);
     } catch {
@@ -1326,6 +1324,7 @@
 
   function openSettingsPanel() {
     field('office-name').value = latestSnapshot?.officeName ?? '';
+    themeSelect.value = currentTheme();
     settingsError.hidden = true;
     openDrawer('settings-form', 'オフィス設定');
   }

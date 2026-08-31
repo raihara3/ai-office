@@ -7,16 +7,14 @@
   <script>
     // Applied before the stylesheet paints so a stored dark theme never
     // flashes light on load. localStorage can throw when storage is blocked
-    // (e.g. cookies disabled); fall back to the system preference then.
+    // (e.g. cookies disabled); light mode is the default then.
     let storedTheme = null;
     try {
       storedTheme = localStorage.getItem('ai-office-theme');
     } catch {
-      // Storage unavailable; the system preference below decides.
+      // Storage unavailable; the light default below decides.
     }
-    document.documentElement.dataset.theme =
-      storedTheme ??
-      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.dataset.theme = storedTheme === 'dark' ? 'dark' : 'light';
   </script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -45,7 +43,6 @@
         <button type="button" class="view-tab" data-view="inbox" role="tab" aria-selected="false">インボックス<span id="inbox-tab-badge" class="tab-badge" hidden></span></button>
       </nav>
       <div id="appbar-actions">
-        <button type="button" id="theme-toggle" title="ダークモードに切り替え">🌙</button>
         <button type="button" id="settings-open" title="オフィス名などの設定を変更します">⚙ 設定</button>
         <button type="button" id="team-add" title="新しいチームを追加します">＋ チーム</button>
         <button type="button" id="card-add" class="primary-button">＋ タスク</button>
@@ -198,6 +195,12 @@
       <form id="settings-form" class="drawer-section" hidden>
         <label>オフィス名(10文字以内)
           <input id="office-name" required maxlength="10" placeholder="AI OFFICE">
+        </label>
+        <label>テーマ
+          <select id="theme-select">
+            <option value="light">ライトモード</option>
+            <option value="dark">ダークモード</option>
+          </select>
         </label>
         <p id="settings-error" class="form-error" hidden></p>
         <div class="form-actions">

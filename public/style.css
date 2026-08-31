@@ -1102,7 +1102,8 @@ textarea:focus-visible {
 #resident-form,
 #team-form,
 #settings-form,
-#card-form {
+#card-form,
+#card-edit-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1111,7 +1112,8 @@ textarea:focus-visible {
 #resident-form label,
 #team-form label,
 #settings-form label,
-#card-form label {
+#card-form label,
+#card-edit-form label {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1128,6 +1130,8 @@ textarea:focus-visible {
 #card-form input,
 #card-form select,
 #card-form textarea,
+#card-edit-form input,
+#card-edit-form textarea,
 #card-note-form textarea {
   padding: 7px 10px;
   border: 1px solid var(--border-strong);
@@ -1141,6 +1145,7 @@ textarea:focus-visible {
 
 #resident-form textarea,
 #card-form textarea,
+#card-edit-form textarea,
 #card-note-form textarea {
   resize: vertical;
 }

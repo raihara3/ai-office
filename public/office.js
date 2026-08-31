@@ -2,10 +2,9 @@
 // One terminal CLI session = one visitor avatar: it steps out of the
 // entrance elevator when the session starts, waits in the lobby while the
 // answer is produced, and rides the elevator home once the turn is done.
-// A receptionist avatar in the lobby retires sessions whose CLI process has
-// exited (log files are kept on disk). app.js pushes state via
-// OFFICE.setState(); this file owns the draw loop. Pure geometry and vendor
-// specs live in the ./office/ modules so this file is just the rendering.
+// app.js pushes state via OFFICE.setState(); this file owns the draw loop.
+// Pure geometry and vendor specs live in the ./office/ modules so this file
+// is just the rendering.
 
 import { CLI_SPECS, UNSET_SPEC } from './office/specs.js';
 import {
@@ -52,7 +51,6 @@ import { findPath } from './office/pathfinding.js';
   // are visualized at the resident island, never in the entrance lobby.
   let residentEmployees = new Map();
   const actors = new Map();
-  let hrBubble = null;
   // Timestamp of the previous animation frame, used to make movement
   // frame-rate independent. null until the first frame runs.
   let lastFrameTime = null;
@@ -111,10 +109,6 @@ import { findPath } from './office/pathfinding.js';
 
   window.OFFICE = {
     faceDataUrl,
-    // Shown above the HR avatar when the sidebar composer runs a cleanup.
-    hrSay(text) {
-      hrBubble = { text, until: Date.now() + 5000 };
-    },
     setState(next) {
       state = next;
       const seen = new Set();
@@ -774,23 +768,6 @@ import { findPath } from './office/pathfinding.js';
     }
   }
 
-  // --- reception (cleanup) ----------------------------------------------
-
-  function drawHr(layout, time) {
-    const x = 290;
-    const y = layout.entranceTop + 124;
-    drawAvatar(UNSET_SPEC, x, y, { time });
-    ctx.font = 'bold 10px "Hiragino Sans", sans-serif';
-    ctx.fillStyle = '#4a4136';
-    ctx.textAlign = 'center';
-    ctx.fillText('受付', x, y + 14);
-    if (hrBubble && hrBubble.until > Date.now()) {
-      drawBubble(x, y - 56, hrBubble.text);
-    } else if (!hrBubble || hrBubble.until <= Date.now()) {
-      hrBubble = null;
-    }
-  }
-
   // --- pointer targets --------------------------------------------------
 
   // Canvas pixels from a mouse event; the canvas is CSS-scaled to fit.
@@ -949,7 +926,6 @@ import { findPath } from './office/pathfinding.js';
     );
 
     drawRoom(time, layout);
-    drawHr(layout, time);
 
     const obstacles = entranceObstacles(layout);
     const bounds = { width: layout.width, height: layout.height };

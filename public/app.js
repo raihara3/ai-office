@@ -156,29 +156,6 @@
     }
   });
 
-  // The HR cleanup, kept as a single app-bar button: retire everyone with no
-  // work left.
-  const cleanupButton = document.getElementById('cleanup-run');
-  let cleanupInFlight = false;
-  cleanupButton.addEventListener('click', async () => {
-    if (cleanupInFlight) return;
-    cleanupInFlight = true;
-    cleanupButton.disabled = true;
-    try {
-      const result = await client.runCleanup();
-      window.OFFICE.hrSay(
-        result.retired.length > 0
-          ? `${result.retired.length}人が退勤しました`
-          : 'サボっている人はいませんでした'
-      );
-    } catch {
-      window.OFFICE.hrSay('退勤処理に失敗しました');
-    } finally {
-      cleanupInFlight = false;
-      cleanupButton.disabled = false;
-    }
-  });
-
   // --- right drawer -------------------------------------------------------
   // A single slide-in drawer replaces the old stacked modals. It hosts one
   // section at a time: card detail, the task filing form, a resident's live

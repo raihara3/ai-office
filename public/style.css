@@ -218,7 +218,6 @@ textarea:focus-visible {
   border-color: var(--text-muted);
 }
 
-#cleanup-run,
 #settings-open,
 #team-add {
   padding: 6px 12px;
@@ -231,16 +230,10 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
-#cleanup-run:hover,
 #settings-open:hover,
 #team-add:hover {
   border-color: var(--text-muted);
   color: var(--text);
-}
-
-#cleanup-run:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .primary-button {

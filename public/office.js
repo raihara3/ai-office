@@ -184,10 +184,9 @@ import { findPath } from './office/pathfinding.js';
     { x: 8, y: 30 }, { x: 62, y: 40 },
   ];
 
-  // The office sign: the user-configurable name engraved on a brass-framed
-  // walnut nameplate, matching the reception counter it hangs over. Rendered
-  // once into an offscreen sprite and stamped each frame; the sprite is
-  // rebuilt only when the name changes.
+  // The office sign: the user-configurable name on a simple white plate with
+  // black lettering. Rendered once into an offscreen sprite and stamped each
+  // frame; the sprite is rebuilt only when the name changes.
   const DEFAULT_OFFICE_NAME = 'AI OFFICE';
   const OFFICE_SIGN_WIDTH = 122;
   let officeSignSprite = null;
@@ -200,19 +199,14 @@ import { findPath } from './office/pathfinding.js';
       officeSignSprite.width = OFFICE_SIGN_WIDTH;
       officeSignSprite.height = 34;
       const sign = officeSignSprite.getContext('2d');
-      // brass frame
+      // white plate with a thin dark outline to read against the wall
       sign.beginPath();
-      sign.roundRect(0, 0, OFFICE_SIGN_WIDTH, 34, 6);
-      sign.fillStyle = '#d9a441';
+      sign.roundRect(0.5, 0.5, OFFICE_SIGN_WIDTH - 1, 33, 4);
+      sign.fillStyle = '#ffffff';
       sign.fill();
-      // walnut plate inset within the frame, matching the reception counter
-      sign.beginPath();
-      sign.roundRect(2, 2, OFFICE_SIGN_WIDTH - 4, 30, 4);
-      sign.fillStyle = '#4e342e';
-      sign.fill();
-      // polished highlight along the plate's top edge for a beveled look
-      sign.fillStyle = '#7b5e57';
-      sign.fillRect(4, 3, OFFICE_SIGN_WIDTH - 8, 3);
+      sign.lineWidth = 1;
+      sign.strokeStyle = '#333333';
+      sign.stroke();
       // The name is capped at 10 characters; shrink the font until even a
       // full-width 10-character name fits inside the plate.
       let fontSize = 17;
@@ -221,8 +215,8 @@ import { findPath } from './office/pathfinding.js';
         fontSize -= 1;
         sign.font = `bold ${fontSize}px "Hiragino Sans", sans-serif`;
       } while (fontSize > 8 && sign.measureText(name).width > 104);
-      // engraved name in warm cream
-      sign.fillStyle = '#f3e6cc';
+      // black lettering
+      sign.fillStyle = '#000000';
       sign.fillText(name, OFFICE_SIGN_WIDTH / 2, 23);
     }
     ctx.drawImage(officeSignSprite, x, y);

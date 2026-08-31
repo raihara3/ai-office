@@ -557,6 +557,10 @@
       const orphaned = !card.done && card.assignee !== 'user' && !index.has(card.assignee);
       grouped.get(columnKeyForCard(card, index)).push({ ...card, orphaned });
     }
+    // The 完了 column aggregates done cards across every assignee, so the flat
+    // listing's per-assignee position order carries no meaning here — order it
+    // by completion time, newest at the bottom, like every other column.
+    grouped.get(DONE_COLUMN).sort((first, second) => first.doneAt - second.doneAt);
     return { columns, grouped, index };
   }
 

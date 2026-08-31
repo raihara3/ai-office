@@ -158,6 +158,7 @@ test('board: markCardDone keeps the card on the board but out of the work queue'
   assert.equal(board.markCardDone(first), true);
   const doneCard = board.listCards().find((card) => card.id === first);
   assert.equal(doneCard.done, true); // still listed, now in the 完了 column
+  assert.equal(doneCard.doneAt, 5_000_000); // completion time, so the 完了 column can order by it
   assert.deepEqual(board.counts(), { total: 1, user: 0 }); // done cards drop out of the count
   // The next card is worked, never the done one.
   assert.equal(board.topCardFor('task-runner').id, second);

@@ -119,6 +119,7 @@ export function createBoard({ database, now = () => Date.now() }) {
       updatedAt: row.updated_at,
       body: row.body,
       done: row.done_at !== null,
+      doneAt: row.done_at,
     };
   }
 

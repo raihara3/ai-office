@@ -977,7 +977,6 @@ textarea:focus-visible {
 
 /* The id-specific display:flex below would defeat the hidden attribute's UA
    display:none, so hidden sections are re-hidden at higher specificity. */
-#card-detail[hidden],
 #card-form[hidden],
 #activity-wrap[hidden],
 #resident-form[hidden],
@@ -986,7 +985,7 @@ textarea:focus-visible {
   display: none;
 }
 
-/* --- card detail (in the drawer) ---------------------------------------- */
+/* --- card detail (in the modal dialog) ---------------------------------- */
 
 .card-detail-head {
   display: flex;
@@ -1365,6 +1364,14 @@ textarea:focus-visible {
 #report-dialog-favorite[aria-pressed="true"] { color: var(--warning); }
 #report-dialog-next { margin-left: auto; }
 #report-dialog-task[hidden] { display: none; }
+#card-dialog { width: min(560px, calc(100vw - 48px)); max-width: none; max-height: min(720px, calc(100dvh - 64px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 28px 90px rgba(0, 0, 0, .24); background: var(--surface); color: var(--text); }
+#card-dialog[open] { display: flex; flex-direction: column; }
+#card-dialog::backdrop { background: rgba(25, 24, 22, .42); backdrop-filter: blur(3px); }
+.card-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#card-dialog-title { min-width: 0; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 800; white-space: nowrap; text-overflow: ellipsis; }
+#card-dialog-close { flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 5px; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
+#card-dialog-close:hover { color: var(--text); }
+#card-detail { flex: 1; min-height: 0; padding: 16px 20px 20px; overflow-y: auto; scrollbar-width: thin; }
 #ui-notice { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; width: max-content; max-width: calc(100vw - 40px); padding: 12px 18px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--text); color: var(--surface); box-shadow: var(--shadow-raised); font-size: 12px; }
 
 .markdown { font-size: 13px; line-height: 1.85; color: var(--text); overflow-wrap: anywhere; white-space: normal; }
@@ -1418,6 +1425,7 @@ textarea:focus-visible {
   .report-dialog-head { padding: 18px; }
   #report-dialog-body { padding: 20px; }
   .report-dialog-footer { padding: 12px; gap: 6px; }
+  #card-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 24px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .strip-busy::before { animation: none; }

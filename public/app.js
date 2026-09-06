@@ -163,7 +163,7 @@ import { renderMarkdown } from './markdown.js';
 
   const drawerElement = document.getElementById('drawer');
   const drawerTitleElement = document.getElementById('drawer-title');
-  const DRAWER_SECTION_IDS = ['card-detail', 'card-form', 'activity-wrap', 'resident-form', 'team-form', 'settings-form'];
+  const DRAWER_SECTION_IDS = ['card-form', 'activity-wrap', 'resident-form', 'team-form', 'settings-form'];
   // Every opener (board card, canvas seat/desk/label, header add button) runs
   // inside a click that then bubbles to the outside-click closer below. This
   // flag lets that opening click through so it does not immediately re-close
@@ -495,8 +495,6 @@ import { renderMarkdown } from './markdown.js';
       reportTaskToOpen = null;
       openReportId = null;
       openCardDetail(task);
-      drawerJustOpened = false;
-      field('drawer-close').focus();
       return;
     }
     const opener = reportReturnFocus?.isConnected ? reportReturnFocus :
@@ -1067,9 +1065,34 @@ import { renderMarkdown } from './markdown.js';
     refreshBoard();
   });
 
-  // --- card detail (drawer) -----------------------------------------------
+  // --- card detail (modal dialog) -----------------------------------------
 
   const cardDetailElement = document.getElementById('card-detail');
+  const cardDialog = document.getElementById('card-dialog');
+  // Track the element to restore focus to when the dialog closes, mirroring the
+  // report dialog. showModal() throws if the dialog is already open, so callers
+  // that re-render in place (note append, edit ⇄ detail) go through this helper.
+  let cardReturnFocus = null;
+
+  function openCardDialog(title) {
+    field('card-dialog-title').textContent = title;
+    if (!cardDialog.open) {
+      cardReturnFocus = document.activeElement;
+      cardDialog.showModal();
+    }
+  }
+
+  field('card-dialog-close').addEventListener('click', () => cardDialog.close());
+  cardDialog.addEventListener('click', (event) => {
+    const bounds = cardDialog.getBoundingClientRect();
+    if (event.target === cardDialog && (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom)) cardDialog.close();
+  });
+  cardDialog.addEventListener('close', () => {
+    const opener = cardReturnFocus?.isConnected ? cardReturnFocus : null;
+    cardReturnFocus = null;
+    opener?.focus({ preventScroll: true });
+  });
 
   function openCardDetail(id) {
     const card = boardCards.find((c) => c.id === id);
@@ -1100,7 +1123,7 @@ import { renderMarkdown } from './markdown.js';
           ${action}
         </div>
       </form>`;
-    openDrawer('card-detail', 'タスク詳細');
+    openCardDialog('タスク詳細');
     field('card-note-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const text = field('card-note-text').value.trim();
@@ -1121,7 +1144,7 @@ import { renderMarkdown } from './markdown.js';
         } catch {
           // Fall through: the board reload below shows what really happened.
         }
-        closeDrawer();
+        cardDialog.close();
         refreshBoard();
       });
     }
@@ -1133,7 +1156,7 @@ import { renderMarkdown } from './markdown.js';
         } catch {
           // Fall through: the board reload below shows what really happened.
         }
-        closeDrawer();
+        cardDialog.close();
         refreshBoard();
       });
     }
@@ -1161,7 +1184,7 @@ import { renderMarkdown } from './markdown.js';
           <button type="button" id="card-edit-cancel">キャンセル</button>
         </div>
       </form>`;
-    openDrawer('card-detail', 'タスクを編集');
+    openCardDialog('タスクを編集');
     // Set values via the DOM so titles/bodies with markup need no escaping.
     field('card-edit-title').value = card.title;
     field('card-edit-body').value = card.body || '';

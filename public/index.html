@@ -105,6 +105,13 @@
       <button type="button" id="report-dialog-next">次の未読 →</button>
     </footer>
   </dialog>
+  <dialog id="card-dialog" aria-labelledby="card-dialog-title">
+    <header class="card-dialog-head">
+      <h1 id="card-dialog-title"></h1>
+      <button type="button" id="card-dialog-close" aria-label="閉じる" autofocus>✕</button>
+    </header>
+    <div id="card-detail" tabindex="0" role="region" aria-label="タスク詳細"></div>
+  </dialog>
   <div id="ui-notice" role="status" hidden></div>
   <aside id="drawer" hidden>
     <header id="drawer-head">
@@ -112,7 +119,6 @@
       <button type="button" id="drawer-close" title="閉じる">✕</button>
     </header>
     <div id="drawer-body">
-      <div id="card-detail" class="drawer-section" hidden></div>
       <form id="card-form" class="drawer-section" hidden>
         <label>件名
           <input id="card-title" placeholder="タスクの件名" required>

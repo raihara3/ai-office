@@ -8,7 +8,7 @@ export const CLI_SPECS = {
     emblem: 'asterisk',
   },
   codex: {
-    colors: { body: '#e8e8e8', accent: '#111111', head: '#222222', eye: '#8be9fd' },
+    colors: { body: '#e8e8e8', accent: '#111111', head: '#b9bec1', eye: '#8be9fd' },
     emblem: 'knot',
   },
   gemini: {
@@ -17,8 +17,8 @@ export const CLI_SPECS = {
   },
 };
 
-// The neutral fallback avatar: used by the HR figure at the entrance and by
-// any seat whose LLM/vendor is not configured (e.g. the resident-team desks).
+// The neutral fallback for assigned residents with an unknown CLI/vendor.
+// Unassigned seats do not draw an avatar.
 export const UNSET_SPEC = {
   colors: { body: '#8a93a6', accent: '#f5d76e', head: '#5b6270', eye: '#ffffff' },
   emblem: 'badge',

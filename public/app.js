@@ -226,9 +226,6 @@
   for (const tab of document.querySelectorAll('.view-tab')) {
     tab.addEventListener('click', () => setView(tab.dataset.view));
   }
-  // Clicking the whiteboard on the canvas opens the full board in place.
-  window.addEventListener('office:whiteboard-open', () => setView('board'));
-
   // --- office zoom --------------------------------------------------------
   // The canvas intrinsic size grows with the team/session count, so on a fixed
   // viewport it shrinks to fit. Zoom lets the user enlarge it and pan by
@@ -240,13 +237,21 @@
   const ZOOM_MAX = 3;
   let zoomMode = 'fit'; // 'fit' | number
 
+  function sceneWidth() {
+    return Number(officeCanvasElement.dataset.sceneWidth) || officeCanvasElement.width;
+  }
+
+  function sceneHeight() {
+    return Number(officeCanvasElement.dataset.sceneHeight) || officeCanvasElement.height;
+  }
+
   function fitScale() {
     const styles = getComputedStyle(officeScrollElement);
     const availableWidth =
       officeScrollElement.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
     const availableHeight =
       officeScrollElement.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
-    return Math.min(availableWidth / officeCanvasElement.width, availableHeight / officeCanvasElement.height, 1);
+    return Math.min(availableWidth / sceneWidth(), availableHeight / sceneHeight(), 1);
   }
 
   function currentScale() {
@@ -257,8 +262,8 @@
     // No size while the office tab is hidden; setView re-fits on return.
     if (officeScrollElement.clientWidth === 0 || officeScrollElement.clientHeight === 0) return;
     const scale = currentScale();
-    officeCanvasElement.style.width = `${officeCanvasElement.width * scale}px`;
-    officeCanvasElement.style.height = `${officeCanvasElement.height * scale}px`;
+    officeCanvasElement.style.width = `${sceneWidth() * scale}px`;
+    officeCanvasElement.style.height = `${sceneHeight() * scale}px`;
   }
 
   function setZoom(scale) {
@@ -334,7 +339,7 @@
   }).observe(officeScrollElement);
   new MutationObserver(applyZoom).observe(officeCanvasElement, {
     attributes: true,
-    attributeFilter: ['width', 'height'],
+    attributeFilter: ['width', 'height', 'data-scene-width', 'data-scene-height'],
   });
   applyZoom();
 

@@ -1,7 +1,7 @@
 # AI Office
 
 A Gather-like virtual office that visualizes your local AI coding agents —
-Claude Code, Codex CLI and Gemini CLI — as pixel-art coworkers.
+Claude Code, Codex CLI and Gemini CLI — as miniature robot coworkers.
 
 Each terminal session (one log file) gets its own visitor avatar in the
 entrance lobby pinned to the bottom of the scene: when the agent starts
@@ -11,7 +11,7 @@ the user's request), and rides the elevator back out once the answer is
 delivered — it re-enters on the next prompt. Subagent runs appear as mini
 avatars next to the visitor. Team rooms in the top-left seat the resident
 team — permanently
-assigned agents that run on schedules and report to a wall whiteboard.
+assigned agents that run on schedules and post reports to the inbox.
 
 ![status](https://img.shields.io/badge/runtime-Node.js%20%E2%89%A520-brightgreen)
 
@@ -64,7 +64,15 @@ configuration changes to any CLI are required:
 Parsed observations (current tool call, user prompt, subagent spawns, MCP
 tool calls, turn completion) are merged into a per-employee state and pushed
 to the browser over Server-Sent Events (`/events`). The frontend is a single
-Canvas 2D scene with procedurally drawn pixel avatars.
+high-DPI Canvas 2D scene with a smooth 2.5D miniature office, subdued oak
+desks and a brown wood reception counter, neutral gray and soft off-white
+(`#ededed`) walls and floors, charcoal metalwork, dark-brown wooden team
+and office name signs, flat matte surfaces with localized shading and
+procedurally drawn rounded robot avatars. A 24-hour digital clock sits on
+the wall. A cushioned sofa in the center of the entrance lobby is flanked
+by a floor lamp with a dark gray shade and a plant. Team names appear on raised signs
+centered above each room; long names display an ellipsis without changing
+the saved name.
 
 ### Status rules
 
@@ -93,8 +101,8 @@ Canvas 2D scene with procedurally drawn pixel avatars.
   background subagent sessions get their own lobby spot. Both wear a green-
   and-yellow beginner's mark (若葉マーク)
 - Elevator doors slide open whenever a visitor stands near them; a
-  decorative door in the partition wall separates the lobby from the work
-  area (no avatar passes through it)
+  decorative glass double door with a card reader near the right wall
+  separates the lobby from the work area (no avatar passes through it)
 - App bar: the AI OFFICE brand, view tabs (オフィス / ボード) that switch
   between the office canvas and the in-place full board, the connection
   status pill, a 🌙/☀️ light/dark theme toggle (the choice is remembered in
@@ -103,7 +111,7 @@ Canvas 2D scene with procedurally drawn pixel avatars.
   form in the drawer
 - Kanban strip: below the app bar, one column per assignee (user first,
   then residents in seat order) with a vendor-colored assignee chip
-  matching the pixel avatars, a card count, a live 作業中 badge while a
+  matching the robot avatars, a card count, a live 作業中 badge while a
   run is going, a preview of the first few cards (`ほか N 件` when more)
   and a per-column ＋ button that files a task with that assignee
   pre-selected
@@ -170,10 +178,11 @@ from HR
 cleanup, and skips the `#general` request/reply exchange (the resident posts
 its own report notification instead).
 
-Resident seats render three states: unassigned (gray avatar facing the
-viewer), assigned idle (vendor-colored, screen off, ⏸ when disabled) and
+Resident seats render three states: unassigned (desk and chair only),
+assigned idle (vendor-colored, screen off, ⏸ when disabled) and
 running (facing the monitor, lit screen, status bubble). Residents never
-wait in the lobby or ride the elevator out.
+wait in the lobby or ride the elevator out. Their names appear in subdued
+tags below their feet.
 
 A kanban board hands tasks to residents: one row per card in the `cards`
 table of `office.db` (columns are assignees — the user or a resident; drag
@@ -187,9 +196,7 @@ automatically (not when the human emergency-stopped the run). Reports carry a `t
 cards cannot be moved or archived while their run is in flight.
 
 Run results are saved as rows in the `reports` table of `office.db`; the
-whiteboard on the top wall shows a badge counting unread reports plus cards
-waiting in the user column (red when any needs the human) and, when
-clicked, switches to the in-place board view (file cards, drag to reorder
+ボード tab opens the in-place board view (file cards, drag to reorder
 or reassign, open a card in the drawer for its body, linked reports, a
 follow-up note form and a done button); reports are listed in the inbox
 sidebar (read and pin state are plain columns). Each report row has a ✕

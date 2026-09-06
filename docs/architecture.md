@@ -79,6 +79,7 @@ public/                フロントエンド(静的 ES モジュールとして�
   style.css            ライト SaaS テーマの UI スタイル一式
   office.js            canvas 描画ループ(部屋・デスク・アバター・吹き出し)
   office/
+    miniature.js       Miniature materials, furniture and robot drawing helpers
     specs.js           ベンダー別アバターの色 + エンブレム
     layout.js          純粋なシーン幾何(チームルーム・エントランスロビー・座席)
     layout.test.js     幾何のテスト
@@ -295,7 +296,15 @@ SaaS テーマ(ライト / ダーク。ダーク用トークンは
 
 ### `office.js`
 
-canvas 描画ループ。チームルーム・デスク・アバター・吹き出し・サブエージェント
+High-DPI Canvas 2D rendering uses a smooth 2.5D miniature style with oak desks,
+rounded robot avatars and a pale palette. Walls, floors, carpets, wood desks,
+fabric sofas and robots use flat matte surfaces with localized shading;
+hard fixtures have tighter corners while fabric and robots retain rounded forms.
+Material, furniture and
+robot drawing is delegated to `office/miniature.js` through
+`createMiniatureRenderer(context)`; layout and interaction remain separate.
+
+チームルーム・デスク・アバター・吹き出し・サブエージェント
 のミニアバターのフレームごとの描画と、来客アバターの移動を
 担います。ターミナル起動の CLI セッションは下端のエントランスロビーに
 「来客」として描画されます: セッションが働き始めるとエレベーターから登場し
@@ -303,16 +312,16 @@ canvas 描画ループ。チームルーム・デスク・アバター・吹き�
 吹き出し(作業中 / 確認中 / 考え中、ブロック中は ・・・、ユーザー入力待ちは
 🖐️)を出し、回答を出し終える(status が break)かセッションが消えると
 エレベーターに乗って退場します(次の指示で再入場)。来客が机に座ることは
-ありません。常駐チームの席は 3 状態で描き分けます:
-未割り当て(こちらを向くグレーのアバター)、割り当て済みアイドル(ベンダー
-カラーでこちらを向き、画面は消灯。稼働オフなら ⏸)、実行中(モニターに
-向かい、画面点灯 + ステータス吹き出し)。常駐員はロビーに出ることも
-エレベーターで退場することもありません。ホワイトボード(未読報告数 + ユーザー列カード枚数の合計バッジ
-付き。ユーザー列にカードがあれば赤)も描画し、ホワイトボード /
-常駐デスクのクリックは CustomEvent として `app.js` へ通知します
-(`office:whiteboard-open`。常駐デスクは上下 2 領域に分かれ、モニタ側は
-作業状況ビューを開く `office:resident-activity-open`、アバター側は設定
-ドロワーを開く `office:resident-seat-open`)。
+ありません。
+Resident seats have three visual states: unassigned (desk and chair only),
+assigned idle (vendor-colored avatar facing forward, screen off, ⏸ when
+disabled), and running (facing a lit monitor with a status bubble). Resident
+names appear in subdued tags below their feet, with subagents below the tags.
+Residents never enter the lobby or leave via the elevator.
+Resident desk clicks emit CustomEvents to `app.js`: the monitor area opens
+the activity view (`office:resident-activity-open`), and the avatar area
+opens the settings drawer (`office:resident-seat-open`). The board tab and
+report inbox provide access to tasks and reports; the scene has no wall whiteboard.
 `window.OFFICE` として `setState` を公開します。
 純粋で DOM 非依存のロジックは `office/` モジュールへ委譲しています。
 
@@ -320,8 +329,8 @@ canvas 描画ループ。チームルーム・デスク・アバター・吹き�
 
 ベンダー別アバターの外観(`CLI_SPECS`、`UNSET_SPEC`):body/accent/head/eye の色と
 エンブレム。canvas のアバター描画の単一の真実の源です。
-`UNSET_SPEC` は中立のフォールバックアバターで、LLM が未設定の席
-(常駐チームの机)に使われます。
+`UNSET_SPEC` provides the neutral fallback appearance for an assigned resident
+whose CLI is unknown. Unassigned seats do not render an avatar.
 
 ### `office/layout.js`
 
@@ -338,9 +347,14 @@ canvas 描画ループ。チームルーム・デスク・アバター・吹き�
 `BENCH`)と、それらを経路探索の障害物リストに育てる
 `entranceObstacles(layout)` も同居させ、待機スポットが家具に埋まらない
 ことをテストで固定しています。
-机の座標 `roomDeskPosition`、クリック領域 `roomDeskHitRect`(とその上帯の
-モニタ領域 `roomMonitorHitRect`)、ルーム名ラベルの `teamLabelHitRect`、
-上壁のホワイトボードのクリック領域 `WHITEBOARD` もここに定義します。
+This module also defines desk coordinates (`roomDeskPosition`), desk hit areas
+(`roomDeskHitRect` and the monitor area `roomMonitorHitRect`), and room label
+hit areas (`teamLabelHitRect`). The same label rectangle positions a raised
+department sign with support posts at the top center of each room; long names
+are ellipsized for display without changing the stored name.
+`entranceLoungeRect(layout)` covers the cushioned sofa at `BENCH` in the
+center of the entrance lobby, with a floor lamp on its left and a plant on its
+right. Its bounds are shared between rendering and pathfinding.
 canvas も DOM も触れないため単体テスト可能です。
 
 ### `office/pathfinding.js`
@@ -352,9 +366,9 @@ canvas も DOM も触れないため単体テスト可能です。
 可視線で直線化した経由点(始点を除き終点を含む)を返します。到達不能なら
 `[goal]` に退避するため、描画側は従来どおり直進にフォールバックします。
 歩くのはロビーの来客だけなので、`office.js` は `layout.js` の
-`entranceObstacles(layout)`(仕切り壁・エレベーターの筐体・受付カウンター・
-ベンチ)を障害物として渡し、アバターが空きスペースだけを歩くように
-します。canvas も DOM も触れないため単体テスト可能です。
+`entranceObstacles(layout)` を障害物として渡し、アバターが空きスペースだけを歩くように
+します。The obstacles include the partition wall, elevator, reception counter,
+entrance sofa and its accessories. canvas も DOM も触れないため単体テスト可能です。
 
 ### `office-client.js`
 
@@ -378,9 +392,9 @@ HTML5 drag & drop での並び替え・再アサイン。担当常駐が削除�
 社長(`@社長`)が
 新たにメンションされた際の WebAudio チャイム再生(`snapshot.messages` を
 参照。チャット自体の描画はしません)。クライアントストリームを
-`window.OFFICE.setState` へ橋渡しします。canvas の CustomEvent
-(ホワイトボードクリックはボードビューへの切り替え)と各ボタンを受けて、
-右スライドインドロワー(`#drawer`)に 1 セクションずつ表示します:
+`window.OFFICE.setState` へ橋渡しします。
+Canvas CustomEvents and button actions open one section at a time in the
+right-hand drawer (`#drawer`):
 カード詳細(本文・紐付く報告・追記フォーム・完了ボタン)、カード起票
 フォーム(＋ タスク ボタン / 列の ＋ で開き、後者は担当を事前選択)、
 常駐員の作業状況ビュー(実行中は緊急停止ボタン。実行中の run を kill し、

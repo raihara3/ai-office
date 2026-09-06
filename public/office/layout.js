@@ -2,12 +2,10 @@
 // lobby sit, and how seats are assigned. No canvas or DOM here, so this
 // module is unit-testable and shared by the renderer.
 
-// The team rooms' top desk row. Kept low enough that a desk's nameplate chip
-// (drawn 106px above the anchor) stays clear of the wall's baseboard.
+// The top desk row leaves room for department signs above the monitors.
 export const FIRST_ROW_Y = 240;
-// The packing limit for rows: a desk's nameplate chip starts 106px above its
-// anchor, while the row above extends 64px below its anchor (the subagent
-// mini-avatars and their labels), leaving a couple of pixels of clearance.
+// Monitors start 84px above the anchor; subagents and their labels end
+// 84px below it, leaving 4px of clearance between rows.
 export const ROW_SPACING = 172;
 
 // Team rooms: fixed partitions pinned to the top-left edge, laid left to
@@ -26,7 +24,7 @@ export const ROOM_COLUMNS = 3;
 // Rooms per band before wrapping onto the next band below.
 export const TEAMS_PER_ROW = 3;
 // Vertical air between stacked room bands: clears the deepest desk's avatar
-// and subagent minis (which overflow ~28px below the room box) before the
+// and subagent minis (which overflow ~48px below the room box) before the
 // next band's carpet begins.
 export const ROOM_ROW_GAP = 64;
 // The top desk row sits this far below its room's top edge, so desks track
@@ -114,32 +112,28 @@ export function roomDeskPosition(room, index) {
   };
 }
 
-// The whiteboard on the top wall, between the first two windows: resident
-// team reports to the human are posted here, so it is a click target.
-export const WHITEBOARD = { x: 188, y: 16, width: 96, height: 58 };
-
-// The clickable area of a team desk, spanning the nameplate chip (106px
-// above the anchor) down past the chair, matching the drawn furniture.
+// The clickable desk area spans the monitor through the resident name
+// beneath the chair. The subagent row below is not a desk target.
 export function roomDeskHitRect(room, index) {
   const desk = roomDeskPosition(room, index);
-  return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 132 };
+  return { x: desk.x - 58, y: desk.y - 86, width: 116, height: 130 };
 }
 
 // The desk hit area splits into two stacked targets so a tap can tell the
-// monitor from the avatar: the upper band covers the nameplate chip and the
-// monitor (the desktop surface sits at -46), opening the activity view; the
+// monitor from the avatar: the upper band covers the monitor
+// (the desktop surface sits at -46), opening the activity view; the
 // lower band covers the desk, chair and avatar, opening the settings panel.
 // The split leaves no dead zone — together the bands tile roomDeskHitRect.
 export function roomMonitorHitRect(room, index) {
   const desk = roomDeskPosition(room, index);
-  return { x: desk.x - 58, y: desk.y - 106, width: 116, height: 62 };
+  return { x: desk.x - 58, y: desk.y - 86, width: 116, height: 42 };
 }
 
-// The clickable band around the room's name label (drawn at x+8, y+22).
-// Checked before desk hit rects: row 0's nameplate chips start at y 134, so
-// the 30px band only overlaps dead room padding, never a desk target.
+// The freestanding department sign is centered above the desk grid. Its
+// plaque and supports fit in the room's top padding, clear of desk targets.
 export function teamLabelHitRect(room) {
-  return { x: room.x, y: room.y, width: 180, height: 30 };
+  const width = Math.min(180, room.width - 24);
+  return { x: room.x + (room.width - width) / 2, y: room.y + 1, width, height: 28 };
 }
 
 // The whole scene: team rooms, the entrance lobby band, and the world size.
@@ -163,19 +157,23 @@ export function computeLayout(teams = []) {
 // office.js and grown into the pathfinding obstacles below, and kept here so
 // the tests can pin that no waiting spot ever lands inside a blocked rect.
 export const ELEVATOR = { x: 12, y: 12, width: 72, height: 136 };
-export const RECEPTION = { x: 120, y: 72, width: 140, height: 32 };
-export const BENCH = { x: 340, y: 64, width: 230, height: 34 };
+export const RECEPTION = { x: 120, y: 68, width: 260, height: 40 };
+export const BENCH = { x: 460, y: 64, width: 230, height: 34 };
+
+export function entranceLoungeRect(layout) {
+  return { x: BENCH.x - 48, y: layout.entranceTop + BENCH.y - 9, width: BENCH.width + 104, height: 48 };
+}
 
 // The rects lobby walkers must route around: the partition wall (so a path
 // never cuts through the work area), the elevator shell (including its outer
-// frame), the reception counter and the bench.
+// frame), the reception counter and the lounge furniture.
 export function entranceObstacles(layout) {
   const top = layout.entranceTop;
   return [
     { x: 0, y: top, width: layout.width, height: PARTITION_HEIGHT },
     { x: ELEVATOR.x - 4, y: top + ELEVATOR.y - 8, width: ELEVATOR.width + 8, height: ELEVATOR.height + 8 },
     { x: RECEPTION.x, y: top + RECEPTION.y, width: RECEPTION.width, height: RECEPTION.height },
-    { x: BENCH.x, y: top + BENCH.y, width: BENCH.width, height: BENCH.height },
+    entranceLoungeRect(layout),
   ];
 }
 

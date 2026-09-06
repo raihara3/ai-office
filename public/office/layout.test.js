@@ -16,7 +16,6 @@ import {
   teamRooms,
   ENTRANCE_HEIGHT,
   PARTITION_HEIGHT,
-  WHITEBOARD,
 } from './layout.js';
 
 const DEFAULT_TEAMS = [{ id: 'default', name: '常駐チーム', seatCount: 6 }];
@@ -133,12 +132,12 @@ test('a room contains every desk row including the chairs', () => {
   }
 });
 
-test('roomDeskHitRect: covers the desk from nameplate to chair', () => {
+test('roomDeskHitRect: covers the monitor, chair and resident name', () => {
   const [room] = teamRooms(DEFAULT_TEAMS);
   const desk = roomDeskPosition(room, 1);
   const hit = roomDeskHitRect(room, 1);
   assert.ok(hit.x <= desk.x - 56 && hit.x + hit.width >= desk.x + 56);
-  assert.ok(hit.y <= desk.y - 106 && hit.y + hit.height >= desk.y + 20);
+  assert.ok(hit.y <= desk.y - 84 && hit.y + hit.height >= desk.y + 42);
 });
 
 test('roomMonitorHitRect: caps the desk top and clears the avatar', () => {
@@ -161,14 +160,8 @@ test('teamLabelHitRect: sits in the room top band, clear of desk targets', () =>
   const [room] = teamRooms(DEFAULT_TEAMS);
   const label = teamLabelHitRect(room);
   assert.ok(label.x >= room.x && label.y >= room.y);
-  // Row 0's desk hit rects start at 240 - 106 = 134; the label band ends above.
+  // The sign band ends before the first monitor target.
   assert.ok(label.y + label.height <= roomDeskHitRect(room, 0).y);
-});
-
-test('whiteboard hangs on the top wall above the first room', () => {
-  const [room] = teamRooms(DEFAULT_TEAMS);
-  assert.ok(WHITEBOARD.y + WHITEBOARD.height <= 96);
-  assert.ok(WHITEBOARD.x + WHITEBOARD.width <= room.x + room.width);
 });
 
 test('entranceSpot: fixed lobby spots first, then an overflow back row', () => {

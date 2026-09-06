@@ -6,7 +6,7 @@ working in this repository.
 ## Project
 
 A Gather-like virtual office that visualizes local AI coding agent sessions
-(Claude Code / Codex CLI / Gemini CLI) as pixel-art coworkers. The server
+(Claude Code / Codex CLI / Gemini CLI) as miniature robot coworkers. The server
 has no npm runtime dependencies; persistence is SQLite via the built-in
 `node:sqlite` (npm scripts pass `--experimental-sqlite` for Node 22,
 Electron's Node 24 needs no flag).
@@ -19,8 +19,8 @@ Electron's Node 24 needs no flag).
 
 ## Repository map
 
-- `public/office.js` — canvas rendering: office layout, resident desks, entrance-lobby visitors, window/sky day-night scenery
-- `public/office/` — layout geometry (team rooms + entrance lobby), sprite specs, desk-avoiding pathfinding
+- `public/office.js` — high-DPI Canvas 2D rendering: miniature office, resident desks, rounded robot avatars, entrance-lobby visitors, window/sky day-night scenery
+- `public/office/` — layout geometry (team rooms + entrance lobby), avatar specs, miniature material/furniture/robot rendering (`miniature.js`), desk-avoiding pathfinding
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)

@@ -1,4 +1,4 @@
-// Canvas rendering for the pixel-art office.
+// Canvas rendering for the miniature office.
 // One terminal CLI session = one visitor avatar: it steps out of the
 // entrance elevator when the session starts, waits in the lobby while the
 // answer is produced, and rides the elevator home once the turn is done.
@@ -16,18 +16,14 @@ import {
   roomDeskHitRect,
   roomMonitorHitRect,
   teamLabelHitRect,
-  BENCH,
-  ELEVATOR,
-  PARTITION_HEIGHT,
-  RECEPTION,
-  WHITEBOARD,
 } from './office/layout.js';
 import { findPath } from './office/pathfinding.js';
+import { createMiniatureRenderer } from './office/miniature.js';
 
 (() => {
   const canvas = document.getElementById('office');
   const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
+  const miniature = createMiniatureRenderer(ctx);
 
   // Walk speeds are tuned in pixels per 60fps frame. The frame loop scales
   // them by elapsed time (see frame()) so avatars cover the same distance per
@@ -120,229 +116,69 @@ import { findPath } from './office/pathfinding.js';
 
   // --- room ------------------------------------------------------------
 
-  // The window sky gradients are position-independent, so build each once and
-  // pick between them by the server-reported time of day (state.sky).
-  let windowSkyDay = null;
-  let windowSkyNight = null;
-  // Fixed star field for the night windows (offsets within the 96x58 pane).
-  const WINDOW_STARS = [
-    { x: 10, y: 10 }, { x: 30, y: 22 }, { x: 52, y: 8 }, { x: 70, y: 28 },
-    { x: 86, y: 16 }, { x: 20, y: 38 }, { x: 44, y: 50 }, { x: 78, y: 46 },
-    { x: 8, y: 30 }, { x: 62, y: 40 },
-  ];
-
-  // The office sign: the user-configurable name on a simple white plate with
-  // black lettering. Rendered once into an offscreen sprite and stamped each
-  // frame; the sprite is rebuilt only when the name changes.
-  const DEFAULT_OFFICE_NAME = 'AI OFFICE';
-  const OFFICE_SIGN_WIDTH = 122;
-  let officeSignSprite = null;
-  let officeSignName = null;
-  function drawOfficeSign(x, y) {
-    const name = state.officeName ?? DEFAULT_OFFICE_NAME;
-    if (officeSignSprite === null || officeSignName !== name) {
-      officeSignName = name;
-      officeSignSprite = document.createElement('canvas');
-      officeSignSprite.width = OFFICE_SIGN_WIDTH;
-      officeSignSprite.height = 34;
-      const sign = officeSignSprite.getContext('2d');
-      // white plate with a thin dark outline to read against the wall
-      sign.beginPath();
-      sign.roundRect(0.5, 0.5, OFFICE_SIGN_WIDTH - 1, 33, 4);
-      sign.fillStyle = '#ffffff';
-      sign.fill();
-      sign.lineWidth = 1;
-      sign.strokeStyle = '#333333';
-      sign.stroke();
-      // The name is capped at 10 characters; shrink the font until even a
-      // full-width 10-character name fits inside the plate.
-      let fontSize = 17;
-      sign.textAlign = 'center';
-      do {
-        fontSize -= 1;
-        sign.font = `bold ${fontSize}px "Hiragino Sans", sans-serif`;
-      } while (fontSize > 8 && sign.measureText(name).width > 104);
-      // black lettering
-      sign.fillStyle = '#000000';
-      sign.fillText(name, OFFICE_SIGN_WIDTH / 2, 23);
-    }
-    ctx.drawImage(officeSignSprite, x, y);
-  }
+  let sceneryLayer = null;
+  let sceneryKey = null;
+  let renderScale = 1;
+  let elevatorDoorsOpen = 0;
 
   function drawRoom(time, layout) {
-    const height = layout.height;
-    const width = layout.width;
-    // wall: warm plaster with a crown line and a baseboard
-    px(0, 0, width, 96, '#ece6da');
-    px(0, 0, width, 6, '#ddd5c6');
-    px(0, 86, width, 10, '#c9c0ae');
-    // windows: slim dark frames, sky gradient, and either drifting daytime
-    // clouds or a twinkling night sky depending on the server's time of day.
+    const officeName = state.officeName ?? 'AI OFFICE';
     const night = state.sky === 'night';
-    if (night) {
-      if (!windowSkyNight) {
-        windowSkyNight = ctx.createLinearGradient(0, 16, 0, 74);
-        windowSkyNight.addColorStop(0, '#0c1636');
-        windowSkyNight.addColorStop(1, '#28345f');
-      }
-    } else if (!windowSkyDay) {
-      windowSkyDay = ctx.createLinearGradient(0, 16, 0, 74);
-      windowSkyDay.addColorStop(0, '#8ecff0');
-      windowSkyDay.addColorStop(1, '#cdeaf7');
+    const key = JSON.stringify([layout, officeName, night, renderScale]);
+    // Cache architecture and materials; only people, screens, the clock and
+    // elevator doors need to be redrawn on each animation frame.
+    if (sceneryKey !== key) {
+      sceneryLayer ??= document.createElement('canvas');
+      sceneryLayer.width = canvas.width;
+      sceneryLayer.height = canvas.height;
+      const sceneryContext = sceneryLayer.getContext('2d');
+      sceneryContext.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+      createMiniatureRenderer(sceneryContext).scenery(layout, { night, officeName });
+      sceneryKey = key;
     }
-    // Windows repeat every 250px for as long as the (team-count-dependent)
-    // wall lasts; the classic 960-wide scene reproduces [60, 310, 560, 810].
-    const windowXs = [];
-    for (let wx = 60; wx + 104 <= width - 8; wx += 250) windowXs.push(wx);
-    for (const wx of windowXs) {
-      px(wx - 4, 12, 104, 66, '#3d4852');
-      ctx.fillStyle = night ? windowSkyNight : windowSkyDay;
-      ctx.fillRect(wx, 16, 96, 58);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(wx, 16, 96, 58);
-      ctx.clip();
-      if (night) {
-        // A pale moon in the first window, plus a field of twinkling stars.
-        if (wx === 60) {
-          ctx.fillStyle = 'rgba(244, 241, 214, 0.95)';
-          ctx.beginPath();
-          ctx.arc(wx + 74, 30, 8, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        for (let index = 0; index < WINDOW_STARS.length; index += 1) {
-          const star = WINDOW_STARS[index];
-          const twinkle = 0.55 + 0.45 * Math.sin(time / 500 + index * 1.7);
-          ctx.fillStyle = `rgba(255, 255, 245, ${twinkle})`;
-          ctx.fillRect(wx + star.x, 16 + star.y, 2, 2);
-        }
-      } else {
-        const drift = ((time / 150 + wx) % 140) - 20;
-        px(wx + drift, 28, 26, 7, 'rgba(255, 255, 255, 0.9)');
-        px(wx + drift + 6, 23, 14, 6, 'rgba(255, 255, 255, 0.9)');
-        px(wx + ((drift + 70) % 140), 48, 20, 6, 'rgba(255, 255, 255, 0.7)');
-      }
-      ctx.restore();
-      px(wx + 46, 16, 4, 58, '#3d4852');
-      px(wx, 42, 96, 3, '#3d4852');
-      px(wx - 6, 74, 108, 6, '#f7f3ea');
-    }
-    drawWhiteboard();
-    // oak plank floor with staggered seams
-    for (let ty = 96; ty < height; ty += 24) {
-      const row = (ty - 96) / 24;
-      px(0, ty, width, 24, row % 2 === 0 ? '#d6b489' : '#cfab7e');
-      ctx.fillStyle = 'rgba(90, 62, 40, 0.14)';
-      ctx.fillRect(0, ty, width, 2);
-      for (let sx = (row % 3) * 110; sx < width; sx += 320) {
-        ctx.fillRect(sx, ty, 2, 24);
-      }
-    }
-    // soft shadow the wall casts on the floor
-    px(0, 96, width, 5, 'rgba(0, 0, 0, 0.10)');
+    ctx.clearRect(0, 0, layout.width, layout.height);
+    ctx.drawImage(sceneryLayer, 0, 0, layout.width, layout.height);
     drawTeamRooms(time, layout);
-    drawEntrance(layout);
+    miniature.elevator(layout.entranceTop, elevatorDoorsOpen);
 
-    // wall clock (real time)
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(480, 48, 22, 0, Math.PI * 2);
-    ctx.fillStyle = '#fbf8f2';
-    ctx.fill();
-    ctx.strokeStyle = '#4e463c';
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    roundRect(443, 32, 74, 34, 2, 'rgba(42, 42, 42, 0.12)');
+    roundRect(442, 30, 74, 34, 2, '#515151');
+    roundRect(445, 33, 68, 28, 1, '#292929');
     const now = new Date();
-    const minuteAngle = (now.getMinutes() / 60) * Math.PI * 2 - Math.PI / 2;
-    const hourAngle = ((now.getHours() % 12) / 12 + now.getMinutes() / 720) * Math.PI * 2 - Math.PI / 2;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(480, 48);
-    ctx.lineTo(480 + Math.cos(hourAngle) * 10, 48 + Math.sin(hourAngle) * 10);
-    ctx.moveTo(480, 48);
-    ctx.lineTo(480 + Math.cos(minuteAngle) * 16, 48 + Math.sin(minuteAngle) * 16);
-    ctx.stroke();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    ctx.font = '500 20px "SFMono-Regular", Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ededed';
+    ctx.fillText(`${hours}:${minutes}`, 479, 48);
     ctx.restore();
-  }
-
-  // The whiteboard on the top wall where residents post reports for the
-  // human. Unread reports plus kanban cards waiting in the user column show
-  // as a count badge (red when any of them needs the human); clicking the
-  // board opens the board panel (see app.js).
-  function drawWhiteboard() {
-    const board = WHITEBOARD;
-    ctx.lineWidth = 2;
-    roundRect(board.x, board.y, board.width, board.height, 4, '#fbfaf6', '#b9b2a2');
-    px(board.x + 8, board.y + 12, 40, 3, '#7aa2f7');
-    px(board.x + 8, board.y + 20, 56, 3, '#c9c2b2');
-    px(board.x + 8, board.y + 28, 48, 3, '#c9c2b2');
-    px(board.x + 8, board.y + 36, 30, 3, '#e0707a');
-    // pen tray under the board
-    px(board.x + 26, board.y + board.height + 0, 44, 4, '#b9b2a2');
-    const counts = state.whiteboard;
-    const boardCounts = state.board;
-    const attention = (counts?.unread ?? 0) + (boardCounts?.user ?? 0);
-    if (attention > 0) {
-      const badgeX = board.x + board.width - 3;
-      const badgeY = board.y + 3;
-      ctx.fillStyle = counts?.reviewNeeded > 0 || boardCounts?.user > 0 ? '#d93a4a' : '#e0952f';
-      ctx.beginPath();
-      ctx.arc(badgeX, badgeY, 9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 11px "Hiragino Sans", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(Math.min(attention, 99)), badgeX, badgeY + 4);
-    }
   }
 
   // The team rooms along the left edge: open (wall-less) carpeted patches,
   // one per team, each holding its island of always-present full-size desks.
-  // A seat with no resident assigned keeps the neutral gray avatar; an
+  // A seat with no resident assigned keeps only its furniture; an
   // assigned seat wears its CLI's colors, faces the room while idle, and
   // turns to the monitor while a run is in progress. Residents never walk to
   // the entrance lobby or the elevator — they live at their desk.
   function drawTeamRooms(time, layout) {
     const residents = state.residents ?? [];
     for (const room of layout.rooms) {
-      // a sage carpet-tile patch marks the area off from the oak floor while
-      // staying in the office's warm, low-saturation palette. Clipped to a
-      // soft-cornered rect so the checker stops cleanly without partitions.
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(room.x, room.y, room.width, room.height, 10);
-      ctx.clip();
-      const bottom = room.y + room.height;
-      const right = room.x + room.width;
-      for (let ty = room.y; ty < bottom; ty += 48) {
-        for (let tx = room.x; tx < right; tx += 48) {
-          const even = ((tx + ty) / 48) % 2 === 0;
-          px(tx, ty, 48, 48, even ? '#a9bfa4' : '#a0b69a');
-        }
-      }
-      ctx.restore();
-
       for (let index = 0; index < room.seatCount; index += 1) {
         const desk = roomDeskPosition(room, index);
         const resident = residents.find((r) => r.teamId === room.id && r.seat === index);
         if (!resident) {
-          // Unassigned: gray avatar facing the room, screen off.
+          // Unassigned: empty chair and powered-off monitor.
           drawDeskFurniture(desk.x, desk.y, SCREEN_OFF);
-          drawAvatar(UNSET_SPEC, desk.x, desk.y + 18, { time });
           continue;
         }
         drawResidentSeat(resident, desk, time);
       }
-
-      // sign: the team's name (dark so it reads on the sage carpet)
-      ctx.fillStyle = '#3c4a38';
-      ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(room.name, room.x + 8, room.y + 22);
     }
   }
 
-  // One assigned resident seat: nameplate in the vendor color, and the
+  // One assigned resident seat: a subdued name below the avatar, and the
   // three-state avatar — running (typing at the lit monitor, with the usual
   // status bubble and subagent minis), paused (⏸ on the dark screen) or
   // simply waiting for the next trigger (facing the room).
@@ -354,12 +190,6 @@ import { findPath } from './office/pathfinding.js';
     const active = Boolean(resident.busy || sessionActive);
 
     ctx.textAlign = 'center';
-    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    const labelWidth = ctx.measureText(resident.displayName).width + 16;
-    roundRect(desk.x - labelWidth / 2, desk.y - 106, labelWidth, 18, 9, 'rgba(38, 36, 50, 0.85)');
-    ctx.fillStyle = spec.colors.body;
-    ctx.fillText(resident.displayName, desk.x, desk.y - 93);
-
     drawDeskFurniture(desk.x, desk.y, active ? '#1a2b3c' : SCREEN_OFF);
     if (active) {
       drawScreenCode(desk.x, desk.y, time, resident.name);
@@ -370,9 +200,14 @@ import { findPath } from './office/pathfinding.js';
     }
 
     drawAvatar(spec, desk.x, desk.y + 18, { time, typing: active, facingAway: active });
+    ctx.font = '11px "Hiragino Sans", sans-serif';
+    const labelWidth = Math.min(112, ctx.measureText(resident.displayName).width + 12);
+    roundRect(desk.x - labelWidth / 2, desk.y + 25, labelWidth, 17, 3, 'rgba(65, 65, 65, 0.07)');
+    ctx.fillStyle = '#484848';
+    ctx.fillText(resident.displayName, desk.x, desk.y + 37, labelWidth - 12);
     if (active && employee) {
       const actor = actorFor(`resident:${resident.name}`, { x: desk.x, y: desk.y + 18 }, time);
-      drawSubagents(employee, spec, actor, desk.x, desk.y, time);
+      drawSubagents(employee, spec, actor, desk.x, desk.y + 20, time);
       if (employee.status === 'blocked') {
         drawBubble(desk.x, desk.y - 40, '・・・');
       } else {
@@ -381,22 +216,25 @@ import { findPath } from './office/pathfinding.js';
     }
   }
 
-  // The desk furniture shared by occupied and vacant desks: chair, steel
-  // legs, white top, monitor shell, stand and keyboard. Only the screen fill
-  // varies, so occupied desks can light it up (and animate over it). Vacant
-  // seats — free-address or the resident island — pass the powered-off color.
   const SCREEN_OFF = '#0b0d10';
+  const deskSprites = new Map();
+  let deskSpriteScale = null;
   function drawDeskFurniture(x, y, screenColor) {
-    roundRect(x - 13, y + 8, 26, 12, 4, '#37474f');
-    px(x - 52, y - 6, 6, 16, '#9aa3ac');
-    px(x + 46, y - 6, 6, 16, '#9aa3ac');
-    px(x - 56, y - 46, 112, 40, '#f4efe6');
-    px(x - 56, y - 46, 112, 5, '#fbf8f2');
-    px(x - 56, y - 10, 112, 4, '#d9d2c4');
-    px(x - 26, y - 84, 52, 34, '#22262b');
-    px(x - 23, y - 81, 46, 28, screenColor);
-    px(x - 3, y - 50, 6, 6, '#5c6670');
-    px(x - 20, y - 38, 40, 7, '#cfd4d9');
+    if (deskSpriteScale !== renderScale) {
+      deskSprites.clear();
+      deskSpriteScale = renderScale;
+    }
+    let sprite = deskSprites.get(screenColor);
+    if (!sprite) {
+      sprite = document.createElement('canvas');
+      sprite.width = Math.ceil(152 * renderScale);
+      sprite.height = Math.ceil(128 * renderScale);
+      const furnitureContext = sprite.getContext('2d');
+      furnitureContext.setTransform(sprite.width / 152, 0, 0, sprite.height / 128, 0, 0);
+      createMiniatureRenderer(furnitureContext).desk(76, 92, screenColor);
+      deskSprites.set(screenColor, sprite);
+    }
+    ctx.drawImage(sprite, x - 76, y - 92, 152, 128);
   }
 
   // Scrolling code lines on a lit monitor, seeded per occupant so desks don't
@@ -413,92 +251,6 @@ import { findPath } from './office/pathfinding.js';
       px(x - 19, lineY, width, 2, i % 3 === 0 ? '#7aa2f7' : '#9ece6a');
     }
     ctx.restore();
-  }
-
-  // The entrance lobby along the bottom edge, walled off from the work area
-  // by a partition: porcelain tiles, the elevator visitors ride in and out,
-  // a decorative door into the work area, the neon company sign, a reception
-  // counter and a bench for waiting guests. The furniture rects live in
-  // layout.js next to entranceObstacles() so walkers route around what is
-  // drawn.
-  const OFFICE_DOOR_X = 600;
-
-  // The elevator doors slide open while a visitor stands near them; frame()
-  // eases this 0..1 amount toward its target from the visitors' positions.
-  let elevatorDoorsOpen = 0;
-
-  function drawElevator(top) {
-    const frame = { x: ELEVATOR.x, y: top + ELEVATOR.y, width: ELEVATOR.width, height: ELEVATOR.height };
-    px(frame.x - 4, frame.y - 8, frame.width + 8, frame.height + 8, '#7d868f');
-    px(frame.x, frame.y, frame.width, frame.height, '#9aa3ac');
-    // floor indicator lamp over the doors
-    px(frame.x + frame.width / 2 - 14, frame.y + 4, 28, 8, '#2e3440');
-    ctx.fillStyle = elevatorDoorsOpen > 0.5 ? '#8fe3a5' : '#e0952f';
-    ctx.beginPath();
-    ctx.arc(frame.x + frame.width / 2, frame.y + 8, 3, 0, Math.PI * 2);
-    ctx.fill();
-    // dark cab behind two sliding door panels
-    const opening = { x: frame.x + 10, y: frame.y + 18, width: 52, height: 110 };
-    px(opening.x - 3, opening.y - 3, opening.width + 6, opening.height + 6, '#5c6670');
-    px(opening.x, opening.y, opening.width, opening.height, '#161a20');
-    if (elevatorDoorsOpen > 0) {
-      ctx.fillStyle = `rgba(255, 231, 166, ${0.25 * elevatorDoorsOpen})`;
-      ctx.fillRect(opening.x, opening.y, opening.width, opening.height);
-    }
-    const half = opening.width / 2;
-    const slide = Math.round(half * elevatorDoorsOpen);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(opening.x, opening.y, opening.width, opening.height);
-    ctx.clip();
-    px(opening.x - slide, opening.y, half, opening.height, '#aeb6bd');
-    px(opening.x + half + slide, opening.y, half, opening.height, '#aeb6bd');
-    px(opening.x + half - 1 - slide, opening.y, 1, opening.height, '#5c6670');
-    px(opening.x + half + slide, opening.y, 1, opening.height, '#5c6670');
-    ctx.restore();
-  }
-
-  function drawEntrance(layout) {
-    const top = layout.entranceTop;
-    const width = layout.width;
-    // porcelain lobby tiles, cooler than the work area's oak planks
-    let row = 0;
-    for (let ty = top + PARTITION_HEIGHT; ty < layout.height; ty += 26, row += 1) {
-      for (let tx = 0, column = 0; tx < width; tx += 26, column += 1) {
-        px(tx, ty, 26, 26, (row + column) % 2 === 0 ? '#e9e5dc' : '#e0dbcf');
-      }
-    }
-    // partition wall between the work area and the lobby
-    px(0, top, width, PARTITION_HEIGHT, '#ece6da');
-    px(0, top, width, 4, '#ddd5c6');
-    px(0, top + PARTITION_HEIGHT - 8, width, 8, '#c9c0ae');
-    px(0, top + PARTITION_HEIGHT, width, 5, 'rgba(0, 0, 0, 0.10)');
-    // decorative door into the work area (no avatar ever passes through)
-    px(OFFICE_DOOR_X - 4, top + 4, 52, 42, '#8a8172');
-    px(OFFICE_DOOR_X, top + 8, 44, 38, '#7b5e57');
-    px(OFFICE_DOOR_X + 4, top + 12, 36, 14, '#8d6e63');
-    px(OFFICE_DOOR_X + 4, top + 30, 36, 12, '#8d6e63');
-    px(OFFICE_DOOR_X + 36, top + 26, 4, 4, '#d9a441');
-    // the office sign, moved down from the top wall to greet visitors and
-    // centered horizontally over the reception counter
-    drawOfficeSign(RECEPTION.x + (RECEPTION.width - OFFICE_SIGN_WIDTH) / 2, top + 6);
-    drawElevator(top);
-    // reception counter, with a call bell and a small potted plant
-    px(RECEPTION.x, top + RECEPTION.y, RECEPTION.width, RECEPTION.height, '#4e342e');
-    px(RECEPTION.x, top + RECEPTION.y, RECEPTION.width, 5, '#7b5e57');
-    px(RECEPTION.x + 16, top + RECEPTION.y - 6, 8, 6, '#d9a441');
-    px(RECEPTION.x + RECEPTION.width - 28, top + RECEPTION.y - 10, 12, 10, '#c96f4a');
-    px(RECEPTION.x + RECEPTION.width - 26, top + RECEPTION.y - 16, 8, 6, '#5cb86e');
-    // teal bench where visiting sessions wait
-    px(BENCH.x + 4, top + BENCH.y + 26, 6, 8, '#37474f');
-    px(BENCH.x + BENCH.width - 10, top + BENCH.y + 26, 6, 8, '#37474f');
-    px(BENCH.x, top + BENCH.y, BENCH.width, 12, '#3f7d74');
-    px(BENCH.x, top + BENCH.y + 10, BENCH.width, 18, '#4f9184');
-    // sign
-    ctx.fillStyle = '#5a4632';
-    ctx.font = 'bold 12px "Hiragino Sans", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('ENTRANCE', OFFICE_DOOR_X + 64, top + 30);
   }
 
   // --- avatar ----------------------------------------------------------
@@ -544,53 +296,9 @@ import { findPath } from './office/pathfinding.js';
     ctx.restore();
   }
 
-  // (x, y) is the feet baseline center.
+  // (x, y) is the feet baseline center, shared with the walking geometry.
   function drawAvatar(spec, x, y, options) {
-    const { colors, emblem } = spec;
-    const scale = options.scale ?? 1;
-    const s = (value) => value * scale;
-    const walkPhase = options.walking ? Math.sin(options.time / 90) : 0;
-    const bob = options.typing ? Math.sin(options.time / 160) * s(1) : 0;
-
-    // shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath();
-    ctx.ellipse(x, y + s(2), s(13), s(4), 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // legs
-    px(x - s(7), y - s(10) + walkPhase * s(2), s(5), s(10), colors.head);
-    px(x + s(2), y - s(10) - walkPhase * s(2), s(5), s(10), colors.head);
-    // body
-    roundRect(x - s(11), y - s(26) + bob, s(22), s(18), s(4), colors.body);
-    drawEmblem(emblem, x, y - s(17) + bob, scale, colors.accent);
-    // arms
-    if (options.typing) {
-      const armBob = Math.sin(options.time / 110) * s(1.5);
-      px(x - s(14), y - s(22) + armBob, s(4), s(9), colors.body);
-      px(x + s(10), y - s(22) - armBob, s(4), s(9), colors.body);
-    } else {
-      px(x - s(14), y - s(24) + bob, s(4), s(11), colors.body);
-      px(x + s(10), y - s(24) + bob, s(4), s(11), colors.body);
-    }
-    // head
-    roundRect(x - s(10), y - s(42) + bob, s(20), s(16), s(5), colors.head);
-    if (!options.facingAway) {
-      // face screen + eyes
-      roundRect(x - s(7), y - s(39) + bob, s(14), s(10), s(3), '#14141c');
-      const blink = Math.sin(options.time / 900 + x) > 0.97 ? 0.2 : 1;
-      px(x - s(5), y - s(36) + bob, s(3), s(3) * blink, colors.eye);
-      px(x + s(2), y - s(36) + bob, s(3), s(3) * blink, colors.eye);
-    }
-    // antenna for claude
-    if (emblem === 'asterisk') {
-      px(x - s(1), y - s(47) + bob, s(2), s(5), colors.head);
-      ctx.fillStyle = colors.body;
-      ctx.beginPath();
-      ctx.arc(x, y - s(48) + bob, s(2.5), 0, Math.PI * 2);
-      ctx.fill();
-    }
-
+    miniature.avatar(spec, x, y, options, drawEmblem);
   }
 
   // --- bubbles ---------------------------------------------------------
@@ -623,7 +331,7 @@ import { findPath } from './office/pathfinding.js';
     const left = Math.min(Math.max(x - width / 2, 6), currentLayout.width - 6 - width);
     // white bubble with a thin outline so it stays visible on light floors
     ctx.lineWidth = 1.5;
-    roundRect(left, y - height, width, height, 7, '#ffffff', 'rgba(60, 54, 72, 0.45)');
+    roundRect(left, y - height, width, height, 9, '#fffcf5', 'rgba(113, 106, 86, 0.28)');
     ctx.beginPath();
     ctx.moveTo(x - 5, y);
     ctx.lineTo(x + 5, y);
@@ -695,8 +403,8 @@ import { findPath } from './office/pathfinding.js';
   function canvasPoint(event) {
     const rect = canvas.getBoundingClientRect();
     return {
-      x: (event.clientX - rect.left) * (canvas.width / rect.width),
-      y: (event.clientY - rect.top) * (canvas.height / rect.height),
+      x: (event.clientX - rect.left) * (currentLayout.width / rect.width),
+      y: (event.clientY - rect.top) * (currentLayout.height / rect.height),
     };
   }
 
@@ -725,15 +433,11 @@ import { findPath } from './office/pathfinding.js';
     return null;
   }
 
-  // The whiteboard, team labels and desks open panels owned by app.js; the
+  // The team labels and desks open panels owned by app.js; the
   // canvas only reports the hits as window events to stay DOM-agnostic.
   // Order matters: labels sit above the desk band.
   canvas.addEventListener('click', (event) => {
     const point = canvasPoint(event);
-    if (isInside(point, WHITEBOARD)) {
-      window.dispatchEvent(new CustomEvent('office:whiteboard-open'));
-      return;
-    }
     const labelRoom = teamLabelAt(point);
     if (labelRoom !== null) {
       window.dispatchEvent(
@@ -763,7 +467,6 @@ import { findPath } from './office/pathfinding.js';
   canvas.addEventListener('mousemove', (event) => {
     const point = canvasPoint(event);
     const clickable =
-      isInside(point, WHITEBOARD) ||
       teamLabelAt(point) !== null ||
       teamDeskAt(point) !== null;
     canvas.style.cursor = clickable ? 'pointer' : 'default';
@@ -820,12 +523,20 @@ import { findPath } from './office/pathfinding.js';
 
     const layout = computeLayout(state.teams ?? []);
     currentLayout = layout;
-    // Resizing clears the canvas and resets context state; re-pin the pixel
-    // look. Width follows the team count, height the deepest desk row.
-    if (canvas.width !== layout.width || canvas.height !== layout.height) {
-      canvas.width = layout.width;
-      canvas.height = layout.height;
-      ctx.imageSmoothingEnabled = false;
+    // Bound the backing store for large offices while retaining crisp curves
+    // on Retina displays. Hit targets and zoom always use logical dimensions.
+    renderScale = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(4_000_000 / (layout.width * layout.height)));
+    const pixelWidth = Math.round(layout.width * renderScale);
+    const pixelHeight = Math.round(layout.height * renderScale);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight ||
+        Number(canvas.dataset.sceneWidth) !== layout.width || Number(canvas.dataset.sceneHeight) !== layout.height) {
+      canvas.dataset.sceneWidth = layout.width;
+      canvas.dataset.sceneHeight = layout.height;
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     }
 
     const elevator = elevatorPosition(layout);

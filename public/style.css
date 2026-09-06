@@ -1,6 +1,6 @@
 /* Light SaaS theme (Jooto / OFFICE DECK inspired): white surfaces on a soft
    gray background, one accent blue, per-vendor avatar colors shared with the
-   pixel-art canvas. Layout is a fixed app bar + kanban strip on top, the
+   miniature canvas. Layout is a fixed app bar + kanban strip on top, the
    office canvas (or the full board) with the inbox beside it below, and a
    right slide-in drawer instead of stacked modals. */
 
@@ -424,7 +424,7 @@ textarea:focus-visible {
   flex: none;
   border-radius: 12px;
   box-shadow: var(--shadow-raised);
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 /* Zoom cluster pinned to the office viewport corner, above the scroller. */

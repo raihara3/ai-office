@@ -150,7 +150,15 @@ function applyTurnState(session, observation, eventAt) {
   // explicit wait for user input) clears it; plain liveness lines such as tool
   // results or meta entries leave it untouched, so a still-pending tool is
   // never mistaken for an idle session.
-  if (observation.turnComplete || observation.waitingForUser === true) {
+  if (
+    observation.turnComplete ||
+    observation.waitingForUser === true ||
+    observation.toolCompleted === true
+  ) {
+    // A completed tool/command clears the pending flag just like a completed
+    // turn: its work is done, so a trailing completion line (e.g. a background
+    // command exiting after task_complete) must not strand the session as a
+    // blocked visitor.
     session.pendingTool = false;
   } else if (observation.activityKind !== undefined || observation.task) {
     session.pendingTool = true;

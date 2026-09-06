@@ -133,8 +133,16 @@ export function handleLine(entry, filePath, report) {
         // Codex produced its answer text; the turn is wrapping up.
         break;
       case 'item_started':
+        observeItem(payload.item ?? {}, observation);
+        break;
       case 'item_completed':
         observeItem(payload.item ?? {}, observation);
+        // A completed item means its tool/command has finished. Unlike
+        // item_started it must not leave the session flagged as still waiting
+        // on a tool, or a turn's trailing completion (e.g. a background
+        // `npm run electron` exiting after task_complete) would strand the
+        // avatar as a blocked entrance-lobby visitor.
+        observation.toolCompleted = true;
         break;
       default:
         // Approval prompts and input requests block on the user.

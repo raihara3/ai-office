@@ -194,6 +194,38 @@ test('turnComplete clears pendingTool -> becomes break after grace, not blocked'
   assert.equal(employeeFor(ctx.state, key).status, 'break');
 });
 
+test('toolCompleted after turnComplete clears pendingTool -> break, not stranded blocked', () => {
+  const ctx = withClock();
+  const key = 'codex:/log/c.jsonl';
+
+  // A tool starts mid-turn.
+  ctx.state.reportEvent('codex', '/log/c.jsonl', {
+    project: 'demo',
+    task: 'run electron',
+    activity: 'npm run electron',
+    activityKind: 'work',
+    timestamp: ctx.value,
+  });
+
+  // The turn completes while a background command is still running.
+  ctx.advance(1000);
+  ctx.state.reportEvent('codex', '/log/c.jsonl', { turnComplete: true, timestamp: ctx.value });
+
+  // The background command finally exits, emitting a trailing item_completed
+  // AFTER task_complete. This must not re-arm pendingTool, or the finished
+  // session would loiter as a blocked entrance-lobby visitor.
+  ctx.advance(1000);
+  ctx.state.reportEvent('codex', '/log/c.jsonl', {
+    activity: 'npm run electron',
+    activityKind: 'work',
+    toolCompleted: true,
+    timestamp: ctx.value,
+  });
+
+  ctx.advance(WORKING_IDLE_TIMEOUT_MS + 1);
+  assert.equal(employeeFor(ctx.state, key).status, 'break');
+});
+
 test('waitingForUser posts a single @社長 attention message; task/turn stay silent', () => {
   const ctx = withClock();
 

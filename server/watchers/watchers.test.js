@@ -266,6 +266,35 @@ test('codex', async (t) => {
     assert.equal(calls[0].observation.waitingForUser, true);
   });
 
+  await t.test('event_msg item_started CommandExecution -> work, no toolCompleted', () => {
+    const { report, calls } = makeReport();
+    codexHandleLine(
+      {
+        type: 'event_msg',
+        payload: { type: 'item_started', item: { type: 'CommandExecution', command: ['ls'] } },
+      },
+      '/home/user/.codex/sessions/2026/08/16/rollout-x.jsonl',
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].observation.activityKind, 'work');
+    assert.equal(calls[0].observation.toolCompleted, undefined);
+  });
+
+  await t.test('event_msg item_completed CommandExecution -> toolCompleted', () => {
+    const { report, calls } = makeReport();
+    codexHandleLine(
+      {
+        type: 'event_msg',
+        payload: { type: 'item_completed', item: { type: 'CommandExecution', command: ['ls'] } },
+      },
+      '/home/user/.codex/sessions/2026/08/16/rollout-x.jsonl',
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].observation.toolCompleted, true);
+  });
+
   await t.test('response_item function_call MCP-style name -> mcpCall', () => {
     const { report, calls } = makeReport();
     codexHandleLine(

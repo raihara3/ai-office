@@ -262,7 +262,7 @@ export function createHttpServer(core, { publicDirectory }) {
       sendJson(response, 200, { reports: core.listReports() });
       return;
     }
-    if (urlPath === '/api/whiteboard/read' || urlPath === '/api/whiteboard/archive') {
+    if (urlPath === '/api/whiteboard/read' || urlPath === '/api/whiteboard/unread' || urlPath === '/api/whiteboard/archive') {
       if (request.method !== 'POST') {
         response.writeHead(405).end();
         return;
@@ -272,7 +272,8 @@ export function createHttpServer(core, { publicDirectory }) {
         return;
       }
       const applyToReport =
-        urlPath === '/api/whiteboard/archive' ? core.archiveReport : core.markReportRead;
+        urlPath === '/api/whiteboard/archive' ? core.archiveReport :
+        urlPath === '/api/whiteboard/unread' ? core.markReportUnread : core.markReportRead;
       readJsonBody(request, 4 * 1024, (parsed) => {
         if (parsed === null || typeof parsed.id !== 'string') {
           sendJson(response, 400, { error: 'invalid JSON body' });

@@ -80,6 +80,13 @@
           body: JSON.stringify({ id }),
         });
       },
+      async markReportUnread(id) {
+        return requestJson('/api/whiteboard/unread', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+      },
       // Pins/unpins a report; the response carries the resulting favorite flag.
       async toggleReportFavorite(id) {
         return requestJson('/api/whiteboard/favorite', {

@@ -1,3 +1,5 @@
+import { renderMarkdown } from './markdown.js';
+
 // SSE client: app bar, kanban strip, report inbox, board view and the right
 // drawer (card detail / task filing / resident settings / activity).
 
@@ -111,7 +113,7 @@
   }
 
   // Quotes are escaped too: escaped text is interpolated into attribute
-  // values (e.g. linkify's href), where a raw quote would break out.
+  // values, where a raw quote would break out.
   function escapeHtml(text) {
     return String(text)
       .replaceAll('&', '&amp;')
@@ -183,7 +185,7 @@
   }
   document.getElementById('drawer-close').addEventListener('click', closeDrawer);
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !drawerElement.hidden) closeDrawer();
+    if (event.key === 'Escape' && !drawerElement.hidden && !field('report-dialog').open) closeDrawer();
   });
   // Clicking anywhere outside the open drawer closes it — every section (card
   // detail, task filing, resident/team/office settings, activity) is dismissed
@@ -195,7 +197,7 @@
       drawerJustOpened = false;
       return;
     }
-    if (event.target.closest('#drawer')) return;
+    if (event.target.closest('#drawer, #report-dialog')) return;
     closeDrawer();
   });
 
@@ -212,6 +214,8 @@
     officeWrapElement.hidden = view !== 'office';
     boardViewElement.hidden = view !== 'board';
     stripElement.hidden = view !== 'office';
+    field('workspace-toolbar').hidden = view === 'inbox';
+    field('board-expand').hidden = view === 'board';
     panelElement.hidden = view === 'board';
     panelElement.classList.toggle('expanded', view === 'inbox');
     for (const tab of document.querySelectorAll('.view-tab')) {
@@ -350,13 +354,6 @@
   const inboxTabBadgeElement = document.getElementById('inbox-tab-badge');
   let latestReports = [];
 
-  function linkify(escapedText) {
-    return escapedText.replace(
-      /https?:\/\/[^\s<]+/g,
-      (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
-    );
-  }
-
   function renderInboxSummary() {
     const unread = latestReports.filter((report) => !report.read).length;
     const review = latestReports.filter(
@@ -372,107 +369,215 @@
     inboxTabBadgeElement.classList.toggle('review', review > 0);
   }
 
+  const reportDialog = field('report-dialog');
+  const reportSearch = field('inbox-search');
+  let reportFilter = 'all';
+  let openReportId = null;
+  let reportReturnFocus = null;
+  let reportTaskToOpen = null;
+  const pendingReportActions = new Set();
+  let noticeTimeout = null;
+
+  function showNotice(message) {
+    field('ui-notice').hidden = true;
+    field('report-dialog-notice').hidden = true;
+    const notice = field(reportDialog.open ? 'report-dialog-notice' : 'ui-notice');
+    notice.textContent = message;
+    notice.hidden = false;
+    clearTimeout(noticeTimeout);
+    noticeTimeout = setTimeout(() => { notice.hidden = true; }, 5000);
+  }
+
+  function reportTitleParts(report) {
+    const parts = report.title.match(/^(.*)@([^@]+\/[^@]+)$/s);
+    return { title: parts?.[1] || report.title,
+      source: parts?.[2] || assigneeMeta(report.resident)?.label || report.resident || 'オフィス' };
+  }
+
+  function reportMatchesFilter(report, filter = reportFilter) {
+    return filter === 'all' || (filter === 'unread' && !report.read) ||
+      (filter === 'review' && report.level === 'review-needed' && !report.read) ||
+      (filter === 'favorite' && report.favorite);
+  }
+
+  function reportActions(report) {
+    return `<button type="button" class="report-favorite" data-report-action="favorite" title="お気に入り" aria-label="お気に入り" aria-pressed="${report.favorite}">${report.favorite ? '★' : '☆'}</button>
+      <button type="button" class="report-archive" data-report-action="archive" title="${report.favorite ? 'お気に入りを解除するとアーカイブできます' : 'アーカイブ'}" aria-label="アーカイブ"${report.favorite ? ' disabled' : ''}>✕</button>`;
+  }
+
   function renderReports(reports) {
     latestReports = reports;
     renderInboxSummary();
-    if (reports.length === 0) {
-      reportListElement.innerHTML =
-        '<div class="report-empty">報告はまだありません</div>';
-      return;
+    for (const button of document.querySelectorAll('[data-inbox-filter]')) {
+      const filter = button.dataset.inboxFilter;
+      button.setAttribute('aria-pressed', String(filter === reportFilter));
+      button.querySelector('span').textContent = reports.filter((report) => reportMatchesFilter(report, filter)).length;
     }
-    reportListElement.innerHTML = reports
-      .map(
-        (report) => `
-          <div class="report${report.read ? '' : ' unread'}${report.favorite ? ' favorite' : ''}" data-id="${escapeHtml(report.id)}">
-            <div class="report-head">
-              <span class="report-level ${escapeHtml(report.level)}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
-              <span class="report-title">${escapeHtml(report.title)}</span>
-              <span class="report-time">${formatTime(report.createdAt)}</span>
-              <button type="button" class="report-favorite" title="お気に入り" aria-pressed="${report.favorite ? 'true' : 'false'}">${report.favorite ? '★' : '☆'}</button>
-              <button type="button" class="report-copy" title="全文をコピー">⧉</button>
-              <button type="button" class="report-archive" title="ボードから外す"${report.favorite ? ' disabled' : ''}>✕</button>
-            </div>
-            <div class="report-body" hidden>${linkify(escapeHtml(report.body))}</div>
-          </div>`
-      )
-      .join('');
-    for (const reportElement of reportListElement.querySelectorAll('.report')) {
-      reportElement.querySelector('.report-head').addEventListener('click', () => {
-        const body = reportElement.querySelector('.report-body');
-        body.hidden = !body.hidden;
-        if (!body.hidden && reportElement.classList.contains('unread')) {
-          reportElement.classList.remove('unread');
-          const report = latestReports.find((entry) => entry.id === reportElement.dataset.id);
-          if (report) report.read = true;
-          renderInboxSummary();
-          client.markReportRead(reportElement.dataset.id).catch(() => {});
-        }
-      });
-      reportElement.querySelector('.report-favorite').addEventListener('click', async (event) => {
-        event.stopPropagation();
-        const favoriteButton = event.currentTarget;
-        try {
-          const { favorite } = await client.toggleReportFavorite(reportElement.dataset.id);
-          if (typeof favorite === 'boolean') {
-            reportElement.classList.toggle('favorite', favorite);
-            favoriteButton.textContent = favorite ? '★' : '☆';
-            favoriteButton.setAttribute('aria-pressed', favorite ? 'true' : 'false');
-            // A favorited report is pinned: its archive button is disabled.
-            reportElement.querySelector('.report-archive').disabled = favorite;
-            return;
-          }
-        } catch {
-          // Fall through: reload so the panel reflects what is really on disk.
-        }
-        loadReports();
-      });
-      reportElement.querySelector('.report-copy').addEventListener('click', async (event) => {
-        event.stopPropagation();
-        const report = latestReports.find((entry) => entry.id === reportElement.dataset.id);
-        if (!report) return;
-        const copyButton = event.currentTarget;
-        try {
-          await navigator.clipboard.writeText(report.body);
-          copyButton.classList.add('copied');
-          copyButton.textContent = '✓';
-          setTimeout(() => {
-            copyButton.classList.remove('copied');
-            copyButton.textContent = '⧉';
-          }, 1200);
-        } catch {
-          // Clipboard is unavailable (e.g. insecure context): leave the button as is.
-        }
-      });
-      reportElement.querySelector('.report-archive').addEventListener('click', async (event) => {
-        event.stopPropagation();
-        if (event.currentTarget.disabled) return;
-        try {
-          const { ok } = await client.archiveReport(reportElement.dataset.id);
-          if (ok) {
-            reportElement.remove();
-            latestReports = latestReports.filter(
-              (entry) => entry.id !== reportElement.dataset.id
-            );
-            renderInboxSummary();
-            if (reportListElement.querySelector('.report') === null) renderReports([]);
-            return;
-          }
-        } catch {
-          // Fall through: reload so the panel reflects what is really on disk.
-        }
-        loadReports();
-      });
+    const query = reportSearch.value.trim().toLocaleLowerCase();
+    const visible = reports.filter((report) => reportMatchesFilter(report) &&
+      `${report.title} ${report.resident} ${report.body}`.toLocaleLowerCase().includes(query));
+    const scrollTop = reportListElement.scrollTop;
+    const active = reportListElement.contains(document.activeElement) ? document.activeElement : null;
+    const focusId = active?.closest('[data-report-id]')?.dataset.reportId;
+    const focusAction = active?.dataset.reportAction;
+    reportListElement.innerHTML = visible.length ? visible.map((report) => {
+      const { title, source } = reportTitleParts(report);
+      return `<article class="report${report.read ? '' : ' unread'}${report.favorite ? ' favorite' : ''}" data-report-id="${escapeHtml(report.id)}">
+        <button type="button" class="report-open" data-report-action="open" aria-haspopup="dialog">
+          <span class="report-titleline"><span class="report-title">${!report.read ? '<span class="report-unread-label" aria-label="未読">●</span>' : ''}${report.level === 'review-needed' ? '<span class="report-level review-needed">要確認</span> ' : ''}${escapeHtml(title)}</span><time class="report-time">${formatTime(report.createdAt)}</time></span>
+          <span class="report-source">${escapeHtml(source)}</span>
+        </button>
+        <div class="report-actions">${reportActions(report)}</div>
+      </article>`;
+    }).join('') : `<div class="report-empty">${reports.length ? '条件に合う報告はありません' : '報告はまだありません'}<small>${reports.length ? '絞り込みや検索条件を変えてください' : 'AIからの報告がここに届きます'}</small></div>`;
+    reportListElement.scrollTop = scrollTop;
+    if (focusId && focusAction) {
+      const target = reportListElement.querySelector(`[data-report-id="${CSS.escape(focusId)}"] [data-report-action="${CSS.escape(focusAction)}"]`);
+      (target ?? reportListElement.querySelector('.report-open') ?? reportSearch).focus({ preventScroll: true });
+    }
+    if (reportDialog.open) {
+      const report = reports.find((entry) => entry.id === openReportId);
+      if (!report) reportDialog.close();
+      else syncReportDialog(report);
     }
   }
 
+  function syncReportDialog(report) {
+    const { title, source } = reportTitleParts(report);
+    field('report-dialog-title').textContent = title;
+    field('report-dialog-meta').textContent = `${report.level === 'review-needed' ? '要確認 · ' : ''}${source} · ${formatTime(report.createdAt)}`;
+    field('report-dialog-unread').disabled = !report.read || pendingReportActions.has(`${report.id}:read`);
+    const favorite = field('report-dialog-favorite');
+    favorite.setAttribute('aria-pressed', String(report.favorite));
+    favorite.textContent = report.favorite ? '★ お気に入り' : '☆ お気に入り';
+    const linkedCard = boardCards.find((card) => card.id === report.task);
+    field('report-dialog-task').hidden = !linkedCard;
+    field('report-dialog-next').disabled = !latestReports.some((entry) => !entry.read && entry.id !== report.id);
+  }
+
+  async function openReport(id) {
+    const report = latestReports.find((entry) => entry.id === id);
+    if (!report) return;
+    if (!reportDialog.open) reportReturnFocus = document.activeElement;
+    openReportId = id;
+    reportDialog.dataset.reportId = id;
+    field('report-dialog-body').innerHTML = renderMarkdown(report.body);
+    field('report-dialog-body').scrollTop = 0;
+    syncReportDialog(report);
+    if (!reportDialog.open) reportDialog.showModal();
+    if (!report.read && !pendingReportActions.has(`${id}:read`)) {
+      pendingReportActions.add(`${id}:read`);
+      try {
+        const { ok } = await client.markReportRead(id);
+        if (!ok) throw new Error('Read update failed');
+        const current = latestReports.find((entry) => entry.id === id);
+        if (current) current.read = true;
+        renderReports(latestReports);
+      } catch {
+        showNotice('既読にできませんでした。報告を開き直してお試しください。');
+      } finally {
+        pendingReportActions.delete(`${id}:read`);
+        const current = latestReports.find((entry) => entry.id === openReportId);
+        if (reportDialog.open && current) syncReportDialog(current);
+      }
+    }
+  }
+
+  field('report-dialog-close').addEventListener('click', () => reportDialog.close());
+  reportDialog.addEventListener('click', (event) => {
+    const bounds = reportDialog.getBoundingClientRect();
+    if (event.target === reportDialog && (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom)) reportDialog.close();
+  });
+  reportDialog.addEventListener('close', () => {
+    if (reportTaskToOpen) {
+      const task = reportTaskToOpen;
+      reportTaskToOpen = null;
+      openReportId = null;
+      openCardDetail(task);
+      drawerJustOpened = false;
+      field('drawer-close').focus();
+      return;
+    }
+    const opener = reportReturnFocus?.isConnected ? reportReturnFocus :
+      reportListElement.querySelector(`[data-report-id="${CSS.escape(openReportId ?? '')}"] .report-open`) ?? reportSearch;
+    openReportId = null;
+    opener.focus({ preventScroll: true });
+  });
+  field('report-dialog-next').addEventListener('click', () => {
+    const next = latestReports.find((report) => !report.read && report.id !== openReportId);
+    if (next) openReport(next.id);
+  });
+  field('report-dialog-task').addEventListener('click', () => {
+    const report = latestReports.find((entry) => entry.id === openReportId);
+    if (!report?.task) return;
+    reportTaskToOpen = report.task;
+    reportDialog.close();
+  });
+  reportSearch.addEventListener('input', () => renderReports(latestReports));
+  for (const button of document.querySelectorAll('[data-inbox-filter]')) {
+    button.addEventListener('click', () => {
+      reportFilter = button.dataset.inboxFilter;
+      renderReports(latestReports);
+    });
+  }
+
+  async function handleReportAction(event) {
+    const button = event.target.closest('[data-report-action]');
+    if (!button || button.disabled) return;
+    const id = button.closest('[data-report-id]').dataset.reportId;
+    const report = latestReports.find((entry) => entry.id === id);
+    if (!report) return;
+    const action = button.dataset.reportAction;
+    if (action === 'open') { openReport(id); return; }
+    const pendingKey = `${id}:${action === 'unread' ? 'read' : action}`;
+    if (pendingReportActions.has(pendingKey)) return;
+    pendingReportActions.add(pendingKey);
+    button.setAttribute('aria-busy', 'true');
+    try {
+      if (action === 'copy') {
+        await navigator.clipboard.writeText(report.body);
+        showNotice('報告の全文をコピーしました');
+      } else if (action === 'unread') {
+        const { ok } = await client.markReportUnread(id);
+        if (!ok) throw new Error('Unread update failed');
+        const current = latestReports.find((entry) => entry.id === id);
+        if (current) current.read = false;
+        renderReports(latestReports);
+        if (reportDialog.open && openReportId === id) reportDialog.close();
+        showNotice('未読に戻しました');
+      } else if (action === 'favorite') {
+        const { favorite } = await client.toggleReportFavorite(id);
+        if (typeof favorite !== 'boolean') throw new Error('Favorite update failed');
+        const current = latestReports.find((entry) => entry.id === id);
+        if (current) current.favorite = favorite;
+        renderReports(latestReports);
+      } else if (action === 'archive') {
+        const { ok } = await client.archiveReport(id);
+        if (!ok) throw new Error('Archive failed');
+        renderReports(latestReports.filter((entry) => entry.id !== id));
+        showNotice('報告をアーカイブしました');
+      }
+    } catch {
+      showNotice(action === 'copy' ? 'コピーできませんでした。もう一度お試しください。' : '更新できませんでした。もう一度お試しください。');
+    } finally {
+      pendingReportActions.delete(pendingKey);
+      button.removeAttribute('aria-busy');
+      const current = latestReports.find((entry) => entry.id === openReportId);
+      if (reportDialog.open && current) syncReportDialog(current);
+    }
+  }
+  reportListElement.addEventListener('click', handleReportAction);
+  reportDialog.addEventListener('click', handleReportAction);
+
   async function loadReports() {
-    reportListElement.innerHTML = '<div class="report-empty">読み込み中…</div>';
     try {
       const { reports } = await client.listReports();
       renderReports(reports ?? []);
     } catch {
-      reportListElement.innerHTML =
-        '<div class="report-empty">読み込みに失敗しました</div>';
+      if (latestReports.length) showNotice('報告を更新できませんでした。表示中の内容を保持しています。');
+      else reportListElement.innerHTML = '<div class="report-empty">読み込みに失敗しました<button type="button" id="reports-retry">再試行</button></div>';
+      field('reports-retry')?.addEventListener('click', loadReports);
     }
   }
 
@@ -494,7 +599,7 @@
   const VENDOR_COLORS = { claude: '#d97757', codex: '#24292f', gemini: '#4285f4' };
   const USER_COLOR = '#64748b';
   const TEAM_COLOR = '#475569';
-  const DONE_COLOR = '#16a34a';
+  const DONE_COLOR = '#78716c';
   const DONE_COLUMN = 'done';
 
   let latestSnapshot = null;
@@ -586,8 +691,8 @@
     }
     // The 完了 column aggregates done cards across every assignee, so the flat
     // listing's per-assignee position order carries no meaning here — order it
-    // by completion time, newest at the bottom, like every other column.
-    grouped.get(DONE_COLUMN).sort((first, second) => first.doneAt - second.doneAt);
+    // by completion time, newest first, for quick access to recent work.
+    grouped.get(DONE_COLUMN).sort((first, second) => second.doneAt - first.doneAt);
     return { columns, grouped, index };
   }
 
@@ -596,7 +701,7 @@
       const { cards } = await client.listBoard();
       boardCards = cards ?? [];
     } catch {
-      boardCards = [];
+      showNotice('タスクを更新できませんでした。表示中の内容を保持しています。');
     }
     renderStrip();
     if (!boardViewElement.hidden) renderBoard();
@@ -608,20 +713,24 @@
   // the full board (the column scrolls when they overflow).
   function renderStrip() {
     const { columns, grouped, index } = groupedCards();
+    const restore = preserveBoardPosition(stripElement);
+    const active = boardCards.filter((card) => !card.done);
+    const working = active.filter((card) => card.working).length;
+    const review = active.filter((card) => card.assignee === 'user' && card.reported && !card.working).length;
+    field('board-summary').innerHTML = `<span>未完了 <b>${active.length}</b></span><span>作業中 <b>${working}</b></span>${review ? `<span class="summary-review">要確認 <b>${review}</b></span>` : ''}`;
     stripElement.innerHTML = columns
       .map((column) => {
-        const showAssignee = column.type === 'team' || column.type === 'done';
         const cards = grouped.get(column.key);
         const body =
           cards.length === 0
-            ? '<div class="strip-empty">タスクなし</div>'
-            : cards.map((card) => boardCardMarkup(card, showAssignee, index)).join('');
+            ? emptyColumnMarkup(column)
+            : cards.map((card) => boardCardMarkup(card, index)).join('');
         const addButton =
           column.addAssignee === null
             ? ''
             : `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" title="${escapeHtml(column.label)}にタスクを起票">＋</button>`;
         return `
-          <div class="strip-column">
+          <div class="strip-column column-${column.type}">
             <div class="strip-column-head">
               ${assigneeChip(column)}
               <span class="strip-column-name">${escapeHtml(column.label)}</span>
@@ -634,58 +743,83 @@
       })
       .join('');
     attachBoardHandlers(stripElement);
+    restore();
   }
 
   // The quick-add button is the strip's only chrome beyond the shared cards;
   // card clicks and drags are wired by attachBoardHandlers. A delegated
   // listener survives the strip being rebuilt on every board refresh.
-  stripElement.addEventListener('click', (event) => {
-    const addButton = event.target.closest('.strip-add');
-    if (addButton !== null) openCardForm(addButton.dataset.assignee);
-  });
+  for (const root of [stripElement, boardColumnsElement]) {
+    root.addEventListener('click', (event) => {
+      const addButton = event.target.closest('[data-assignee].strip-add');
+      if (addButton) openCardForm(addButton.dataset.assignee);
+    });
+  }
+  field('board-expand').addEventListener('click', () => setView('board'));
+
+  function emptyColumnMarkup(column) {
+    if (column.type === 'done') return '<div class="strip-empty">完了したタスクがここに並びます</div>';
+    if (column.addAssignee === null) return '<div class="strip-empty">担当AIを配置するとタスクを追加できます</div>';
+    return `<button type="button" class="strip-add empty-add" data-assignee="${escapeHtml(column.addAssignee)}">＋ タスクを追加</button>`;
+  }
+
+  function preserveBoardPosition(root) {
+    const positions = new Map([...root.querySelectorAll('.board-cards')].map((list) => [list.dataset.column, list.scrollTop]));
+    const focusId = root.contains(document.activeElement) ? document.activeElement.closest('.board-card')?.dataset.id : null;
+    return () => {
+      for (const list of root.querySelectorAll('.board-cards')) list.scrollTop = positions.get(list.dataset.column) ?? 0;
+      if (focusId) root.querySelector(`.board-card[data-id="${CSS.escape(focusId)}"]`)?.focus({ preventScroll: true });
+    };
+  }
 
   function cardBadges(card) {
     const badges = [];
-    if (card.working) badges.push('<span class="card-badge working">作業中</span>');
-    else if (card.assignee === 'user' && card.reported) {
-      badges.push('<span class="card-badge review">要確認</span>');
-    }
+    if (card.done) badges.push('<span class="card-badge done">完了</span>');
+    else if (card.working) badges.push('<span class="card-badge working">作業中</span>');
+    else if (card.assignee === 'user' && card.reported) badges.push('<span class="card-badge review">要確認</span>');
+    else badges.push(`<span class="card-badge queued">${card.assignee === 'user' ? '未着手' : '待機中'}</span>`);
     if (card.orphaned) badges.push('<span class="card-badge orphaned">担当不在</span>');
     return badges.join('');
   }
 
   // A single card's markup, shared by the full board and the compact strip so
   // both render the same size and drag the same way.
-  function boardCardMarkup(card, showAssignee, index) {
+  function boardCardMarkup(card, index) {
+    const status = card.done ? 'done' : card.working ? 'working' : card.assignee === 'user' && card.reported ? 'review' : 'queued';
+    const preview = (card.body || '').replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
     return `
-      <div class="board-card${card.working ? ' working' : ''}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}">
+      <div class="board-card ${status}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}" role="button" tabindex="0" aria-label="タスク詳細: ${escapeHtml(card.title)}">
+        <div class="board-card-status">${cardBadges(card)}</div>
         <div class="board-card-title">${escapeHtml(card.title)}</div>
-        <div class="board-card-meta">${showAssignee ? cardAssigneeTag(card, index) : ''}${cardBadges(card)}<span class="board-card-time">${formatTime(card.createdAt)}</span></div>
+        ${preview ? `<div class="board-card-preview">${escapeHtml(preview)}</div>` : ''}
+        <div class="board-card-meta">${cardAssigneeTag(card, index)}<time class="board-card-time" title="${card.done ? '完了日時' : '作成日時'}">${formatTime(card.doneAt || card.createdAt)}</time></div>
       </div>`;
   }
 
   function renderBoard() {
     const { columns, grouped, index } = groupedCards();
+    const restore = preserveBoardPosition(boardColumnsElement);
     boardColumnsElement.innerHTML = columns
       .map((column) => {
-        const showAssignee = column.type === 'team' || column.type === 'done';
         return `
-          <div class="board-column">
+          <div class="board-column column-${column.type}">
             <div class="board-column-head">
               ${assigneeChip(column)}
               <span class="board-column-name">${escapeHtml(column.label)}</span>
               <span class="board-column-count">${grouped.get(column.key).length}</span>
+              ${column.addAssignee ? `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" aria-label="${escapeHtml(column.label)}にタスクを追加">＋</button>` : ''}
             </div>
             <div class="board-cards" data-column="${escapeHtml(column.key)}">
               ${grouped
                 .get(column.key)
-                .map((card) => boardCardMarkup(card, showAssignee, index))
-                .join('')}
+                .map((card) => boardCardMarkup(card, index))
+                .join('') || emptyColumnMarkup(column)}
             </div>
           </div>`;
       })
       .join('');
     attachBoardHandlers(boardColumnsElement);
+    restore();
   }
 
   // Markers live in whichever root is being dragged (board or strip); only one
@@ -712,6 +846,12 @@
   function attachBoardHandlers(root) {
     for (const cardElement of root.querySelectorAll('.board-card')) {
       cardElement.addEventListener('click', () => openCardDetail(cardElement.dataset.id));
+      cardElement.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openCardDetail(cardElement.dataset.id);
+        }
+      });
       cardElement.addEventListener('dragstart', (event) => {
         draggingCardId = cardElement.dataset.id;
         event.dataTransfer.effectAllowed = 'move';
@@ -951,7 +1091,7 @@
         <span class="card-detail-title">${escapeHtml(card.title)}${editButton}</span>
         <span class="card-detail-assignee">${chip} ${escapeHtml(meta.label)}${card.working ? ' <span class="card-badge working">作業中</span>' : ''}${card.done ? ' <span class="card-badge done">完了</span>' : ''}</span>
       </div>
-      <div class="card-detail-body">${linkify(escapeHtml(card.body || '(本文なし)'))}</div>
+      <div class="card-detail-body markdown">${renderMarkdown(card.body || '(本文なし)')}</div>
       <div id="card-reports"><div class="report-empty">報告を読み込み中…</div></div>
       <form id="card-note-form">
         <textarea id="card-note-text" rows="2" placeholder="追記(次回実行のプロンプトに含まれます)"></textarea>
@@ -1061,7 +1201,7 @@
                 <span class="report-title">${escapeHtml(report.title)}</span>
                 <span class="report-time">${formatTime(report.createdAt)}</span>
               </div>
-              <div class="report-body">${linkify(escapeHtml(report.body))}</div>
+              <div class="report-body markdown">${renderMarkdown(report.body)}</div>
             </div>`
         )
         .join('');

@@ -109,17 +109,22 @@ the saved name.
   the browser and defaults to the OS scheme), an アバター退勤 button that
   triggers the HR cleanup and a ＋ タスク button that opens the task-filing
   form in the drawer
-- Kanban strip: below the app bar, one column per assignee (user first,
-  then residents in seat order) with a vendor-colored assignee chip
-  matching the robot avatars, a card count, a live 作業中 badge while a
-  run is going, a preview of the first few cards (`ほか N 件` when more)
-  and a per-column ＋ button that files a task with that assignee
-  pre-selected
-- Sidebar: a report inbox (tray icon + heading `インボックス`) with unread / 要確認
-  counts in its header, listing whiteboard reports — click a report head to
-  expand its body inline / mark it read, ✕ to archive. The server still
-  keeps the newest 50 `#general` messages and a WebAudio chime fires when
-  the boss (社長) is freshly mentioned, but the chat is no longer rendered
+- Kanban strip and full board share status badges and support opening card
+  details with Enter or Space. Completed cards appear newest first by `doneAt`;
+  unfinished cards retain their execution order, and updates preserve scroll
+  positions. Each column has a ＋ button for filing a task.
+- Sidebar: the report inbox searches titles, resident names and bodies, with
+  all, unread, review (unread `review-needed`) and favorite filters. Opening a
+  report marks it read and displays Markdown in a native dialog with original
+  text copying, a related-task link and next-unread navigation. Card details
+  and linked reports use the same Markdown rendering. Read reports can be
+  marked unread only from the dialog, which closes after success. Original
+  text copying is also available only in the dialog.
+  Reports can be archived.
+  The server still keeps the newest 50 `#general` messages and a WebAudio chime
+  fires when the boss (社長) is freshly mentioned, but chat is not rendered.
+- Panels use neutral off-white and gray with slate-blue status accents in
+  both light and dark themes.
 
 ### HR cleanup
 
@@ -204,7 +209,8 @@ button that takes it off the board — the row is flagged `archived_at`,
 never deleted.
 Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
 `POST /api/residents/:name/run`/`stop`, `GET /api/whiteboard`,
-`POST /api/whiteboard/read`, `POST /api/whiteboard/archive`,
+`POST /api/whiteboard/read`, `POST /api/whiteboard/unread` (`{id}`),
+`POST /api/whiteboard/archive`,
 `GET /api/board`, `POST /api/board/create`/`move`/`archive`/`note`.
 
 ## Architecture

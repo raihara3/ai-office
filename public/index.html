@@ -48,7 +48,12 @@
         <button type="button" id="card-add" class="primary-button">＋ タスク</button>
       </div>
     </header>
-    <div id="kanban-strip"></div>
+    <div id="workspace-toolbar">
+      <h1>タスク</h1>
+      <span id="board-summary" aria-live="polite"></span>
+      <button type="button" id="board-expand">ボードを開く →</button>
+    </div>
+    <div id="kanban-strip" aria-label="チーム別のタスク"></div>
     <div id="content">
       <section id="office-wrap">
         <div id="office-scroll">
@@ -72,10 +77,35 @@
           <h1>インボックス</h1>
           <span id="inbox-summary"></span>
         </header>
-        <div id="inbox-list"></div>
+        <div id="inbox-tools">
+          <input type="search" id="inbox-search" placeholder="報告を検索…" aria-label="報告の件名・担当者・本文を検索">
+          <div id="inbox-filters" role="group" aria-label="報告の絞り込み">
+            <button type="button" data-inbox-filter="all" aria-pressed="true">すべて <span>0</span></button>
+            <button type="button" data-inbox-filter="unread" aria-pressed="false">未読 <span>0</span></button>
+            <button type="button" data-inbox-filter="review" aria-pressed="false">要確認 <span>0</span></button>
+            <button type="button" data-inbox-filter="favorite" aria-pressed="false">お気に入り <span>0</span></button>
+          </div>
+        </div>
+        <div id="inbox-list"><div class="report-empty">読み込み中…</div></div>
       </aside>
     </div>
   </main>
+  <dialog id="report-dialog" aria-labelledby="report-dialog-title">
+    <header class="report-dialog-head">
+      <div><p id="report-dialog-meta"></p><h1 id="report-dialog-title"></h1></div>
+      <button type="button" id="report-dialog-close" aria-label="報告を閉じる" autofocus>✕</button>
+    </header>
+    <div id="report-dialog-body" class="markdown" tabindex="0" role="region" aria-label="報告本文"></div>
+    <p id="report-dialog-notice" role="status" hidden></p>
+    <footer class="report-dialog-footer">
+      <button type="button" id="report-dialog-favorite" data-report-action="favorite" aria-pressed="false">☆ お気に入り</button>
+      <button type="button" data-report-action="copy">⧉ 全文をコピー</button>
+      <button type="button" id="report-dialog-unread" data-report-action="unread">未読に戻す</button>
+      <button type="button" id="report-dialog-task" hidden>関連タスク →</button>
+      <button type="button" id="report-dialog-next">次の未読 →</button>
+    </footer>
+  </dialog>
+  <div id="ui-notice" role="status" hidden></div>
   <aside id="drawer" hidden>
     <header id="drawer-head">
       <h2 id="drawer-title"></h2>

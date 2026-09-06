@@ -491,6 +491,12 @@ export function createResidents({
     return changed;
   }
 
+  function markReportUnread(id) {
+    const changed = whiteboard.markUnread(id);
+    if (changed) state.refresh();
+    return changed;
+  }
+
   function toggleReportFavorite(id) {
     const favorite = whiteboard.toggleFavorite(id);
     if (favorite !== null) state.refresh();
@@ -615,6 +621,7 @@ export function createResidents({
     residentForFile: registry.residentForFile,
     listReports: whiteboard.listReports,
     markReportRead,
+    markReportUnread,
     toggleReportFavorite,
     archiveReport,
     whiteboardCounts: whiteboard.counts,

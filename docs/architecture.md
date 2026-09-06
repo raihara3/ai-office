@@ -77,6 +77,7 @@ server/                バックエンド(npm 依存なし。永続化は node:s
 public/                フロントエンド(静的 ES モジュールとして配信)
   index.html           マークアップ: アプリバー + カンバンストリップ + canvas / ボードビュー + インボックス + ドロワー
   style.css            ライト SaaS テーマの UI スタイル一式
+  markdown.js          Safe Markdown subset for reports and task details
   office.js            canvas 描画ループ(部屋・デスク・アバター・吹き出し)
   office/
     miniature.js       Miniature materials, furniture and robot drawing helpers
@@ -127,7 +128,7 @@ Server-Sent Events(`/events`)でストリームし、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
 `POST /api/residents/:name/run`/`stop`)、チーム管理(`GET`/`POST /api/teams`、
 `PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
-`POST /api/whiteboard/read`、`POST /api/whiteboard/archive`)、カンバンボード
+`POST /api/whiteboard/read`、`POST /api/whiteboard/unread`、`POST /api/whiteboard/archive`)、カンバンボード
 (`GET /api/board`、`POST /api/board/create`/`move`/`done`/`archive`/`edit`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 すべて core にあり、本ファイルは配管(plumbing)に徹します。
@@ -287,7 +288,13 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 `prefers-color-scheme`)からテーマを読んで `data-theme` を設定するため、
 保存済みのダークテーマがライトで一瞬光ることはありません。
 
+The inbox also provides search and filters, and opens reports in a native
+`<dialog>` rather than expanding their bodies in the sidebar.
+
 ### `style.css`
+
+Panels use neutral off-white and gray with slate-blue status accents in
+light and dark themes.
 
 SaaS テーマ(ライト / ダーク。ダーク用トークンは
 `:root[data-theme="dark"]` で同じトークン一式を上書き)。アプリバー、
@@ -375,20 +382,29 @@ entrance sofa and its accessories. canvas も DOM も触れないため単体テ
 UI のトランスポート層。`connect({ onSnapshot, onStatus })` は SSE ストリーム
 (自動再接続)をラップします。常駐チーム管理(`listResidents` / `saveResident` /
 `deleteResident` / `runResident`)、ホワイトボード(`listReports` /
-`markReportRead` / `archiveReport`)、カンバンボード(`listBoard` /
+`markReportRead` / `markReportUnread` / `archiveReport`)、カンバンボード(`listBoard` /
 `createCard` / `moveCard` / `archiveCard` / `appendCardNote`)の API 呼び出しもここに集約します。将来 SSE を Electron
 IPC に差し替える際は、このファイルだけを変更すれば済みます。
 
 ### `app.js`
 
-DOM 側 UI の挙動:カンバンストリップ(担当者別の列。ベンダーカラーの
-担当チップ・件数・実行中の 作業中 バッジ・先頭 3 枚のカードプレビューと
-`ほか N 件`、列ごとの ＋ クイック起票)の描画、ビュータブによる canvas と
-インプレースのフルボード(`#board-view`。列 = ユーザー + 常駐員(席順)、
-HTML5 drag & drop での並び替え・再アサイン。担当常駐が削除されたカードは
-ユーザー列に「担当不在」バッジ付きで表示)の切り替え、インボックス
-サイドバー(`snapshot.whiteboard` の報告一覧。ヘッダに未読・要確認
-カウント、展開でインライン表示 + 既読化、✕ でボードから外す)の描画、
+The office Kanban strip and full board share status badges and keyboard
+activation (Enter or Space opens card details). Completed cards are sorted
+newest first by `doneAt`, while unfinished cards retain their execution order.
+Rendering preserves scroll positions. View tabs switch between the canvas
+and full board; cards support drag-and-drop and per-column task creation.
+The inbox searches report titles, resident names and bodies, with all, unread,
+review (unread `review-needed`) and favorite filters. Opening a report marks
+it read and displays Markdown in a native dialog with original-text copying,
+related-task access and next-unread navigation. Card details and linked reports
+use the same `renderMarkdown` function from `markdown.js`, which escapes raw
+HTML, permits only HTTP(S)/mailto links, and supports a report-oriented subset
+including headings, lists, code, tables and blockquotes. Report rows place
+the title and timestamp on one line, use a dot and background for unread
+state, omit the generic report label, and retain the review-needed label.
+Marking reports unread and copying original text are available only in the
+report dialog; marking unread successfully closes it. `POST /api/whiteboard/unread` accepts `{id}`, persists the
+unread state in SQLite, and updates counts. Reports can be archived.
 社長(`@社長`)が
 新たにメンションされた際の WebAudio チャイム再生(`snapshot.messages` を
 参照。チャット自体の描画はしません)。クライアントストリームを

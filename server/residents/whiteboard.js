@@ -33,6 +33,9 @@ export function createWhiteboard({ database, now = () => Date.now() }) {
     markRead: database.prepare(
       'UPDATE reports SET "read" = 1 WHERE id = ? AND archived_at IS NULL'
     ),
+    markUnread: database.prepare(
+      'UPDATE reports SET "read" = 0 WHERE id = ? AND archived_at IS NULL'
+    ),
     getFavorite: database.prepare(
       'SELECT favorite FROM reports WHERE id = ? AND archived_at IS NULL'
     ),
@@ -97,6 +100,10 @@ export function createWhiteboard({ database, now = () => Date.now() }) {
     return statements.markRead.run(id).changes > 0;
   }
 
+  function markUnread(id) {
+    return statements.markUnread.run(id).changes > 0;
+  }
+
   // Pin/unpin a report. Returns the resulting favorite flag, or null when
   // there is no such report.
   function toggleFavorite(id) {
@@ -127,6 +134,7 @@ export function createWhiteboard({ database, now = () => Date.now() }) {
     saveReport,
     listReports,
     markRead,
+    markUnread,
     toggleFavorite,
     archiveReport,
     archiveReportsForTask,

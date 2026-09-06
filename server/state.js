@@ -8,6 +8,9 @@
 // function for the same reason.
 
 const WORKING_IDLE_TIMEOUT_MS = 90_000;
+// A tool call frozen in flight past this outlives any realistic long-running
+// command, so the session is treated as gone rather than blocked (see below).
+const BLOCKED_EXPIRE_MS = 30 * 60_000;
 const TURN_COMPLETE_GRACE_MS = 5_000;
 const SUBAGENT_EXPIRE_MS = 30 * 60_000;
 const MCP_BADGE_EXPIRE_MS = 60_000;
@@ -35,8 +38,17 @@ export function deriveStatus(session, now) {
     // lingering forever as a blocked visitor.
     if (session.clientKind === 'mcp') return 'break';
     // A tool call still in flight (e.g. a command awaiting permission) means
-    // the member is blocked at their desk, not resting.
-    return session.pendingTool ? 'blocked' : 'break';
+    // the member is blocked at their desk, not resting — but only while the
+    // session is plausibly still alive. A CLI force-stopped mid-tool (Ctrl-C,
+    // killed terminal) freezes its transcript with the tool never resolved and
+    // no task_complete, so it would loiter as a blocked visitor in the entrance
+    // lobby until the 3-day session expiry. Once the block outlives any
+    // realistic in-flight command, treat the session as gone and send its
+    // avatar home; it self-heals to working/break if the tool ever resolves.
+    if (session.pendingTool && now - session.lastEventAt <= BLOCKED_EXPIRE_MS) {
+      return 'blocked';
+    }
+    return 'break';
   }
   if (
     session.turnCompletedAt !== null &&

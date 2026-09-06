@@ -46,6 +46,14 @@ test('deriveStatus: idle mcp one-shot retires -> break even with pendingTool', (
   assert.equal(deriveStatus(session, WORKING_IDLE_TIMEOUT_MS + 1), 'break');
 });
 
+test('deriveStatus: blocked past the blocked-expiry retires -> break (force-stopped session)', () => {
+  const session = makeSession({ lastEventAt: 0, pendingTool: true });
+  const BLOCKED_EXPIRE_MS = 30 * 60_000;
+  assert.equal(deriveStatus(session, BLOCKED_EXPIRE_MS + 1), 'break');
+  // Still blocked just before the threshold.
+  assert.equal(deriveStatus(session, BLOCKED_EXPIRE_MS - 1), 'blocked');
+});
+
 test('deriveStatus: turnCompletedAt older than grace -> break', () => {
   const session = makeSession({ lastEventAt: 0, turnCompletedAt: 0 });
   assert.equal(deriveStatus(session, TURN_COMPLETE_GRACE_MS + 1), 'break');

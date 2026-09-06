@@ -68,6 +68,16 @@
           body: JSON.stringify({ officeName }),
         });
       },
+      // Persists the board's left-to-right column order (a list of column keys:
+      // 'user', 'done', or 'team:<id>'). Like the office name, the saved order
+      // rides on every state snapshot, so reading is done from there.
+      async saveColumnOrder(columnOrder) {
+        return requestJson('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ columnOrder }),
+        });
+      },
 
       // The whiteboard: full reports (bodies included) and read receipts.
       async listReports() {

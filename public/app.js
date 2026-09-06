@@ -603,6 +603,7 @@ import { renderMarkdown } from './markdown.js';
   let latestSnapshot = null;
   let boardCards = [];
   let draggingCardId = null;
+  let draggingColumnKey = null;
 
   // Resident name → its avatar tag data (display name, vendor color, team).
   function residentIndex() {
@@ -656,7 +657,26 @@ import { renderMarkdown } from './markdown.js';
       });
     }
     columns.push({ key: DONE_COLUMN, type: 'done', label: '完了', color: DONE_COLOR, busy: false, addAssignee: null });
-    return columns;
+    return applyColumnOrder(columns);
+  }
+
+  // Reorder the natural columns (user, teams by creation, done) to the
+  // human's saved left-to-right order. Keys missing from the saved order — a
+  // team added since it was saved — keep their natural position at the end,
+  // and stale keys in the order are simply ignored. An empty order (never
+  // reordered) leaves the natural order untouched.
+  function applyColumnOrder(columns) {
+    const order = latestSnapshot?.boardColumnOrder;
+    if (!Array.isArray(order) || order.length === 0) return columns;
+    const rank = new Map(order.map((key, position) => [key, position]));
+    return columns
+      .map((column, naturalIndex) => ({ column, naturalIndex }))
+      .sort((first, second) => {
+        const firstRank = rank.has(first.column.key) ? rank.get(first.column.key) : order.length + first.naturalIndex;
+        const secondRank = rank.has(second.column.key) ? rank.get(second.column.key) : order.length + second.naturalIndex;
+        return firstRank - secondRank;
+      })
+      .map((entry) => entry.column);
   }
 
   function assigneeChip(column) {
@@ -806,8 +826,8 @@ import { renderMarkdown } from './markdown.js';
     boardColumnsElement.innerHTML = columns
       .map((column) => {
         return `
-          <div class="board-column column-${column.type}">
-            <div class="board-column-head">
+          <div class="board-column column-${column.type}" data-column-key="${escapeHtml(column.key)}">
+            <div class="board-column-head" draggable="true" title="ドラッグして列を並び替え">
               ${assigneeChip(column)}
               <span class="board-column-name">${escapeHtml(column.label)}</span>
               <span class="board-column-count">${grouped.get(column.key).length}</span>
@@ -823,6 +843,7 @@ import { renderMarkdown } from './markdown.js';
       })
       .join('');
     attachBoardHandlers(boardColumnsElement);
+    attachColumnHandlers(boardColumnsElement);
     restore();
   }
 
@@ -889,6 +910,70 @@ import { renderMarkdown } from './markdown.js';
         dropCard(listElement.dataset.column, null, root, event);
       });
     }
+  }
+
+  // Column drop markers live only on the full board (columns are reordered
+  // there); the strip mirrors the saved order read-only.
+  function clearColumnDropMarkers() {
+    for (const marked of document.querySelectorAll('.col-drop-before, .col-drop-after')) {
+      marked.classList.remove('col-drop-before', 'col-drop-after');
+    }
+  }
+
+  // Wire column-head drag so the human reorders the board's columns
+  // left-to-right — the user and 完了 columns included. A card drag also starts
+  // inside a column, so column handlers stand down whenever one is in flight.
+  function attachColumnHandlers(root) {
+    for (const columnElement of root.querySelectorAll('.board-column')) {
+      const head = columnElement.querySelector('.board-column-head');
+      head.addEventListener('dragstart', (event) => {
+        if (draggingCardId !== null) return;
+        draggingColumnKey = columnElement.dataset.columnKey;
+        event.dataTransfer.effectAllowed = 'move';
+      });
+      head.addEventListener('dragend', () => {
+        draggingColumnKey = null;
+        clearColumnDropMarkers();
+      });
+      columnElement.addEventListener('dragover', (event) => {
+        if (draggingColumnKey === null || draggingColumnKey === columnElement.dataset.columnKey) return;
+        event.preventDefault();
+        clearColumnDropMarkers();
+        const rect = columnElement.getBoundingClientRect();
+        columnElement.classList.add(
+          event.clientX <= rect.left + rect.width / 2 ? 'col-drop-before' : 'col-drop-after'
+        );
+      });
+      columnElement.addEventListener('drop', (event) => {
+        if (draggingColumnKey === null) return;
+        event.preventDefault();
+        const rect = columnElement.getBoundingClientRect();
+        dropColumn(columnElement.dataset.columnKey, event.clientX <= rect.left + rect.width / 2);
+      });
+    }
+  }
+
+  // Persist the new left-to-right column order after a column is dropped before
+  // (`before`) or after the target. The order is optimistically applied so the
+  // board settles immediately; the next snapshot confirms it.
+  async function dropColumn(targetKey, before) {
+    const key = draggingColumnKey;
+    draggingColumnKey = null;
+    clearColumnDropMarkers();
+    if (key === null || key === targetKey) return;
+    const keys = boardColumns().map((column) => column.key);
+    const from = keys.indexOf(key);
+    if (from !== -1) keys.splice(from, 1);
+    const target = keys.indexOf(targetKey);
+    if (target === -1) return;
+    keys.splice(before ? target : target + 1, 0, key);
+    try {
+      const { columnOrder } = await client.saveColumnOrder(keys);
+      if (latestSnapshot) latestSnapshot.boardColumnOrder = columnOrder ?? keys;
+    } catch {
+      // Fall through: the snapshot still carries the last saved order.
+    }
+    refreshBoard();
   }
 
   // Resolve a drop into a team/user column to the concrete resident (or 'user')
@@ -1250,10 +1335,11 @@ import { renderMarkdown } from './markdown.js';
       snapshot.board,
       (snapshot.residents ?? []).map((resident) => resident.busy),
       (snapshot.teams ?? []).map((team) => team.id + team.name),
+      snapshot.boardColumnOrder,
     ]);
     const changed = boardSignature !== null && signature !== boardSignature;
     boardSignature = signature;
-    if (changed && draggingCardId === null) refreshBoard();
+    if (changed && draggingCardId === null && draggingColumnKey === null) refreshBoard();
   }
 
   // --- resident settings (drawer) -----------------------------------------
@@ -1695,6 +1781,7 @@ import { renderMarkdown } from './markdown.js';
           snapshot.board,
           (snapshot.residents ?? []).map((resident) => resident.busy),
           (snapshot.teams ?? []).map((team) => team.id + team.name),
+          snapshot.boardColumnOrder,
         ]);
         return;
       }

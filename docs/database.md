@@ -85,7 +85,7 @@ erDiagram
     }
 
     settings {
-        TEXT key   PK "user-editable preference key, e.g. 'officeName'"
+        TEXT key   PK "user-editable preference key, e.g. 'officeName', 'boardColumnOrder'"
         TEXT value    "NOT NULL"
     }
 ```
@@ -108,7 +108,8 @@ erDiagram
   kanban column, `origin_id IS NULL` marks human-filed cards.
 - **`settings` vs `meta`**: both are standalone key-value tables with no
   foreign keys. `settings` holds user-editable preferences set in-app (the
-  office name on the entrance sign, `officeName`); `meta` holds internal
+  office name on the entrance sign, `officeName`; the board's left-to-right
+  column order, `boardColumnOrder`, a JSON array of column keys); `meta` holds internal
   flags: the one-time import markers and `resident_loop_owner`, the pid of
   the server instance currently owning the resident tick loop
   (`loop-ownership.js` — two instances over one office.db must not both fire

@@ -393,6 +393,9 @@ activation (Enter or Space opens card details). Completed cards are sorted
 newest first by `doneAt`, while unfinished cards retain their execution order.
 Rendering preserves scroll positions. View tabs switch between the canvas
 and full board; cards support drag-and-drop and per-column task creation.
+Full-board columns (the user and 完了 columns included) reorder by dragging
+their headers; the left-to-right order persists as the `boardColumnOrder`
+setting and the strip mirrors it.
 The inbox searches report titles, resident names and bodies, with all, unread,
 review (unread `review-needed`) and favorite filters. Opening a report marks
 it read and displays Markdown in a native dialog with original-text copying,

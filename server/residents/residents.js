@@ -605,6 +605,12 @@ export function createResidents({
     return saved;
   }
 
+  function saveBoardColumnOrder(order) {
+    const saved = settingsStore.setBoardColumnOrder(order);
+    state.refresh();
+    return saved;
+  }
+
   return {
     start,
     stop,
@@ -635,5 +641,7 @@ export function createResidents({
     boardCounts: board.counts,
     getOfficeName: settingsStore.getOfficeName,
     saveOfficeName,
+    getBoardColumnOrder: settingsStore.getBoardColumnOrder,
+    saveBoardColumnOrder,
   };
 }

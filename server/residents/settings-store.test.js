@@ -10,6 +10,7 @@ import {
   createSettingsStore,
   DEFAULT_OFFICE_NAME,
   MAX_OFFICE_NAME_LENGTH,
+  MAX_BOARD_COLUMN_KEYS,
 } from './settings-store.js';
 
 // Pinned so GC cannot finalize a fixture database's statements mid-test:
@@ -59,4 +60,36 @@ test('settings: a name over the cap is refused, at the cap is accepted', () => {
   assert.throws(() => settings.setOfficeName(tooLong), /10 characters or fewer/);
   const atCap = 'あ'.repeat(MAX_OFFICE_NAME_LENGTH);
   assert.equal(settings.setOfficeName(atCap), atCap);
+});
+
+test('settings: board column order defaults to empty until one is saved', () => {
+  const { settings } = storeWith();
+  assert.deepEqual(settings.getBoardColumnOrder(), []);
+});
+
+test('settings: saving a column order persists and round-trips', () => {
+  const { settings } = storeWith();
+  const order = ['done', 'team:abc', 'user'];
+  assert.deepEqual(settings.setBoardColumnOrder(order), order);
+  assert.deepEqual(settings.getBoardColumnOrder(), order);
+});
+
+test('settings: column order trims, drops blanks and deduplicates keeping first', () => {
+  const { settings } = storeWith();
+  assert.deepEqual(
+    settings.setBoardColumnOrder(['  user  ', '', 'user', 'done']),
+    ['user', 'done']
+  );
+});
+
+test('settings: a non-array column order is refused', () => {
+  const { settings } = storeWith();
+  assert.throws(() => settings.setBoardColumnOrder('user'), /must be an array/);
+  assert.throws(() => settings.setBoardColumnOrder([1, 2]), /must be strings/);
+});
+
+test('settings: a column order over the cap is refused', () => {
+  const { settings } = storeWith();
+  const tooMany = Array.from({ length: MAX_BOARD_COLUMN_KEYS + 1 }, (_, i) => `team:${i}`);
+  assert.throws(() => settings.setBoardColumnOrder(tooMany), /keys or fewer/);
 });

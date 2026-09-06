@@ -500,6 +500,13 @@ textarea:focus-visible {
   gap: 6px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
+  cursor: grab;
+}
+
+/* The ＋ quick-add stays a click target even though its column head is a drag
+   handle. */
+.board-column-head .strip-add {
+  cursor: pointer;
 }
 
 .board-column-name {
@@ -568,6 +575,16 @@ textarea:focus-visible {
 
 .board-card.drop-after {
   border-bottom: 2px solid var(--primary);
+}
+
+/* Column-reorder drop markers: a vertical accent on the side the dragged
+   column will land. */
+.board-column.col-drop-before {
+  border-left: 2px solid var(--primary);
+}
+
+.board-column.col-drop-after {
+  border-right: 2px solid var(--primary);
 }
 
 /* Drop-time owner picker: shown when a card is dropped into a team column with

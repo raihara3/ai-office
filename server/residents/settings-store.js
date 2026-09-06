@@ -7,6 +7,13 @@ export const MAX_OFFICE_NAME_LENGTH = 10;
 export const DEFAULT_OFFICE_NAME = 'AI OFFICE';
 const OFFICE_NAME_KEY = 'officeName';
 
+const BOARD_COLUMN_ORDER_KEY = 'boardColumnOrder';
+// A saved order lists at most the two fixed columns (user, done) plus one per
+// team; teams are bounded only by the canvas, so cap generously rather than
+// tightly. Keys are opaque here — the client maps them to live columns.
+export const MAX_BOARD_COLUMN_KEYS = 200;
+const MAX_BOARD_COLUMN_KEY_LENGTH = 128;
+
 export function createSettingsStore({ database }) {
   const statements = {
     read: database.prepare('SELECT value FROM settings WHERE key = ?'),
@@ -35,5 +42,41 @@ export function createSettingsStore({ database }) {
     return cleanName;
   }
 
-  return { getOfficeName, setOfficeName };
+  // The board's left-to-right column order as a list of column keys ('user',
+  // 'done', or 'team:<id>'). Empty until the human reorders, so the board keeps
+  // its natural order (user, teams by creation, done) until then. Keys are
+  // opaque here; the client maps them onto the live columns and drops stale ones.
+  function getBoardColumnOrder() {
+    const row = statements.read.get(BOARD_COLUMN_ORDER_KEY);
+    if (row === undefined) return [];
+    try {
+      const parsed = JSON.parse(row.value);
+      return Array.isArray(parsed) ? parsed.filter((key) => typeof key === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Persists a deduplicated, trimmed list of column keys. Order is honored;
+  // blank or overlong keys are dropped rather than rejected so a stray entry
+  // never blocks a save.
+  function setBoardColumnOrder(order) {
+    if (!Array.isArray(order)) throw new Error('column order must be an array of keys');
+    const seen = new Set();
+    const cleaned = [];
+    for (const key of order) {
+      if (typeof key !== 'string') throw new Error('column order keys must be strings');
+      const trimmed = key.trim();
+      if (trimmed === '' || trimmed.length > MAX_BOARD_COLUMN_KEY_LENGTH || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      cleaned.push(trimmed);
+    }
+    if (cleaned.length > MAX_BOARD_COLUMN_KEYS) {
+      throw new Error(`column order must list ${MAX_BOARD_COLUMN_KEYS} keys or fewer`);
+    }
+    statements.upsert.run(BOARD_COLUMN_ORDER_KEY, JSON.stringify(cleaned));
+    return cleaned;
+  }
+
+  return { getOfficeName, setOfficeName, getBoardColumnOrder, setBoardColumnOrder };
 }

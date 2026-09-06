@@ -169,11 +169,14 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
-    // User-editable office settings (currently just the office name on the
-    // entrance sign). GET reads, PUT saves.
+    // User-editable office settings (the entrance-sign office name and the
+    // board's column order). GET reads, PUT saves whichever fields are present.
     if (urlPath === '/api/settings') {
       if (request.method === 'GET') {
-        sendJson(response, 200, { officeName: core.getOfficeName() });
+        sendJson(response, 200, {
+          officeName: core.getOfficeName(),
+          columnOrder: core.getBoardColumnOrder(),
+        });
         return;
       }
       if (request.method !== 'PUT') {
@@ -190,8 +193,10 @@ export function createHttpServer(core, { publicDirectory }) {
           return;
         }
         try {
-          const officeName = core.saveOfficeName(parsed.officeName);
-          sendJson(response, 200, { ok: true, officeName });
+          const result = { ok: true };
+          if (parsed.officeName !== undefined) result.officeName = core.saveOfficeName(parsed.officeName);
+          if (parsed.columnOrder !== undefined) result.columnOrder = core.saveBoardColumnOrder(parsed.columnOrder);
+          sendJson(response, 200, result);
         } catch (error) {
           sendJson(response, 400, { error: error.message });
         }

@@ -606,6 +606,9 @@ import { renderMarkdown } from './markdown.js';
 
   // Resident name → its avatar tag data (display name, vendor color, team).
   function residentIndex() {
+    const teamNames = new Map(
+      (latestSnapshot?.teams ?? []).map((team) => [team.id, team.name])
+    );
     return new Map(
       (latestSnapshot?.residents ?? []).map((resident) => [
         resident.name,
@@ -613,6 +616,7 @@ import { renderMarkdown } from './markdown.js';
           label: resident.displayName,
           color: VENDOR_COLORS[resident.cli] ?? USER_COLOR,
           teamId: resident.teamId,
+          teamName: teamNames.get(resident.teamId) ?? resident.teamId,
           busy: resident.busy === true,
         },
       ])
@@ -664,7 +668,9 @@ import { renderMarkdown } from './markdown.js';
   function cardAssigneeTag(card, index) {
     const meta = assigneeMeta(card.assignee, index);
     const color = meta?.color ?? USER_COLOR;
-    const label = meta?.label ?? card.assignee;
+    // Prefix the avatar with its team as @team/avatar so a card's owner is
+    // unambiguous across teams; 'user' and orphaned cards keep the bare label.
+    const label = meta?.teamName ? `@${meta.teamName}/${meta.label}` : (meta?.label ?? card.assignee);
     return `<span class="card-assignee"><span class="assignee-dot" style="background:${escapeHtml(color)}"></span>${escapeHtml(label)}</span>`;
   }
 

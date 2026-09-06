@@ -1364,7 +1364,7 @@ textarea:focus-visible {
 #report-dialog-favorite[aria-pressed="true"] { color: var(--warning); }
 #report-dialog-next { margin-left: auto; }
 #report-dialog-task[hidden] { display: none; }
-#card-dialog { width: min(560px, calc(100vw - 48px)); max-width: none; max-height: min(720px, calc(100dvh - 64px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 28px 90px rgba(0, 0, 0, .24); background: var(--surface); color: var(--text); }
+#card-dialog { width: min(800px, calc(100vw - 48px)); max-width: none; max-height: min(720px, calc(100dvh - 64px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 28px 90px rgba(0, 0, 0, .24); background: var(--surface); color: var(--text); }
 #card-dialog[open] { display: flex; flex-direction: column; }
 #card-dialog::backdrop { background: rgba(25, 24, 22, .42); backdrop-filter: blur(3px); }
 .card-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }

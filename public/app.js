@@ -668,9 +668,9 @@ import { renderMarkdown } from './markdown.js';
   function cardAssigneeTag(card, index) {
     const meta = assigneeMeta(card.assignee, index);
     const color = meta?.color ?? USER_COLOR;
-    // Prefix the avatar with its team as @team/avatar so a card's owner is
+    // Prefix the avatar with its team as team/avatar so a card's owner is
     // unambiguous across teams; 'user' and orphaned cards keep the bare label.
-    const label = meta?.teamName ? `@${meta.teamName}/${meta.label}` : (meta?.label ?? card.assignee);
+    const label = meta?.teamName ? `${meta.teamName}/${meta.label}` : (meta?.label ?? card.assignee);
     return `<span class="card-assignee"><span class="assignee-dot" style="background:${escapeHtml(color)}"></span>${escapeHtml(label)}</span>`;
   }
 

@@ -1335,7 +1335,7 @@ textarea:focus-visible {
 .report-titleline .report-time { margin-left: auto; white-space: nowrap; }
 .report-titleline .report-level { padding: 1px 4px; border-radius: 3px; }
 .report-unread-label { display: inline-block; margin-right: 6px; color: var(--primary); font-size: 9px; vertical-align: 1px; }
-.report-open .report-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.6; color: var(--text); }
+.report-open .report-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.6; color: var(--text-muted); }
 .report-source { display: block; margin-top: 5px; padding-right: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 10px; line-height: 22px; }
 .report-actions { position: absolute; bottom: 9px; right: 7px; display: flex; gap: 2px; }
 .report-actions button { width: 26px; height: 26px; border-radius: 4px; }

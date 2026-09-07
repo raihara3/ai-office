@@ -362,17 +362,9 @@ import { renderMarkdown } from './markdown.js';
 
   function renderInboxSummary() {
     const unread = latestReports.filter((report) => !report.read).length;
-    const review = latestReports.filter(
-      (report) => report.level === 'review-needed' && !report.read
-    ).length;
-    if (review > 0) {
-      inboxSummaryElement.innerHTML = `<span class="summary-review">要確認 ${review}</span> ・ 未読 ${unread}`;
-    } else {
-      inboxSummaryElement.textContent = unread > 0 ? `未読 ${unread}` : 'すべて確認済み';
-    }
+    inboxSummaryElement.textContent = unread > 0 ? `未読 ${unread}` : 'すべて確認済み';
     inboxTabBadgeElement.hidden = unread === 0;
     inboxTabBadgeElement.textContent = String(Math.min(unread, 99));
-    inboxTabBadgeElement.classList.toggle('review', review > 0);
   }
 
   const reportDialog = field('report-dialog');
@@ -402,7 +394,6 @@ import { renderMarkdown } from './markdown.js';
 
   function reportMatchesFilter(report, filter = reportFilter) {
     return filter === 'all' || (filter === 'unread' && !report.read) ||
-      (filter === 'review' && report.level === 'review-needed' && !report.read) ||
       (filter === 'favorite' && report.favorite);
   }
 
@@ -430,7 +421,7 @@ import { renderMarkdown } from './markdown.js';
       const { title, source } = reportTitleParts(report);
       return `<article class="report${report.read ? '' : ' unread'}${report.favorite ? ' favorite' : ''}" data-report-id="${escapeHtml(report.id)}">
         <button type="button" class="report-open" data-report-action="open" aria-haspopup="dialog">
-          <span class="report-titleline"><span class="report-title">${!report.read ? '<span class="report-unread-label" aria-label="未読">●</span>' : ''}${report.level === 'review-needed' ? '<span class="report-level review-needed">要確認</span> ' : ''}${escapeHtml(title)}</span><time class="report-time">${formatTime(report.createdAt)}</time></span>
+          <span class="report-titleline"><span class="report-title">${!report.read ? '<span class="report-unread-label" aria-label="未読">●</span>' : ''}${escapeHtml(title)}</span><time class="report-time">${formatTime(report.createdAt)}</time></span>
           <span class="report-source">${escapeHtml(source)}</span>
         </button>
         <div class="report-actions">${reportActions(report)}</div>
@@ -451,7 +442,7 @@ import { renderMarkdown } from './markdown.js';
   function syncReportDialog(report) {
     const { title, source } = reportTitleParts(report);
     field('report-dialog-title').textContent = title;
-    field('report-dialog-meta').textContent = `${report.level === 'review-needed' ? '要確認 · ' : ''}${source} · ${formatTime(report.createdAt)}`;
+    field('report-dialog-meta').textContent = `${source} · ${formatTime(report.createdAt)}`;
     field('report-dialog-unread').disabled = !report.read || pendingReportActions.has(`${report.id}:read`);
     const favorite = field('report-dialog-favorite');
     favorite.setAttribute('aria-pressed', String(report.favorite));

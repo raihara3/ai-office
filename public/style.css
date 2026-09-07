@@ -199,10 +199,6 @@ textarea:focus-visible {
   display: none;
 }
 
-.tab-badge.review {
-  background: #d93a4a;
-}
-
 #appbar-actions {
   display: flex;
   align-items: center;
@@ -788,11 +784,6 @@ textarea:focus-visible {
   font-size: 11px;
 }
 
-#inbox-summary .summary-review {
-  color: var(--danger);
-  font-weight: 700;
-}
-
 #inbox-list {
   flex: 1;
   padding: 0 12px 16px;
@@ -813,10 +804,6 @@ textarea:focus-visible {
 
 .report.unread {
   border-left-color: var(--primary);
-}
-
-.report.unread:has(.report-level.review-needed) {
-  border-left-color: var(--danger);
 }
 
 .report-head {
@@ -1370,7 +1357,6 @@ textarea:focus-visible {
 .card-badge.queued, .card-badge.done { color: var(--text-muted); background: var(--surface-muted); }
 .card-badge.working { color: var(--primary); background: var(--primary-soft); }
 .board-card.working { border-color: var(--primary); }
-.board-card.review { border-left: 3px solid var(--danger); }
 .board-card-preview { color: var(--text-muted); font-size: 11px; line-height: 1.65; margin-top: 5px; }
 .board-card-preview, .board-card-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 #kanban-strip .board-card-preview { display: none; }
@@ -1391,7 +1377,6 @@ textarea:focus-visible {
 .report-open { display: block; width: 100%; padding: 10px; border: 0; border-radius: 4px; background: none; text-align: left; cursor: pointer; }
 .report-titleline { display: flex; align-items: baseline; gap: 10px; }
 .report-titleline .report-time { margin-left: auto; white-space: nowrap; }
-.report-titleline .report-level { padding: 1px 4px; border-radius: 3px; }
 .report-unread-label { display: inline-block; margin-right: 6px; color: var(--primary); font-size: 9px; vertical-align: 1px; }
 .report-open .report-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.6; color: var(--text-muted); }
 .report-source { display: block; margin-top: 5px; padding-right: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 10px; line-height: 22px; }

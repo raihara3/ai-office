@@ -22,6 +22,12 @@ paths:
   order; sort only completed cards newest first by `doneAt`.
 - Use neutral off-white/gray panels and slate-blue status accents with matching
   dark-theme tokens. Report bodies open in the native dialog.
+- Button icons are SVG `<symbol>` sprites defined once in `index.html` and
+  referenced via `<use href="#icon-...">` — static markup inlines the
+  reference, dynamic markup uses the `icon(name)` helper in `app.js`. Never
+  use text glyphs (＋/✕/☆…) or emojis as icons. Buttons are pill-shaped
+  (`border-radius: 999px`, icon-only ones `50%`) and lay out icon+label with
+  `inline-flex` + `gap`.
 - Canvas hit targets and zoom use logical scene dimensions, not the high-DPI
   backing store. Keep `data-scene-width` / `data-scene-height` in sync with
   `layout.js`; cache static material rendering instead of rebuilding it per frame.

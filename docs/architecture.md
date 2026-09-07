@@ -277,8 +277,8 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 ### `index.html`
 
 マークアップ:アプリバー(`#appbar`。AI OFFICE ブランド、ビュータブ
-「オフィス / ボード」、接続ステータスピル、テーマ切替ボタン(🌙/☀️)、
-＋ タスク ボタン)、担当者別のカンバンストリップ
+「オフィス / ボード / インボックス」、設定・チーム・タスク ボタン。
+テーマ切替は設定フォーム内のセレクト)、担当者別のカンバンストリップ
 (`#kanban-strip`)、`<canvas>` とタブで切り替わるインプレースのフルボード
 (`#board-view`)、インボックスサイドバー(トレイアイコンと未読・要確認
 カウント付きヘッダと報告一覧)、および右スライドインドロワー(`#drawer`。
@@ -290,6 +290,11 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 
 The inbox also provides search and filters, and opens reports in a native
 `<dialog>` rather than expanding their bodies in the sidebar.
+
+`<body>` starts with a hidden SVG sprite of Material-style 24dp icons
+(`<symbol id="icon-...">`); static markup and `app.js`'s `icon(name)` helper
+reference them via `<use href="#icon-...">` — buttons no longer use text
+glyphs like ＋ or ✕.
 
 ### `style.css`
 
@@ -345,7 +350,7 @@ whose CLI is unknown. Unassigned seats do not render an avatar.
 `{width, height, entranceTop, rooms}` を返します。チームルーム
 (`teamRooms`)は左上から横並びで、幅 404 固定・3 列 × 最大 4 行(席数 1〜12
 で縦に成長)、3 ルームごとに下のバンドへ折り返します。チームの追加は
-アプリバー右上の「＋ チーム」ボタンから行います。シーン下端には
+アプリバー右上の「チーム」ボタンから行います。シーン下端には
 エントランスロビーの帯(`ENTRANCE_HEIGHT`)がピン留めされ、仕切り壁
 (`PARTITION_HEIGHT`)で執務エリアと隔てられます。ロビー左端の
 エレベーターの乗降位置 `elevatorPosition(layout)` と、来客の待機スポット
@@ -415,7 +420,7 @@ unread state in SQLite, and updates counts. Reports can be archived.
 Canvas CustomEvents and button actions open one section at a time in the
 right-hand drawer (`#drawer`):
 カード詳細(本文・紐付く報告・追記フォーム・完了ボタン)、カード起票
-フォーム(＋ タスク ボタン / 列の ＋ で開き、後者は担当を事前選択)、
+フォーム(タスク ボタン / 列のプラスアイコンで開き、後者は担当を事前選択)、
 常駐員の作業状況ビュー(実行中は緊急停止ボタン。実行中の run を kill し、
 人間が再度オンにするまで常駐員を無効化)、常駐員の割り当てフォーム(作成 / 編集 /
 割り当て解除 / 今すぐ実行)。

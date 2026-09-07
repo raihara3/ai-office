@@ -139,6 +139,12 @@ import { renderMarkdown } from './markdown.js';
     return document.getElementById(id);
   }
 
+  // References a glyph from the sprite defined in index.html; `name` is a
+  // fixed identifier from call sites, never user input.
+  function icon(name) {
+    return `<svg class="icon" aria-hidden="true"><use href="#icon-${name}"/></svg>`;
+  }
+
   // Light/dark theme selector (lives in the settings drawer). index.html
   // already applied the stored theme (light by default) before first paint;
   // this only flips and persists on change.
@@ -401,8 +407,8 @@ import { renderMarkdown } from './markdown.js';
   }
 
   function reportActions(report) {
-    return `<button type="button" class="report-favorite" data-report-action="favorite" title="お気に入り" aria-label="お気に入り" aria-pressed="${report.favorite}">${report.favorite ? '★' : '☆'}</button>
-      <button type="button" class="report-archive" data-report-action="archive" title="${report.favorite ? 'お気に入りを解除するとアーカイブできます' : 'アーカイブ'}" aria-label="アーカイブ"${report.favorite ? ' disabled' : ''}>✕</button>`;
+    return `<button type="button" class="report-favorite" data-report-action="favorite" title="お気に入り" aria-label="お気に入り" aria-pressed="${report.favorite}">${icon(report.favorite ? 'star' : 'star-outline')}</button>
+      <button type="button" class="report-archive" data-report-action="archive" title="${report.favorite ? 'お気に入りを解除するとアーカイブできます' : 'アーカイブ'}" aria-label="アーカイブ"${report.favorite ? ' disabled' : ''}>${icon('archive')}</button>`;
   }
 
   function renderReports(reports) {
@@ -449,7 +455,7 @@ import { renderMarkdown } from './markdown.js';
     field('report-dialog-unread').disabled = !report.read || pendingReportActions.has(`${report.id}:read`);
     const favorite = field('report-dialog-favorite');
     favorite.setAttribute('aria-pressed', String(report.favorite));
-    favorite.textContent = report.favorite ? '★ お気に入り' : '☆ お気に入り';
+    favorite.innerHTML = `${icon(report.favorite ? 'star' : 'star-outline')}お気に入り`;
     const linkedCard = boardCards.find((card) => card.id === report.task);
     field('report-dialog-task').hidden = !linkedCard;
     field('report-dialog-next').disabled = !latestReports.some((entry) => !entry.read && entry.id !== report.id);
@@ -574,7 +580,7 @@ import { renderMarkdown } from './markdown.js';
       renderReports(reports ?? []);
     } catch {
       if (latestReports.length) showNotice('報告を更新できませんでした。表示中の内容を保持しています。');
-      else reportListElement.innerHTML = '<div class="report-empty">読み込みに失敗しました<button type="button" id="reports-retry">再試行</button></div>';
+      else reportListElement.innerHTML = `<div class="report-empty">読み込みに失敗しました<button type="button" id="reports-retry">${icon('refresh')}再試行</button></div>`;
       field('reports-retry')?.addEventListener('click', loadReports);
     }
   }
@@ -752,7 +758,7 @@ import { renderMarkdown } from './markdown.js';
         const addButton =
           column.addAssignee === null
             ? ''
-            : `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" title="${escapeHtml(column.label)}にタスクを起票">＋</button>`;
+            : `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" title="${escapeHtml(column.label)}にタスクを起票">${icon('add')}</button>`;
         return `
           <div class="strip-column column-${column.type}">
             <div class="strip-column-head">
@@ -784,7 +790,7 @@ import { renderMarkdown } from './markdown.js';
   function emptyColumnMarkup(column) {
     if (column.type === 'done') return '<div class="strip-empty">完了したタスクがここに並びます</div>';
     if (column.addAssignee === null) return '<div class="strip-empty">担当AIを配置するとタスクを追加できます</div>';
-    return `<button type="button" class="strip-add empty-add" data-assignee="${escapeHtml(column.addAssignee)}">＋ タスクを追加</button>`;
+    return `<button type="button" class="strip-add empty-add" data-assignee="${escapeHtml(column.addAssignee)}">${icon('add')}タスクを追加</button>`;
   }
 
   function preserveBoardPosition(root) {
@@ -831,7 +837,7 @@ import { renderMarkdown } from './markdown.js';
               ${assigneeChip(column)}
               <span class="board-column-name">${escapeHtml(column.label)}</span>
               <span class="board-column-count">${grouped.get(column.key).length}</span>
-              ${column.addAssignee ? `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" aria-label="${escapeHtml(column.label)}にタスクを追加">＋</button>` : ''}
+              ${column.addAssignee ? `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" aria-label="${escapeHtml(column.label)}にタスクを追加">${icon('add')}</button>` : ''}
             </div>
             <div class="board-cards" data-column="${escapeHtml(column.key)}">
               ${grouped
@@ -1193,13 +1199,13 @@ import { renderMarkdown } from './markdown.js';
     // An active card is completed (moved to 完了); a done card is archived
     // (removed from the board). Completion never deletes — the human archives.
     const action = card.done
-      ? `<button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>アーカイブ(ボードから削除)</button>`
-      : `<button type="button" id="card-detail-done"${card.working ? ' disabled' : ''}>完了にする</button>`;
+      ? `<button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>${icon('archive')}アーカイブ(ボードから削除)</button>`
+      : `<button type="button" id="card-detail-done"${card.working ? ' disabled' : ''}>${icon('check')}完了にする</button>`;
     // Editing a card's title/body is a human-only action, refused while a run
     // holds the card — the server enforces this too (updateBoardCard).
     const editButton = card.working
       ? ''
-      : '<button type="button" id="card-detail-edit" class="card-detail-edit">編集</button>';
+      : `<button type="button" id="card-detail-edit" class="card-detail-edit">${icon('edit')}編集</button>`;
     cardDetailElement.innerHTML = `
       <div class="card-detail-head">
         <span class="card-detail-title">${escapeHtml(card.title)}${editButton}</span>
@@ -1210,7 +1216,7 @@ import { renderMarkdown } from './markdown.js';
       <form id="card-note-form">
         <textarea id="card-note-text" rows="2" placeholder="追記(次回実行のプロンプトに含まれます)"></textarea>
         <div class="form-actions">
-          <button type="submit" class="primary-button">追記する</button>
+          <button type="submit" class="primary-button">${icon('send')}追記する</button>
           ${action}
         </div>
       </form>`;
@@ -1271,8 +1277,8 @@ import { renderMarkdown } from './markdown.js';
           <textarea id="card-edit-body" rows="8"></textarea>
         </label>
         <div class="form-actions">
-          <button type="submit" class="primary-button">保存する</button>
-          <button type="button" id="card-edit-cancel">キャンセル</button>
+          <button type="submit" class="primary-button">${icon('check')}保存する</button>
+          <button type="button" id="card-edit-cancel">${icon('close')}キャンセル</button>
         </div>
       </form>`;
     openCardDialog('タスクを編集');
@@ -1656,7 +1662,7 @@ import { renderMarkdown } from './markdown.js';
   // Kills the in-flight run and disables the resident until the human turns
   // it back on in the resident panel — rendered whenever a run is live.
   const activityStopButton =
-    '<div class="form-actions activity-actions"><button type="button" id="activity-stop" class="danger-button">緊急停止</button></div>';
+    `<div class="form-actions activity-actions"><button type="button" id="activity-stop" class="danger-button">${icon('stop')}緊急停止</button></div>`;
 
   function activityBody(resident, session) {
     if (resident === null) {

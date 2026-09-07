@@ -16,9 +16,9 @@
   --text: #292827;
   --text-muted: #696660;
   --text-faint: #77716a;
-  --primary: #526c87;
-  --primary-strong: #3c546d;
-  --primary-soft: rgba(82, 108, 135, 0.09);
+  --primary: #47699c;
+  --primary-strong: #3a5684;
+  --primary-soft: rgba(71, 105, 156, 0.1);
   --success: #17995f;
   --success-soft: rgba(23, 153, 95, 0.12);
   --warning: #c77c0a;
@@ -87,7 +87,7 @@ body {
   overflow: hidden;
   background: var(--background);
   color: var(--text);
-  font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
 }
 
 main {
@@ -98,6 +98,16 @@ main {
 
 button {
   font-family: inherit;
+}
+
+/* Sprite glyphs (index.html <symbol> defs) inherit the button's text color;
+   clicks fall through so delegated handlers keep the button as the target. */
+.icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  pointer-events: none;
 }
 
 button:focus-visible,
@@ -143,18 +153,18 @@ textarea:focus-visible {
   display: flex;
   gap: 2px;
   padding: 3px;
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   background: var(--surface-muted);
 }
 
 .view-tab {
   padding: 5px 16px;
   border: none;
-  border-radius: 5px;
+  border-radius: 999px;
   background: none;
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -202,34 +212,43 @@ textarea:focus-visible {
 
 #settings-open,
 #team-add {
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
 #settings-open:hover,
 #team-add:hover {
   border-color: var(--text-muted);
+  background: var(--surface-muted);
   color: var(--text);
 }
 
 .primary-button {
-  padding: 6px 14px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
   border: none;
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   background: var(--primary);
   color: #ffffff;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .primary-button:hover {
+  box-shadow: var(--shadow-soft);
   background: var(--primary-strong);
 }
 
@@ -355,16 +374,17 @@ textarea:focus-visible {
 }
 
 .strip-add {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   flex-shrink: 0;
   width: 20px;
   height: 20px;
   margin-left: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 50%;
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -439,14 +459,15 @@ textarea:focus-visible {
 }
 
 #office-zoom button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 5px;
+  border-radius: 50%;
   background: transparent;
   color: var(--text-muted);
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -968,15 +989,21 @@ textarea:focus-visible {
 }
 
 #drawer-close {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   border: none;
+  border-radius: 50%;
   background: none;
   color: var(--text-faint);
-  font-size: 14px;
   cursor: pointer;
 }
 
 #drawer-close:hover {
+  background: var(--surface-muted);
   color: var(--text);
 }
 
@@ -1019,16 +1046,24 @@ textarea:focus-visible {
 }
 
 .card-detail-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: 8px;
-  padding: 1px 8px;
+  padding: 2px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   background: var(--surface-muted);
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   vertical-align: middle;
   cursor: pointer;
+}
+
+.card-detail-edit .icon {
+  width: 13px;
+  height: 13px;
 }
 
 .card-detail-edit:hover {
@@ -1226,7 +1261,7 @@ textarea:focus-visible {
   flex-direction: row;
   padding: 5px 0;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   font-weight: 400;
   cursor: pointer;
 }
@@ -1259,13 +1294,17 @@ textarea:focus-visible {
 }
 
 .form-actions button {
-  padding: 8px 14px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1314,7 +1353,8 @@ textarea:focus-visible {
 #board-summary { display: flex; gap: 14px; color: var(--text-muted); font-size: 11px; }
 #board-summary b { margin-left: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
 #board-summary .summary-review, #board-summary .summary-review b { color: var(--danger); }
-#board-expand { margin-left: auto; padding: 5px 0; border: 0; background: none; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+#board-expand { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 5px 0; border: 0; background: none; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+#board-expand .icon { width: 14px; height: 14px; }
 #board-expand:hover { color: var(--primary); }
 .strip-column, .board-column { border-radius: 8px; box-shadow: none; }
 .strip-column-head, .board-column-head { padding: 9px 10px; border-bottom: 0; }
@@ -1322,6 +1362,7 @@ textarea:focus-visible {
 .strip-column-count, .board-column-count { background: none; font-variant-numeric: tabular-nums; }
 .board-cards { gap: 8px; padding: 2px 8px 8px; background: var(--surface-muted); }
 .strip-add { width: 26px; height: 26px; border-color: transparent; background: transparent; }
+.empty-add { gap: 6px; }
 .strip-empty { padding: 24px 12px; line-height: 1.7; text-align: center; }
 .empty-add { width: 100%; min-height: 68px; height: auto; margin: 0; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: 11px; text-align: center; }
 .empty-add:hover { background: var(--surface); }
@@ -1341,7 +1382,7 @@ textarea:focus-visible {
 #inbox-search { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-muted); color: var(--text); font: inherit; font-size: 12px; }
 #inbox-search::placeholder { color: var(--text-faint); }
 #inbox-filters { display: flex; gap: 3px; margin-top: 10px; flex-wrap: wrap; }
-#inbox-filters button { padding: 6px 7px; border: 0; border-radius: 4px; background: none; color: var(--text-muted); font-size: 10px; cursor: pointer; }
+#inbox-filters button { padding: 6px 9px; border: 0; border-radius: 999px; background: none; color: var(--text-muted); font-size: 10px; cursor: pointer; }
 #inbox-filters button[aria-pressed="true"] { background: var(--text); color: var(--surface); }
 #inbox-filters button span { margin-left: 2px; font-variant-numeric: tabular-nums; opacity: .8; }
 #inbox-list .report { position: relative; padding: 0; margin-bottom: 2px; border: 0; border-bottom: 1px solid var(--border); border-radius: 4px; box-shadow: none; background: none; }
@@ -1355,10 +1396,10 @@ textarea:focus-visible {
 .report-open .report-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.6; color: var(--text-muted); }
 .report-source { display: block; margin-top: 5px; padding-right: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 10px; line-height: 22px; }
 .report-actions { position: absolute; bottom: 9px; right: 7px; display: flex; gap: 2px; }
-.report-actions button { width: 26px; height: 26px; border-radius: 4px; }
+.report-actions button { display: inline-flex; justify-content: center; align-items: center; width: 26px; height: 26px; border-radius: 50%; }
 .report-actions button:hover { background: var(--border); }
 .report-empty small { display: block; margin-top: 8px; font-size: 11px; }
-.report-empty button { display: block; margin: 12px auto 0; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); cursor: pointer; }
+.report-empty button { display: inline-flex; align-items: center; gap: 6px; margin: 12px 0 0; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); cursor: pointer; }
 #panel.expanded #panel-head, #panel.expanded #inbox-tools { width: min(100%, 920px); margin: 0 auto; }
 #panel.expanded #inbox-list { padding-top: 0; }
 #panel.expanded .report-open { padding: 12px 16px; }
@@ -1372,10 +1413,11 @@ textarea:focus-visible {
 .report-dialog-head > div { min-width: 0; }
 #report-dialog-meta { font-size: 11px; color: var(--text-muted); line-height: 1.6; overflow-wrap: anywhere; }
 #report-dialog-title { margin-top: 8px; font-size: 20px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; max-height: 120px; overflow-y: auto; }
-#report-dialog-close { flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 5px; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
+#report-dialog-close { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
 #report-dialog-body { padding: 24px 32px 40px; overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; }
 .report-dialog-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--border); flex-shrink: 0; }
-.report-dialog-footer button { padding: 8px 10px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.report-dialog-footer button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.report-dialog-footer .icon { width: 14px; height: 14px; }
 .report-dialog-footer button:hover:not(:disabled) { background: var(--surface-muted); color: var(--text); }
 .report-dialog-footer button:disabled { opacity: .45; cursor: default; }
 #report-dialog-favorite[aria-pressed="true"] { color: var(--warning); }
@@ -1386,7 +1428,7 @@ textarea:focus-visible {
 #card-dialog::backdrop { background: rgba(25, 24, 22, .42); backdrop-filter: blur(3px); }
 .card-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 #card-dialog-title { min-width: 0; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 800; white-space: nowrap; text-overflow: ellipsis; }
-#card-dialog-close { flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 5px; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
+#card-dialog-close { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
 #card-dialog-close:hover { color: var(--text); }
 #card-detail { flex: 1; min-height: 0; padding: 16px 20px 20px; overflow-y: auto; scrollbar-width: thin; }
 #ui-notice { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; width: max-content; max-width: calc(100vw - 40px); padding: 12px 18px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--text); color: var(--surface); box-shadow: var(--shadow-raised); font-size: 12px; }

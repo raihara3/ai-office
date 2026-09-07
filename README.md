@@ -103,16 +103,17 @@ the saved name.
 - Elevator doors slide open whenever a visitor stands near them; a
   decorative glass double door with a card reader near the right wall
   separates the lobby from the work area (no avatar passes through it)
-- App bar: the AI OFFICE brand, view tabs (オフィス / ボード) that switch
-  between the office canvas and the in-place full board, the connection
-  status pill, a 🌙/☀️ light/dark theme toggle (the choice is remembered in
-  the browser and defaults to the OS scheme), an アバター退勤 button that
-  triggers the HR cleanup and a ＋ タスク button that opens the task-filing
-  form in the drawer
+- App bar: the AI OFFICE brand, view tabs (オフィス / ボード / インボックス)
+  that switch between the office canvas, the in-place full board and the
+  expanded inbox, and 設定 / チーム / タスク buttons that open the settings,
+  team and task-filing forms in the drawer. The light/dark theme selector
+  lives in the settings form (the choice is remembered in the browser and
+  defaults to light). Buttons render Material-style SVG icons from the
+  sprite in `index.html` instead of text glyphs.
 - Kanban strip and full board share status badges and support opening card
   details with Enter or Space. Completed cards appear newest first by `doneAt`;
   unfinished cards retain their execution order, and updates preserve scroll
-  positions. Each column has a ＋ button for filing a task.
+  positions. Each column has a plus-icon button for filing a task.
 - Sidebar: the report inbox searches titles, resident names and bodies, with
   all, unread, review (unread `review-needed`) and favorite filters. Opening a
   report marks it read and displays Markdown in a native dialog with original
@@ -204,9 +205,9 @@ Run results are saved as rows in the `reports` table of `office.db`; the
 ボード tab opens the in-place board view (file cards, drag to reorder
 or reassign, open a card in the drawer for its body, linked reports, a
 follow-up note form and a done button); reports are listed in the inbox
-sidebar (read and pin state are plain columns). Each report row has a ✕
-button that takes it off the board — the row is flagged `archived_at`,
-never deleted.
+sidebar (read and pin state are plain columns). Each report row has an
+archive-icon button that takes it off the board — the row is flagged
+`archived_at`, never deleted.
 Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
 `POST /api/residents/:name/run`/`stop`, `GET /api/whiteboard`,
 `POST /api/whiteboard/read`, `POST /api/whiteboard/unread` (`{id}`),

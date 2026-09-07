@@ -292,7 +292,7 @@ export function createMiniatureRenderer(context) {
     for (let x = RECEPTION.x + 6; x < RECEPTION.x + RECEPTION.width - 4; x += 6) {
       line(x, counterY + 8, x, counterY + RECEPTION.height - 4, '#b39a7d', 1.5);
     }
-    rounded(RECEPTION.x - 2, counterY - 3, RECEPTION.width + 4, 10, 1, '#d9d9d9');
+    rounded(RECEPTION.x - 2, counterY - 3, RECEPTION.width + 4, 10, 1, '#ffffff');
     rounded(RECEPTION.x + 50, counterY - 18, 28, 18, 3, '#454545');
     rounded(RECEPTION.x + 53, counterY - 16, 22, 13, 2, '#a2a2a2');
     ellipse(RECEPTION.x + 20, counterY, 7, 3, '#77736e');

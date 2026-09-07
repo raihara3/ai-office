@@ -27,7 +27,7 @@ erDiagram
     residents {
         TEXT    id                PK "crypto.randomUUID() (imported legacy residents keep their slug name)"
         TEXT    team_id           FK "NOT NULL REFERENCES teams(id)"
-        TEXT    name              "NOT NULL; API identity, unique among active (partial index)"
+        TEXT    name              "NOT NULL; API identity, auto-assigned unique id (crypto.randomUUID()), unique among active (partial index)"
         TEXT    display_name      "NOT NULL"
         TEXT    cli               "NOT NULL; CHECK: claude / codex / gemini"
         TEXT    model             "nullable CLI model ID; NULL uses the CLI default"

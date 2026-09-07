@@ -1380,6 +1380,9 @@ import { renderMarkdown } from './markdown.js';
   let panelSeat = null;
   // The team whose desk opened the drawer; saved into the resident's row.
   let panelTeamId = null;
+  // The resident being edited, or null while assigning a fresh seat. Its name
+  // is an auto-assigned unique id the human never sees or types.
+  let panelResidentName = null;
 
   function showTriggerSection(type) {
     document.getElementById('trigger-schedule').hidden = type !== 'schedule';
@@ -1411,8 +1414,6 @@ import { renderMarkdown } from './markdown.js';
 
   function fillResidentForm(entry) {
     const configuration = entry?.configuration;
-    field('resident-name').value = entry?.name ?? '';
-    field('resident-name').disabled = entry !== null;
     field('resident-display-name').value = configuration?.displayName ?? '';
     field('resident-cli').value = configuration?.cli ?? 'claude';
     field('resident-model').value = configuration?.model ?? '';
@@ -1479,6 +1480,7 @@ import { renderMarkdown } from './markdown.js';
         // Treat as a new assignment if the fetch fails.
       }
     }
+    panelResidentName = entry?.name ?? null;
     fillResidentForm(entry);
     const teamName = (latestSnapshot?.teams ?? []).find((team) => team.id === panelTeamId)?.name;
     const seatLabel = `${teamName ? `${teamName} ` : ''}席 ${seat + 1}`;
@@ -1495,7 +1497,8 @@ import { renderMarkdown } from './markdown.js';
 
   residentForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const name = field('resident-name').value.trim();
+    // New residents get an auto-assigned unique id; edits keep their own.
+    const name = panelResidentName ?? crypto.randomUUID();
     try {
       await client.saveResident(name, {
         configuration: {
@@ -1599,8 +1602,9 @@ import { renderMarkdown } from './markdown.js';
   });
 
   field('resident-run').addEventListener('click', async () => {
+    if (panelResidentName === null) return;
     try {
-      await client.runResident(field('resident-name').value.trim());
+      await client.runResident(panelResidentName);
       closeDrawer();
     } catch (error) {
       showResidentError(error.message);
@@ -1608,10 +1612,11 @@ import { renderMarkdown } from './markdown.js';
   });
 
   field('resident-unassign').addEventListener('click', async () => {
-    const name = field('resident-name').value.trim();
-    if (!window.confirm(`${name} の割り当てを解除しますか?(設定と報告はアーカイブされます)`)) return;
+    if (panelResidentName === null) return;
+    const displayName = field('resident-display-name').value.trim();
+    if (!window.confirm(`${displayName} の割り当てを解除しますか?(設定と報告はアーカイブされます)`)) return;
     try {
-      await client.deleteResident(name);
+      await client.deleteResident(panelResidentName);
       closeDrawer();
     } catch (error) {
       showResidentError(error.message);

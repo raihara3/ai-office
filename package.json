@@ -4,6 +4,12 @@
   "description": "A Gather-like virtual office visualizing Claude Code, Codex CLI and Gemini CLI as coworkers",
   "type": "module",
   "private": true,
+  "license": "MIT",
+  "author": "raihara3",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/raihara3/ai-office.git"
+  },
   "main": "electron/main.js",
   "scripts": {
     "start": "node --experimental-sqlite server/index.js",

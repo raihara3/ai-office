@@ -1,3 +1,4 @@
+import { applyLanguage, currentLanguage, translate, translateMarkup } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
 
 // SSE client: app bar, kanban strip, report inbox, board view and the right
@@ -5,6 +6,9 @@ import { renderMarkdown } from './markdown.js';
 
 (() => {
   const client = window.OFFICE_CLIENT.create();
+  // First paint in the cached language; the snapshot corrects it if the
+  // server-stored setting differs.
+  translateMarkup();
 
   // Soft, low-volume chime for when the boss (@社長) is freshly mentioned.
   // Synthesized with WebAudio so no audio asset is needed; peak gain is kept
@@ -96,14 +100,26 @@ import { renderMarkdown } from './markdown.js';
     let freshAttention = false;
     let freshCompletion = false;
     for (const message of messages) {
+      // Messages are written in the office language current when they were
+      // posted, so both languages' markers are checked. Attention wins first:
+      // a review-needed report contains the completion marker too.
       if (
         lastSeenMessageId !== null &&
         message.id > lastSeenMessageId &&
         message.authorKind !== 'user' &&
-        message.text.includes('@社長')
+        (message.text.includes('@社長') || message.text.includes('@boss'))
       ) {
-        if (message.text.includes('確認をお願いします')) freshAttention = true;
-        else if (message.text.includes('報告を掲示しました')) freshCompletion = true;
+        if (
+          message.text.includes('確認をお願いします') ||
+          message.text.includes('Please take a look')
+        ) {
+          freshAttention = true;
+        } else if (
+          message.text.includes('報告を掲示しました') ||
+          message.text.includes('report posted on the whiteboard')
+        ) {
+          freshCompletion = true;
+        }
       }
       if (message.id > maxId) maxId = message.id;
     }
@@ -362,7 +378,8 @@ import { renderMarkdown } from './markdown.js';
 
   function renderInboxSummary() {
     const unread = latestReports.filter((report) => !report.read).length;
-    inboxSummaryElement.textContent = unread > 0 ? `未読 ${unread}` : 'すべて確認済み';
+    inboxSummaryElement.textContent =
+      unread > 0 ? translate('inbox.unreadCount', { count: unread }) : translate('inbox.allRead');
     inboxTabBadgeElement.hidden = unread === 0;
     inboxTabBadgeElement.textContent = String(Math.min(unread, 99));
   }
@@ -389,7 +406,7 @@ import { renderMarkdown } from './markdown.js';
   function reportTitleParts(report) {
     const parts = report.title.match(/^(.*)@([^@]+\/[^@]+)$/s);
     return { title: parts?.[1] || report.title,
-      source: parts?.[2] || assigneeMeta(report.resident)?.label || report.resident || 'オフィス' };
+      source: parts?.[2] || assigneeMeta(report.resident)?.label || report.resident || translate('inbox.sourceOffice') };
   }
 
   function reportMatchesFilter(report, filter = reportFilter) {
@@ -398,8 +415,8 @@ import { renderMarkdown } from './markdown.js';
   }
 
   function reportActions(report) {
-    return `<button type="button" class="report-favorite" data-report-action="favorite" title="お気に入り" aria-label="お気に入り" aria-pressed="${report.favorite}">${icon(report.favorite ? 'star' : 'star-outline')}</button>
-      <button type="button" class="report-archive" data-report-action="archive" title="${report.favorite ? 'お気に入りを解除するとアーカイブできます' : 'アーカイブ'}" aria-label="アーカイブ"${report.favorite ? ' disabled' : ''}>${icon('archive')}</button>`;
+    return `<button type="button" class="report-favorite" data-report-action="favorite" title="${translate('inbox.favorite')}" aria-label="${translate('inbox.favorite')}" aria-pressed="${report.favorite}">${icon(report.favorite ? 'star' : 'star-outline')}</button>
+      <button type="button" class="report-archive" data-report-action="archive" title="${report.favorite ? translate('inbox.unfavoriteToArchive') : translate('inbox.archive')}" aria-label="${translate('inbox.archive')}"${report.favorite ? ' disabled' : ''}>${icon('archive')}</button>`;
   }
 
   function renderReports(reports) {
@@ -421,12 +438,12 @@ import { renderMarkdown } from './markdown.js';
       const { title, source } = reportTitleParts(report);
       return `<article class="report${report.read ? '' : ' unread'}${report.favorite ? ' favorite' : ''}" data-report-id="${escapeHtml(report.id)}">
         <button type="button" class="report-open" data-report-action="open" aria-haspopup="dialog">
-          <span class="report-titleline"><span class="report-title">${!report.read ? '<span class="report-unread-label" aria-label="未読">●</span>' : ''}${escapeHtml(title)}</span><time class="report-time">${formatTime(report.createdAt)}</time></span>
+          <span class="report-titleline"><span class="report-title">${!report.read ? `<span class="report-unread-label" aria-label="${translate('inbox.filterUnread')}">●</span>` : ''}${escapeHtml(title)}</span><time class="report-time">${formatTime(report.createdAt)}</time></span>
           <span class="report-source">${escapeHtml(source)}</span>
         </button>
         <div class="report-actions">${reportActions(report)}</div>
       </article>`;
-    }).join('') : `<div class="report-empty">${reports.length ? '条件に合う報告はありません' : '報告はまだありません'}<small>${reports.length ? '絞り込みや検索条件を変えてください' : 'AIからの報告がここに届きます'}</small></div>`;
+    }).join('') : `<div class="report-empty">${reports.length ? translate('inbox.emptyFiltered') : translate('inbox.empty')}<small>${reports.length ? translate('inbox.emptyFilteredHint') : translate('inbox.emptyHint')}</small></div>`;
     reportListElement.scrollTop = scrollTop;
     if (focusId && focusAction) {
       const target = reportListElement.querySelector(`[data-report-id="${CSS.escape(focusId)}"] [data-report-action="${CSS.escape(focusAction)}"]`);
@@ -446,7 +463,7 @@ import { renderMarkdown } from './markdown.js';
     field('report-dialog-unread').disabled = !report.read || pendingReportActions.has(`${report.id}:read`);
     const favorite = field('report-dialog-favorite');
     favorite.setAttribute('aria-pressed', String(report.favorite));
-    favorite.innerHTML = `${icon(report.favorite ? 'star' : 'star-outline')}お気に入り`;
+    favorite.innerHTML = `${icon(report.favorite ? 'star' : 'star-outline')}${translate('inbox.favorite')}`;
     const linkedCard = boardCards.find((card) => card.id === report.task);
     field('report-dialog-task').hidden = !linkedCard;
     field('report-dialog-next').disabled = !latestReports.some((entry) => !entry.read && entry.id !== report.id);
@@ -471,7 +488,7 @@ import { renderMarkdown } from './markdown.js';
         if (current) current.read = true;
         renderReports(latestReports);
       } catch {
-        showNotice('既読にできませんでした。報告を開き直してお試しください。');
+        showNotice(translate('inbox.markReadFailed'));
       } finally {
         pendingReportActions.delete(`${id}:read`);
         const current = latestReports.find((entry) => entry.id === openReportId);
@@ -532,7 +549,7 @@ import { renderMarkdown } from './markdown.js';
     try {
       if (action === 'copy') {
         await navigator.clipboard.writeText(report.body);
-        showNotice('報告の全文をコピーしました');
+        showNotice(translate('inbox.copied'));
       } else if (action === 'unread') {
         const { ok } = await client.markReportUnread(id);
         if (!ok) throw new Error('Unread update failed');
@@ -540,7 +557,7 @@ import { renderMarkdown } from './markdown.js';
         if (current) current.read = false;
         renderReports(latestReports);
         if (reportDialog.open && openReportId === id) reportDialog.close();
-        showNotice('未読に戻しました');
+        showNotice(translate('inbox.markedUnread'));
       } else if (action === 'favorite') {
         const { favorite } = await client.toggleReportFavorite(id);
         if (typeof favorite !== 'boolean') throw new Error('Favorite update failed');
@@ -551,10 +568,10 @@ import { renderMarkdown } from './markdown.js';
         const { ok } = await client.archiveReport(id);
         if (!ok) throw new Error('Archive failed');
         renderReports(latestReports.filter((entry) => entry.id !== id));
-        showNotice('報告をアーカイブしました');
+        showNotice(translate('inbox.archivedNotice'));
       }
     } catch {
-      showNotice(action === 'copy' ? 'コピーできませんでした。もう一度お試しください。' : '更新できませんでした。もう一度お試しください。');
+      showNotice(action === 'copy' ? translate('inbox.copyFailed') : translate('inbox.updateFailed'));
     } finally {
       pendingReportActions.delete(pendingKey);
       button.removeAttribute('aria-busy');
@@ -570,8 +587,8 @@ import { renderMarkdown } from './markdown.js';
       const { reports } = await client.listReports();
       renderReports(reports ?? []);
     } catch {
-      if (latestReports.length) showNotice('報告を更新できませんでした。表示中の内容を保持しています。');
-      else reportListElement.innerHTML = `<div class="report-empty">読み込みに失敗しました<button type="button" id="reports-retry">${icon('refresh')}再試行</button></div>`;
+      if (latestReports.length) showNotice(translate('inbox.refreshFailed'));
+      else reportListElement.innerHTML = `<div class="report-empty">${translate('inbox.loadFailed')}<button type="button" id="reports-retry">${icon('refresh')}${translate('inbox.retry')}</button></div>`;
       field('reports-retry')?.addEventListener('click', loadReports);
     }
   }
@@ -624,7 +641,7 @@ import { renderMarkdown } from './markdown.js';
   // The avatar tag data for a card's assignee ('user' or a resident name);
   // null means the resident no longer exists (orphaned card).
   function assigneeMeta(name, index = residentIndex()) {
-    if (name === 'user') return { label: 'あなた(社長)', color: USER_COLOR };
+    if (name === 'user') return { label: translate('board.userColumn'), color: USER_COLOR };
     return index.get(name) ?? null;
   }
 
@@ -638,7 +655,7 @@ import { renderMarkdown } from './markdown.js';
 
   function boardColumns() {
     const columns = [
-      { key: 'user', type: 'user', label: 'あなた(社長)', color: USER_COLOR, busy: false, addAssignee: 'user' },
+      { key: 'user', type: 'user', label: translate('board.userColumn'), color: USER_COLOR, busy: false, addAssignee: 'user' },
     ];
     for (const team of latestSnapshot?.teams ?? []) {
       const members = teamMembers(team.id);
@@ -653,7 +670,7 @@ import { renderMarkdown } from './markdown.js';
         addAssignee: members[0]?.name ?? null,
       });
     }
-    columns.push({ key: DONE_COLUMN, type: 'done', label: '完了', color: DONE_COLOR, busy: false, addAssignee: null });
+    columns.push({ key: DONE_COLUMN, type: 'done', label: translate('board.done'), color: DONE_COLOR, busy: false, addAssignee: null });
     return applyColumnOrder(columns);
   }
 
@@ -722,7 +739,7 @@ import { renderMarkdown } from './markdown.js';
       const { cards } = await client.listBoard();
       boardCards = cards ?? [];
     } catch {
-      showNotice('タスクを更新できませんでした。表示中の内容を保持しています。');
+      showNotice(translate('board.refreshFailed'));
     }
     renderStrip();
     if (!boardViewElement.hidden) renderBoard();
@@ -738,7 +755,7 @@ import { renderMarkdown } from './markdown.js';
     const active = boardCards.filter((card) => !card.done);
     const working = active.filter((card) => card.working).length;
     const review = active.filter((card) => card.assignee === 'user' && card.reported && !card.working).length;
-    field('board-summary').innerHTML = `<span>未完了 <b>${active.length}</b></span><span>作業中 <b>${working}</b></span>${review ? `<span class="summary-review">要確認 <b>${review}</b></span>` : ''}`;
+    field('board-summary').innerHTML = `<span>${translate('board.summaryOpen')} <b>${active.length}</b></span><span>${translate('board.working')} <b>${working}</b></span>${review ? `<span class="summary-review">${translate('board.review')} <b>${review}</b></span>` : ''}`;
     stripElement.innerHTML = columns
       .map((column) => {
         const cards = grouped.get(column.key);
@@ -749,14 +766,14 @@ import { renderMarkdown } from './markdown.js';
         const addButton =
           column.addAssignee === null
             ? ''
-            : `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" title="${escapeHtml(column.label)}にタスクを起票">${icon('add')}</button>`;
+            : `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" title="${translate('board.fileTaskTo', { name: escapeHtml(column.label) })}">${icon('add')}</button>`;
         return `
           <div class="strip-column column-${column.type}">
             <div class="strip-column-head">
               ${assigneeChip(column)}
               <span class="strip-column-name">${escapeHtml(column.label)}</span>
               <span class="strip-column-count">${cards.length}</span>
-              ${column.busy ? '<span class="strip-busy">作業中</span>' : ''}
+              ${column.busy ? `<span class="strip-busy">${translate('board.working')}</span>` : ''}
               ${addButton}
             </div>
             <div class="board-cards" data-column="${escapeHtml(column.key)}">${body}</div>
@@ -779,9 +796,9 @@ import { renderMarkdown } from './markdown.js';
   field('board-expand').addEventListener('click', () => setView('board'));
 
   function emptyColumnMarkup(column) {
-    if (column.type === 'done') return '<div class="strip-empty">完了したタスクがここに並びます</div>';
-    if (column.addAssignee === null) return '<div class="strip-empty">担当AIを配置するとタスクを追加できます</div>';
-    return `<button type="button" class="strip-add empty-add" data-assignee="${escapeHtml(column.addAssignee)}">${icon('add')}タスクを追加</button>`;
+    if (column.type === 'done') return `<div class="strip-empty">${translate('board.emptyDone')}</div>`;
+    if (column.addAssignee === null) return `<div class="strip-empty">${translate('board.emptyNoResident')}</div>`;
+    return `<button type="button" class="strip-add empty-add" data-assignee="${escapeHtml(column.addAssignee)}">${icon('add')}${translate('board.addTask')}</button>`;
   }
 
   function preserveBoardPosition(root) {
@@ -795,11 +812,11 @@ import { renderMarkdown } from './markdown.js';
 
   function cardBadges(card) {
     const badges = [];
-    if (card.done) badges.push('<span class="card-badge done">完了</span>');
-    else if (card.working) badges.push('<span class="card-badge working">作業中</span>');
-    else if (card.assignee === 'user' && card.reported) badges.push('<span class="card-badge review">要確認</span>');
-    else badges.push(`<span class="card-badge queued">${card.assignee === 'user' ? '未着手' : '待機中'}</span>`);
-    if (card.orphaned) badges.push('<span class="card-badge orphaned">担当不在</span>');
+    if (card.done) badges.push(`<span class="card-badge done">${translate('board.done')}</span>`);
+    else if (card.working) badges.push(`<span class="card-badge working">${translate('board.working')}</span>`);
+    else if (card.assignee === 'user' && card.reported) badges.push(`<span class="card-badge review">${translate('board.review')}</span>`);
+    else badges.push(`<span class="card-badge queued">${card.assignee === 'user' ? translate('board.notStarted') : translate('board.queued')}</span>`);
+    if (card.orphaned) badges.push(`<span class="card-badge orphaned">${translate('board.orphaned')}</span>`);
     return badges.join('');
   }
 
@@ -809,11 +826,11 @@ import { renderMarkdown } from './markdown.js';
     const status = card.done ? 'done' : card.working ? 'working' : card.assignee === 'user' && card.reported ? 'review' : 'queued';
     const preview = (card.body || '').replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
     return `
-      <div class="board-card ${status}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}" role="button" tabindex="0" aria-label="タスク詳細: ${escapeHtml(card.title)}">
+      <div class="board-card ${status}" data-id="${escapeHtml(card.id)}" data-assignee="${escapeHtml(card.assignee)}" draggable="${card.working ? 'false' : 'true'}" role="button" tabindex="0" aria-label="${translate('board.cardAriaLabel', { title: escapeHtml(card.title) })}">
         <div class="board-card-status">${cardBadges(card)}</div>
         <div class="board-card-title">${escapeHtml(card.title)}</div>
         ${preview ? `<div class="board-card-preview">${escapeHtml(preview)}</div>` : ''}
-        <div class="board-card-meta">${cardAssigneeTag(card, index)}<time class="board-card-time" title="${card.done ? '完了日時' : '作成日時'}">${formatTime(card.doneAt || card.createdAt)}</time></div>
+        <div class="board-card-meta">${cardAssigneeTag(card, index)}<time class="board-card-time" title="${card.done ? translate('board.doneAtTitle') : translate('board.createdAtTitle')}">${formatTime(card.doneAt || card.createdAt)}</time></div>
       </div>`;
   }
 
@@ -824,11 +841,11 @@ import { renderMarkdown } from './markdown.js';
       .map((column) => {
         return `
           <div class="board-column column-${column.type}" data-column-key="${escapeHtml(column.key)}">
-            <div class="board-column-head" draggable="true" title="ドラッグして列を並び替え">
+            <div class="board-column-head" draggable="true" title="${translate('board.reorderHint')}">
               ${assigneeChip(column)}
               <span class="board-column-name">${escapeHtml(column.label)}</span>
               <span class="board-column-count">${grouped.get(column.key).length}</span>
-              ${column.addAssignee ? `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" aria-label="${escapeHtml(column.label)}にタスクを追加">${icon('add')}</button>` : ''}
+              ${column.addAssignee ? `<button type="button" class="strip-add" data-assignee="${escapeHtml(column.addAssignee)}" aria-label="${translate('board.addTaskTo', { name: escapeHtml(column.label) })}">${icon('add')}</button>` : ''}
             </div>
             <div class="board-cards" data-column="${escapeHtml(column.key)}">
               ${grouped
@@ -1105,7 +1122,7 @@ import { renderMarkdown } from './markdown.js';
   // user — a card always names one owner, even though the board groups by team.
   function fillCardAssignees(preselect) {
     const select = field('card-assignee');
-    const options = ['<option value="user">あなた(社長)</option>'];
+    const options = [`<option value="user">${translate('board.userColumn')}</option>`];
     for (const team of latestSnapshot?.teams ?? []) {
       const members = teamMembers(team.id);
       if (members.length === 0) continue;
@@ -1131,7 +1148,7 @@ import { renderMarkdown } from './markdown.js';
 
   function openCardForm(assignee) {
     fillCardAssignees(assignee);
-    openDrawer('card-form', 'タスクを起票');
+    openDrawer('card-form', translate('cardForm.title'));
     field('card-title').focus();
   }
   document.getElementById('card-add').addEventListener('click', () => openCardForm(null));
@@ -1190,28 +1207,28 @@ import { renderMarkdown } from './markdown.js';
     // An active card is completed (moved to 完了); a done card is archived
     // (removed from the board). Completion never deletes — the human archives.
     const action = card.done
-      ? `<button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>${icon('archive')}アーカイブ(ボードから削除)</button>`
-      : `<button type="button" id="card-detail-done"${card.working ? ' disabled' : ''}>${icon('check')}完了にする</button>`;
+      ? `<button type="button" id="card-detail-archive"${card.working ? ' disabled' : ''}>${icon('archive')}${translate('cardDetail.archive')}</button>`
+      : `<button type="button" id="card-detail-done"${card.working ? ' disabled' : ''}>${icon('check')}${translate('cardDetail.markDone')}</button>`;
     // Editing a card's title/body is a human-only action, refused while a run
     // holds the card — the server enforces this too (updateBoardCard).
     const editButton = card.working
       ? ''
-      : `<button type="button" id="card-detail-edit" class="card-detail-edit">${icon('edit')}編集</button>`;
+      : `<button type="button" id="card-detail-edit" class="card-detail-edit">${icon('edit')}${translate('cardDetail.edit')}</button>`;
     cardDetailElement.innerHTML = `
       <div class="card-detail-head">
         <span class="card-detail-title">${escapeHtml(card.title)}${editButton}</span>
-        <span class="card-detail-assignee">${chip} ${escapeHtml(meta.label)}${card.working ? ' <span class="card-badge working">作業中</span>' : ''}${card.done ? ' <span class="card-badge done">完了</span>' : ''}</span>
+        <span class="card-detail-assignee">${chip} ${escapeHtml(meta.label)}${card.working ? ` <span class="card-badge working">${translate('board.working')}</span>` : ''}${card.done ? ` <span class="card-badge done">${translate('board.done')}</span>` : ''}</span>
       </div>
-      <div class="card-detail-body markdown">${renderMarkdown(card.body || '(本文なし)')}</div>
-      <div id="card-reports"><div class="report-empty">報告を読み込み中…</div></div>
+      <div class="card-detail-body markdown">${renderMarkdown(card.body || translate('cardDetail.noBody'))}</div>
+      <div id="card-reports"><div class="report-empty">${translate('cardDetail.loadingReports')}</div></div>
       <form id="card-note-form">
-        <textarea id="card-note-text" rows="2" placeholder="追記(次回実行のプロンプトに含まれます)"></textarea>
+        <textarea id="card-note-text" rows="2" placeholder="${translate('cardDetail.notePlaceholder')}"></textarea>
         <div class="form-actions">
-          <button type="submit" class="primary-button">${icon('send')}追記する</button>
+          <button type="submit" class="primary-button">${icon('send')}${translate('cardDetail.appendNote')}</button>
           ${action}
         </div>
       </form>`;
-    openCardDialog('タスク詳細');
+    openCardDialog(translate('cardDetail.title'));
     field('card-note-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const text = field('card-note-text').value.trim();
@@ -1261,18 +1278,18 @@ import { renderMarkdown } from './markdown.js';
     if (!card) return;
     cardDetailElement.innerHTML = `
       <form id="card-edit-form">
-        <label>件名
-          <input id="card-edit-title" placeholder="タスクの件名" required>
+        <label>${translate('cardForm.subject')}
+          <input id="card-edit-title" placeholder="${translate('cardForm.subjectPlaceholder')}" required>
         </label>
-        <label>内容・手順(担当のプロンプトにそのまま入ります)
+        <label>${translate('cardForm.body')}
           <textarea id="card-edit-body" rows="8"></textarea>
         </label>
         <div class="form-actions">
-          <button type="submit" class="primary-button">${icon('check')}保存する</button>
-          <button type="button" id="card-edit-cancel">${icon('close')}キャンセル</button>
+          <button type="submit" class="primary-button">${icon('check')}${translate('cardDetail.save')}</button>
+          <button type="button" id="card-edit-cancel">${icon('close')}${translate('common.cancel')}</button>
         </div>
       </form>`;
-    openCardDialog('タスクを編集');
+    openCardDialog(translate('cardDetail.editTitle'));
     // Set values via the DOM so titles/bodies with markup need no escaping.
     field('card-edit-title').value = card.title;
     field('card-edit-body').value = card.body || '';
@@ -1300,7 +1317,7 @@ import { renderMarkdown } from './markdown.js';
       const { reports } = await client.listReports();
       const linked = (reports ?? []).filter((report) => report.task === id);
       if (linked.length === 0) {
-        container.innerHTML = '<div class="report-empty">このタスクの報告はまだありません</div>';
+        container.innerHTML = `<div class="report-empty">${translate('cardDetail.noReports')}</div>`;
         return;
       }
       container.innerHTML = linked
@@ -1308,7 +1325,7 @@ import { renderMarkdown } from './markdown.js';
           (report) => `
             <div class="report">
               <div class="report-head">
-                <span class="report-level ${escapeHtml(report.level)}">${report.level === 'review-needed' ? '要確認' : '報告'}</span>
+                <span class="report-level ${escapeHtml(report.level)}">${report.level === 'review-needed' ? translate('board.review') : translate('cardDetail.reportLabel')}</span>
                 <span class="report-title">${escapeHtml(report.title)}</span>
                 <span class="report-time">${formatTime(report.createdAt)}</span>
               </div>
@@ -1320,7 +1337,7 @@ import { renderMarkdown } from './markdown.js';
         if (!report.read) client.markReportRead(report.id).catch(() => {});
       }
     } catch {
-      container.innerHTML = '<div class="report-empty">報告の読み込みに失敗しました</div>';
+      container.innerHTML = `<div class="report-empty">${translate('cardDetail.reportsFailed')}</div>`;
     }
   }
 
@@ -1349,19 +1366,13 @@ import { renderMarkdown } from './markdown.js';
     gemini: ['gemini-3.1-pro-preview', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'],
   };
 
-  const WEEKDAYS = [
-    ['mon', '月'],
-    ['tue', '火'],
-    ['wed', '水'],
-    ['thu', '木'],
-    ['fri', '金'],
-    ['sat', '土'],
-    ['sun', '日'],
-  ];
+  const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  // The chips render once at module init; the data-i18n span lets a later
+  // language switch re-fill them via translateMarkup().
   for (const containerId of ['schedule-days', 'interval-days']) {
     document.getElementById(containerId).innerHTML = WEEKDAYS.map(
-      ([key, label]) =>
-        `<label><input type="checkbox" value="${key}">${label}</label>`
+      (key) =>
+        `<label><input type="checkbox" value="${key}"><span data-i18n="weekday.${key}">${translate(`weekday.${key}`)}</span></label>`
     ).join('');
   }
 
@@ -1402,6 +1413,15 @@ import { renderMarkdown } from './markdown.js';
     showRoleSection(event.target.value)
   );
 
+  // Edit mode runs headless with approval prompts bypassed, so the human must
+  // opt in knowingly — surface the risk right where the mode is chosen.
+  function showModeWarning(mode) {
+    document.getElementById('resident-mode-warning').hidden = mode !== 'edit';
+  }
+  field('resident-mode').addEventListener('change', (event) =>
+    showModeWarning(event.target.value)
+  );
+
   function updateResidentModelOptions(cli) {
     field('resident-model-options').innerHTML = RESIDENT_MODELS[cli]
       .map((model) => `<option value="${model}"></option>`)
@@ -1419,6 +1439,7 @@ import { renderMarkdown } from './markdown.js';
     field('resident-model').value = configuration?.model ?? '';
     updateResidentModelOptions(field('resident-cli').value);
     field('resident-mode').value = configuration?.mode ?? 'read-only';
+    showModeWarning(field('resident-mode').value);
     field('resident-role').value = configuration?.role ?? 'board';
     showRoleSection(field('resident-role').value);
     field('resident-working-directory').value = configuration?.workingDirectory ?? '';
@@ -1483,12 +1504,12 @@ import { renderMarkdown } from './markdown.js';
     panelResidentName = entry?.name ?? null;
     fillResidentForm(entry);
     const teamName = (latestSnapshot?.teams ?? []).find((team) => team.id === panelTeamId)?.name;
-    const seatLabel = `${teamName ? `${teamName} ` : ''}席 ${seat + 1}`;
+    const seatLabel = `${teamName ? `${teamName} ` : ''}${translate('residentForm.seatLabel', { number: seat + 1 })}`;
     openDrawer(
       'resident-form',
       entry === null
-        ? `常駐員を追加(${seatLabel})`
-        : `${entry.configuration.displayName}(${seatLabel})`
+        ? translate('residentForm.addTitle', { seat: seatLabel })
+        : translate('residentForm.editTitle', { name: entry.configuration.displayName, seat: seatLabel })
     );
   }
   window.addEventListener('office:resident-seat-open', (event) =>
@@ -1544,7 +1565,7 @@ import { renderMarkdown } from './markdown.js';
     // to delete yet.
     field('team-delete').hidden = team === null || teams.length <= 1;
     teamError.hidden = true;
-    openDrawer('team-form', team === null ? 'チームを追加' : `チーム設定(${team.name})`);
+    openDrawer('team-form', team === null ? translate('teamForm.addTitle') : translate('teamForm.editTitle', { name: team.name }));
   }
   window.addEventListener('office:team-open', (event) => openTeamPanel(event.detail.teamId));
   document.getElementById('team-add').addEventListener('click', () => openTeamPanel(null));
@@ -1566,7 +1587,7 @@ import { renderMarkdown } from './markdown.js';
 
   field('team-delete').addEventListener('click', async () => {
     const name = field('team-name').value.trim();
-    if (!window.confirm(`チーム「${name}」を削除しますか?(所属する常駐員がいる場合は削除できません)`)) {
+    if (!window.confirm(translate('teamForm.deleteConfirm', { name }))) {
       return;
     }
     try {
@@ -1585,8 +1606,9 @@ import { renderMarkdown } from './markdown.js';
   function openSettingsPanel() {
     field('office-name').value = latestSnapshot?.officeName ?? '';
     themeSelect.value = currentTheme();
+    field('language-select').value = latestSnapshot?.language ?? currentLanguage();
     settingsError.hidden = true;
-    openDrawer('settings-form', 'オフィス設定');
+    openDrawer('settings-form', translate('settings.title'));
   }
   document.getElementById('settings-open').addEventListener('click', openSettingsPanel);
 
@@ -1594,7 +1616,15 @@ import { renderMarkdown } from './markdown.js';
     event.preventDefault();
     try {
       await client.saveOfficeName(field('office-name').value.trim());
+      const selectedLanguage = field('language-select').value;
+      const languageChanged = selectedLanguage !== currentLanguage();
+      if (languageChanged) await client.saveLanguage(selectedLanguage);
       closeDrawer();
+      // A reload re-renders every open panel in the new language at once.
+      if (languageChanged) {
+        applyLanguage(selectedLanguage);
+        location.reload();
+      }
     } catch (error) {
       settingsError.textContent = error.message;
       settingsError.hidden = false;
@@ -1614,7 +1644,7 @@ import { renderMarkdown } from './markdown.js';
   field('resident-unassign').addEventListener('click', async () => {
     if (panelResidentName === null) return;
     const displayName = field('resident-display-name').value.trim();
-    if (!window.confirm(`${displayName} の割り当てを解除しますか?(設定と報告はアーカイブされます)`)) return;
+    if (!window.confirm(translate('residentForm.unassignConfirm', { name: displayName }))) return;
     try {
       await client.deleteResident(panelResidentName);
       closeDrawer();
@@ -1629,13 +1659,19 @@ import { renderMarkdown } from './markdown.js';
   // state when no session is live. It reads the same office snapshot the
   // canvas draws from, so opening it never hits the server — the section just
   // re-renders on each snapshot while it is open.
-  const ACTIVITY_STATUS_LABELS = {
-    working: '作業中',
-    blocked: '確認待ち',
-    waiting: '入力待ち',
-    break: '離席中',
+  // Translation keys, not labels: the strings are resolved via translate() at
+  // render time so an open panel follows a language switch.
+  const ACTIVITY_STATUS_KEYS = {
+    working: 'activity.statusWorking',
+    blocked: 'activity.statusBlocked',
+    waiting: 'activity.statusWaiting',
+    break: 'activity.statusBreak',
   };
-  const ACTIVITY_KIND_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
+  const ACTIVITY_KIND_KEYS = {
+    inspect: 'activity.kindInspect',
+    think: 'activity.kindThink',
+    work: 'activity.kindWork',
+  };
   const activityView = document.getElementById('activity-view');
   let activityName = null;
 
@@ -1657,51 +1693,60 @@ import { renderMarkdown } from './markdown.js';
 
   // Kills the in-flight run and disables the resident until the human turns
   // it back on in the resident panel — rendered whenever a run is live.
-  const activityStopButton =
-    `<div class="form-actions activity-actions"><button type="button" id="activity-stop" class="danger-button">${icon('stop')}緊急停止</button></div>`;
+  function activityStopButton() {
+    return `<div class="form-actions activity-actions"><button type="button" id="activity-stop" class="danger-button">${icon('stop')}${translate('activity.emergencyStop')}</button></div>`;
+  }
 
   function activityBody(resident, session) {
     if (resident === null) {
-      return '<p class="activity-empty">常駐員が割り当てられていません。</p>';
+      return `<p class="activity-empty">${translate('activity.noResident')}</p>`;
     }
     if (session === null) {
       const state = resident.busy
-        ? '起動中…'
+        ? translate('activity.starting')
         : resident.lastRunAt
-          ? `前回実行 ${formatTime(resident.lastRunAt)}(${resident.lastOutcome ?? '—'})`
-          : 'まだ実行されていません';
-      const next = resident.nextRunAt ? `次回予定 ${formatTime(resident.nextRunAt)}` : '';
+          ? translate('activity.lastRun', {
+              time: formatTime(resident.lastRunAt),
+              outcome: resident.lastOutcome ?? '—',
+            })
+          : translate('activity.neverRun');
+      const next = resident.nextRunAt
+        ? translate('activity.nextRun', { time: formatTime(resident.nextRunAt) })
+        : '';
       return [
-        '<p class="activity-empty">セッションは動いていません。</p>',
-        activityRow('状態', escapeHtml(state)),
-        next ? activityRow('次回', escapeHtml(next)) : '',
-        resident.busy ? activityStopButton : '',
+        `<p class="activity-empty">${translate('activity.noSession')}</p>`,
+        activityRow(translate('activity.stateLabel'), escapeHtml(state)),
+        next ? activityRow(translate('activity.nextLabel'), escapeHtml(next)) : '',
+        resident.busy ? activityStopButton() : '',
       ].join('');
     }
+    const statusKey = ACTIVITY_STATUS_KEYS[session.status];
     const rows = [
       `<div class="activity-status ${escapeHtml(session.status)}">${escapeHtml(
-        ACTIVITY_STATUS_LABELS[session.status] ?? session.status
+        statusKey ? translate(statusKey) : session.status
       )}</div>`,
     ];
     // The instruction is the board card title, not the transcript's first
     // message — a resident's prompt is mostly its role/rules, which would bury
     // the actual task.
-    if (resident.activeTask) rows.push(activityRow('指示', escapeHtml(resident.activeTask)));
+    if (resident.activeTask) rows.push(activityRow(translate('activity.taskLabel'), escapeHtml(resident.activeTask)));
     if (session.activityLog?.length) {
       const items = session.activityLog
         .map((entry) => {
-          const entryKind = ACTIVITY_KIND_LABELS[entry.activityKind];
-          const prefix = entryKind ? `[${escapeHtml(entryKind)}] ` : '';
+          const entryKindKey = ACTIVITY_KIND_KEYS[entry.activityKind];
+          const prefix = entryKindKey ? `[${escapeHtml(translate(entryKindKey))}] ` : '';
           return `<li>${prefix}${escapeHtml(entry.activity)}</li>`;
         })
         .join('');
-      rows.push(activityRow('作業ログ', `<ol class="activity-log">${items}</ol>`));
+      rows.push(activityRow(translate('activity.workLog'), `<ol class="activity-log">${items}</ol>`));
     }
     if (session.subagents?.length) {
       rows.push(
         activityRow(
-          'サブエージェント',
-          session.subagents.map((sub) => escapeHtml(sub.activity ?? sub.label ?? '作業中')).join(' / ')
+          translate('activity.subagents'),
+          session.subagents
+            .map((sub) => escapeHtml(sub.activity ?? sub.label ?? translate('activity.kindWork')))
+            .join(' / ')
         )
       );
     }
@@ -1713,7 +1758,7 @@ import { renderMarkdown } from './markdown.js';
         )
       );
     }
-    if (resident.busy) rows.push(activityStopButton);
+    if (resident.busy) rows.push(activityStopButton());
     return rows.join('');
   }
 
@@ -1721,14 +1766,14 @@ import { renderMarkdown } from './markdown.js';
     const resident =
       (latestSnapshot?.residents ?? []).find((r) => r.name === activityName) ?? null;
     drawerTitleElement.textContent = resident
-      ? `${resident.displayName} の作業状況`
-      : '作業状況';
+      ? translate('activity.titleFor', { name: resident.displayName })
+      : translate('activity.title');
     activityView.innerHTML = activityBody(resident, activityName ? residentSession(activityName) : null);
   }
 
   function openActivityPanel(name) {
     activityName = name;
-    openDrawer('activity-wrap', '作業状況');
+    openDrawer('activity-wrap', translate('activity.title'));
     renderActivity();
   }
   window.addEventListener('office:resident-activity-open', (event) =>
@@ -1742,17 +1787,13 @@ import { renderMarkdown } from './markdown.js';
     const resident =
       (latestSnapshot?.residents ?? []).find((r) => r.name === activityName) ?? null;
     const label = resident?.displayName ?? activityName;
-    if (
-      !window.confirm(
-        `${label} のセッションを緊急停止しますか?(稼働はオフになり、再度オンにするまで動きません)`
-      )
-    ) {
+    if (!window.confirm(translate('activity.stopConfirm', { name: label }))) {
       return;
     }
     try {
       await client.stopResident(activityName);
     } catch (error) {
-      window.alert(`緊急停止に失敗しました: ${error.message}`);
+      window.alert(translate('activity.stopFailed', { message: error.message }));
     }
   });
 
@@ -1772,6 +1813,11 @@ import { renderMarkdown } from './markdown.js';
   client.connect({
     onSnapshot: (snapshot) => {
       latestSnapshot = snapshot;
+      // Adopt the server-stored language — another tab or server instance may
+      // have switched it. The innerHTML panels keep their old words until
+      // their data changes, so a switch re-renders them explicitly below.
+      const languageChanged =
+        typeof snapshot.language === 'string' && applyLanguage(snapshot.language);
       window.OFFICE.setState(snapshot);
       alertOnBossMention(snapshot);
       if (firstSnapshot) {
@@ -1786,6 +1832,10 @@ import { renderMarkdown } from './markdown.js';
           snapshot.boardColumnOrder,
         ]);
         return;
+      }
+      if (languageChanged) {
+        refreshBoard();
+        loadReports();
       }
       if (activityName !== null && !field('activity-wrap').hidden) renderActivity();
       maybeRefreshBoard(snapshot);

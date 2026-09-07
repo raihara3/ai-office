@@ -176,6 +176,7 @@ export function createHttpServer(core, { publicDirectory }) {
         sendJson(response, 200, {
           officeName: core.getOfficeName(),
           columnOrder: core.getBoardColumnOrder(),
+          language: core.getLanguage(),
         });
         return;
       }
@@ -196,6 +197,7 @@ export function createHttpServer(core, { publicDirectory }) {
           const result = { ok: true };
           if (parsed.officeName !== undefined) result.officeName = core.saveOfficeName(parsed.officeName);
           if (parsed.columnOrder !== undefined) result.columnOrder = core.saveBoardColumnOrder(parsed.columnOrder);
+          if (parsed.language !== undefined) result.language = core.saveLanguage(parsed.language);
           sendJson(response, 200, result);
         } catch (error) {
           sendJson(response, 400, { error: error.message });

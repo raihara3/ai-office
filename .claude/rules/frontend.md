@@ -10,6 +10,12 @@ paths:
   or `renderMarkdown` from `markdown.js` for report and task bodies. The Markdown
   renderer escapes raw HTML and permits only HTTP(S)/mailto links. Copy actions
   must preserve the original text.
+- No user-facing string literals: static markup keeps English base text plus
+  `data-i18n` (or `data-i18n-placeholder` / `data-i18n-title` /
+  `data-i18n-aria-label`) filled by `translateMarkup()`; dynamic strings call
+  `translate(key, parameters)` from `public/i18n.js` at render time, never at
+  module init — a cached label would survive a language switch. Add every new
+  key to BOTH the `en` and `ja` dictionaries.
 - Keep the module split: DOM panels in `app.js`, canvas drawing in
   `office.js`, server communication in `office-client.js` — do not fetch from
   `office.js` or touch the canvas from `app.js`.

@@ -1,11 +1,15 @@
 // User-editable office settings: one row per preference in the settings table
 // of office.db (a key-value store). The public API is intent-named rather than
-// raw key-value, so validation and defaults live in one place. Currently the
-// only setting is the office name shown on the entrance sign.
+// raw key-value, so validation and defaults live in one place: the entrance
+// sign's office name, the board's column order and the office language.
+
+import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from '../i18n.js';
 
 export const MAX_OFFICE_NAME_LENGTH = 10;
 export const DEFAULT_OFFICE_NAME = 'AI OFFICE';
 const OFFICE_NAME_KEY = 'officeName';
+
+const LANGUAGE_KEY = 'language';
 
 const BOARD_COLUMN_ORDER_KEY = 'boardColumnOrder';
 // A saved order lists at most the two fixed columns (user, done) plus one per
@@ -78,5 +82,28 @@ export function createSettingsStore({ database }) {
     return cleaned;
   }
 
-  return { getOfficeName, setOfficeName, getBoardColumnOrder, setBoardColumnOrder };
+  // The language server-generated text (reports, mentions, resident prompts)
+  // and the browser UI are written in. Unset until the human saves one.
+  function getLanguage() {
+    const row = statements.read.get(LANGUAGE_KEY);
+    if (row === undefined) return DEFAULT_LANGUAGE;
+    return SUPPORTED_LANGUAGES.includes(row.value) ? row.value : DEFAULT_LANGUAGE;
+  }
+
+  function setLanguage(language) {
+    if (!SUPPORTED_LANGUAGES.includes(language)) {
+      throw new Error(`language must be one of: ${SUPPORTED_LANGUAGES.join(', ')}`);
+    }
+    statements.upsert.run(LANGUAGE_KEY, language);
+    return language;
+  }
+
+  return {
+    getOfficeName,
+    setOfficeName,
+    getBoardColumnOrder,
+    setBoardColumnOrder,
+    getLanguage,
+    setLanguage,
+  };
 }

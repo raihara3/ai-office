@@ -20,6 +20,12 @@ paths:
 - Store factories take injectable `{ database, now = () => Date.now() }` and
   tests open `':memory:'` databases via `openDatabase`; the one-time
   importers additionally take `{ fileSystem = fs }` with in-memory stubs.
+- User-facing text produced at runtime (reports, mentions, prompts, run
+  errors) goes through `translate()` from `server/i18n.js`, with new keys in
+  both the `en` and `ja` dictionaries. Generated text is data written in the
+  language current at generation time — never retranslate stored text.
+  `residents.js` syncs the module-level current language from the settings
+  store, so watchers and the runner translate without database access.
 - `http.js` is the only transport layer: it parses requests and calls `core`
   methods, and domain logic lives behind `core`. Every state-changing (non-GET)
   endpoint must be guarded with `isForbiddenOrigin(request)` before doing work.

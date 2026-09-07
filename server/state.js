@@ -7,6 +7,8 @@
 // module-global state. `deriveStatus` is exported separately as a pure
 // function for the same reason.
 
+import { translate } from './i18n.js';
+
 const WORKING_IDLE_TIMEOUT_MS = 90_000;
 // A tool call frozen in flight past this outlives any realistic long-running
 // command, so the session is treated as gone rather than blocked (see below).
@@ -250,7 +252,7 @@ export function createState({
         authorKind: 'agent',
         authorName: `${CLI_INFO[session.cli].mention} (${session.project ?? '?'})`,
         cli: session.cli,
-        text: '@社長 確認をお願いします',
+        text: translate('state.reviewMention'),
         at: eventAt,
       });
     }

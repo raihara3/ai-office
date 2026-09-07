@@ -176,7 +176,7 @@ test('board: markCardDone keeps the card on the board but out of the work queue'
   assert.equal(board.topCardFor('issue-watcher').id, first);
 });
 
-test('board: appendNote accumulates 追記 sections in the body', () => {
+test('board: appendNote accumulates note sections in the body', () => {
   const { board } = boardWith();
   const id = board.createCard({
     title: 'タスク',
@@ -189,7 +189,7 @@ test('board: appendNote accumulates 追記 sections in the body', () => {
   assert.equal(board.appendNote(id, 'ここを直してほしい'), true);
   const card = board.listCards().find((c) => c.id === id);
   assert.ok(card.body.startsWith('最初の依頼'));
-  assert.ok(card.body.includes('## 追記'));
+  assert.ok(card.body.includes('## Note'));
   assert.ok(card.body.endsWith('ここを直してほしい'));
 
   assert.equal(board.appendNote(id, '   '), false);

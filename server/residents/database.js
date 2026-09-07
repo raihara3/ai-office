@@ -141,11 +141,14 @@ export const MIGRATIONS = [
   // Version 3: teams become user-managed — a per-team seat count arrives, and
   // the seeded default team takes over the label the canvas used to hardcode.
   // The rename only fires while the name is still the seeded 'office', so a
-  // team the user has renamed stays untouched.
+  // team the user has renamed stays untouched. This UPDATE originally wrote
+  // '常駐チーム'; databases already past v3 keep that name, while any database
+  // running it from now on (fresh or still pre-v3) gets the default-language
+  // (English) name.
   `
   ALTER TABLE teams ADD COLUMN seat_count INTEGER NOT NULL DEFAULT 6
     CHECK (seat_count BETWEEN 1 AND 12);
-  UPDATE teams SET name = '常駐チーム' WHERE id = 'default' AND name = 'office';
+  UPDATE teams SET name = 'Residents' WHERE id = 'default' AND name = 'office';
   `,
   // Version 4: cards gain a done state. A finished ok run now moves its card
   // into the board's 完了 column (done_at set) instead of archiving it, so the

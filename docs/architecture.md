@@ -49,6 +49,7 @@ server/                バックエンド(npm 依存なし。永続化は node:s
   state.js             createState() ストア, deriveStatus()(純粋), #general ログ
   state.test.js        ストア + ステータス導出のテスト
   tail.js              汎用 JSONL 追従(fs.watch + 定期再スキャンのフォールバック)
+  i18n.js              サーバ生成テキスト(報告・メンション・プロンプト・実行エラー)の辞書 + translate()(オフィス言語設定、既定 en)
   residents/           常駐チーム(スケジュール実行される常駐エージェント)
     residents.js       オーケストレータ: tick ループ + precheck + 報告生成
     resident-store.js  residents / teams テーブルの読み書きと検証
@@ -77,6 +78,7 @@ server/                バックエンド(npm 依存なし。永続化は node:s
 public/                フロントエンド(静的 ES モジュールとして配信)
   index.html           マークアップ: アプリバー + カンバンストリップ + canvas / ボードビュー + インボックス + ドロワー
   style.css            ライト SaaS テーマの UI スタイル一式
+  i18n.js              UI 文言の辞書 + translate() / translateMarkup()(data-i18n 反映、言語を localStorage にキャッシュ)
   markdown.js          Safe Markdown subset for reports and task details
   office.js            canvas 描画ループ(部屋・デスク・アバター・吹き出し)
   office/
@@ -93,7 +95,10 @@ electron/              デスクトップラッパ
   preload.js           将来の IPC トランスポート用プレースホルダ
 docs/
   architecture.md      本ファイル
-README.md              概要・使い方・ステータスルール・制限事項
+  images/              README 用スクリーンショット
+README.md              概要・セットアップ・使い方・制限事項(英語)
+README.ja.md           README.md の日本語版
+LICENSE                MIT ライセンス
 package.json           npm スクリプト(start/test/electron/dist) + electron-builder 設定
 ```
 
@@ -146,7 +151,8 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
   `applyActivityLog` は 1 ターン分の活動を配列に蓄積し(新しい指示でリセット)、
   作業状況ビューが最新の 1 件ではなく作業の流れを表示できるようにします。
 - `updateGeneralChannel` — セッションが社長の確認待ち(`waitingForUser`)へ
-  遷移したとき `@社長 確認をお願いします` を `#general` に投稿します。この
+  遷移したとき、オフィス言語設定に応じた確認依頼メンション(`@boss` /
+  `@社長`)を `#general` に投稿します。この
   メッセージはクライアントの注意チャイムを鳴らすためだけに存在し(チャット
   自体は描画しません)、サブエージェントと、注入された `isResidentFile` が
   真のセッション(常駐チームの実行)では抑止します(常駐員の報告通知は
@@ -213,7 +219,9 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   されている場合はその標準出力が空でないときだけ実行します(空なら実行
   スキップ)。この役割分けにより、毎週の定期作業がカード未割り当てを理由に
   実行されない、という取りこぼしを防ぎます。実行完了時にはホワイトボード
-  報告と `#general` への報告通知を生成します。実行は自身の記憶を持たない
+  報告と `#general` への報告通知を生成します。報告の定型文・通知・プロンプト
+  の枠組みはオフィス言語設定(`server/i18n.js`、既定 en)の生成時点の言語で
+  書かれ、後から言語を切り替えても書き換えません。実行は自身の記憶を持たない
   ため、そのカードに紐づく過去の報告本文を古い順に「これまでの報告」節と
   してプロンプトへ差し込み、経緯(初期本文 → 過去の調査 → 追記)を引き継ぎ
   ます。人間が報告内容を手で追記へ引用する必要はありません。カード実行が info で完了すると
@@ -278,7 +286,7 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 
 マークアップ:アプリバー(`#appbar`。AI OFFICE ブランド、ビュータブ
 「オフィス / ボード / インボックス」、設定・チーム・タスク ボタン。
-テーマ切替は設定フォーム内のセレクト)、担当者別のカンバンストリップ
+テーマ切替と言語(English / 日本語)は設定フォーム内のセレクト)、担当者別のカンバンストリップ
 (`#kanban-strip`)、`<canvas>` とタブで切り替わるインプレースのフルボード
 (`#board-view`)、インボックスサイドバー(トレイアイコンと未読・要確認
 カウント付きヘッダと報告一覧)、および右スライドインドロワー(`#drawer`。
@@ -287,6 +295,9 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 `localStorage`(キー `ai-office-theme`、未設定なら OS の
 `prefers-color-scheme`)からテーマを読んで `data-theme` を設定するため、
 保存済みのダークテーマがライトで一瞬光ることはありません。
+静的マークアップの文言は `data-i18n` 系属性で宣言され、`public/i18n.js` の
+`translateMarkup()` が言語設定に合わせて埋めます(HTML 中の英語は初回描画用の
+フォールバック)。
 
 The inbox also provides search and filters, and opens reports in a native
 `<dialog>` rather than expanding their bodies in the sidebar.
@@ -413,7 +424,8 @@ state, omit the generic report label, and retain the review-needed label.
 Marking reports unread and copying original text are available only in the
 report dialog; marking unread successfully closes it. `POST /api/whiteboard/unread` accepts `{id}`, persists the
 unread state in SQLite, and updates counts. Reports can be archived.
-社長(`@社長`)が
+社長(`@boss` / `@社長`。メッセージは投稿時点の言語で書かれるため両言語の
+マーカーを判定)が
 新たにメンションされた際の WebAudio チャイム再生(`snapshot.messages` を
 参照。チャット自体の描画はしません)。クライアントストリームを
 `window.OFFICE.setState` へ橋渡しします。
@@ -423,7 +435,8 @@ right-hand drawer (`#drawer`):
 フォーム(タスク ボタン / 列のプラスアイコンで開き、後者は担当を事前選択)、
 常駐員の作業状況ビュー(実行中は緊急停止ボタン。実行中の run を kill し、
 人間が再度オンにするまで常駐員を無効化)、常駐員の割り当てフォーム(作成 / 編集 /
-割り当て解除 / 今すぐ実行)。
+割り当て解除 / 今すぐ実行。「編集あり」権限の選択時は承認プロンプトなしで
+実行される旨の警告を表示)。
 
 ## デスクトップ(`electron/`)
 

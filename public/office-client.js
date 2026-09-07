@@ -68,6 +68,15 @@
           body: JSON.stringify({ officeName }),
         });
       },
+      // Persists the office language ('en' or 'ja'). Like the office name,
+      // the current value rides on every state snapshot.
+      async saveLanguage(language) {
+        return requestJson('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language }),
+        });
+      },
       // Persists the board's left-to-right column order (a list of column keys:
       // 'user', 'done', or 'team:<id>'). Like the office name, the saved order
       // rides on every state snapshot, so reading is done from there.

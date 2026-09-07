@@ -25,7 +25,7 @@ test('database: openDatabase migrates a fresh database to the latest schema', ()
   // The default team is seeded by v2 and renamed/sized by v3.
   const team = database.prepare('SELECT id, name, seat_count FROM teams').get();
   assert.equal(team.id, 'default');
-  assert.equal(team.name, '常駐チーム');
+  assert.equal(team.name, 'Residents');
   assert.equal(team.seat_count, 6);
 
   const residentColumns = database.prepare('PRAGMA table_info(residents)').all();

@@ -160,7 +160,7 @@ test('resident store: remove archives the row instead of deleting it', () => {
 
 test('resident store: listTeams returns the seeded default team', () => {
   const { store } = storeWith();
-  assert.deepEqual(store.listTeams(), [{ id: 'default', name: '常駐チーム', seatCount: 6 }]);
+  assert.deepEqual(store.listTeams(), [{ id: 'default', name: 'Residents', seatCount: 6 }]);
 });
 
 test('team store: create, rename, resize and validation', () => {
@@ -168,7 +168,7 @@ test('team store: create, rename, resize and validation', () => {
   const id = store.saveTeam({ name: '研究チーム', seatCount: 3 });
   assert.deepEqual(
     store.listTeams().map((team) => team.name),
-    ['常駐チーム', '研究チーム']
+    ['Residents', '研究チーム']
   );
 
   // Partial updates merge onto existing values.
@@ -179,7 +179,7 @@ test('team store: create, rename, resize and validation', () => {
   assert.equal(team.seatCount, 9);
 
   assert.throws(() => store.saveTeam({ name: '   ' }), /team name is required/);
-  assert.throws(() => store.saveTeam({ name: '常駐チーム', seatCount: 6 }), /already in use/);
+  assert.throws(() => store.saveTeam({ name: 'Residents', seatCount: 6 }), /already in use/);
   assert.throws(() => store.saveTeam({ name: 'x', seatCount: 0 }), /seatCount must be/);
   assert.throws(() => store.saveTeam({ name: 'x', seatCount: 13 }), /seatCount must be/);
   assert.throws(() => store.saveTeam({ id: 'no-such-team', name: 'x' }), /unknown team/);

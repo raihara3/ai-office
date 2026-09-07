@@ -1,4 +1,6 @@
 // Render the report-oriented Markdown subset without accepting raw HTML.
+import { translate } from './i18n.js';
+
 function escapeHtml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
@@ -104,7 +106,7 @@ export function renderMarkdown(value, depth = 0) {
         }
         const task = item[3].match(/^\[([ xX])\]\s+(.*)$/);
         const content = task
-          ? `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''} aria-label="${task[1] !== ' ' ? '完了' : '未完了'}">${inline(task[2])}`
+          ? `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''} aria-label="${task[1] !== ' ' ? translate('markdown.checkboxDone') : translate('markdown.checkboxOpen')}">${inline(task[2])}`
           : inline(item[3]);
         items.push(`<li${task ? ' class="markdown-task"' : ''}>${content}${continuation.length ? renderMarkdown(continuation.join('\n'), depth + 1) : ''}</li>`);
       }

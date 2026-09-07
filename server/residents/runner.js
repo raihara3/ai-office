@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { translate } from '../i18n.js';
 
 const RUN_TIMEOUT_MS = 30 * 60_000;
 const KILL_ESCALATION_MS = 10_000;
@@ -231,7 +232,9 @@ export function createRunner({
     if (!workingDirectoryExists) {
       onFinished({
         outcome: 'error',
-        resultText: `作業ディレクトリが存在しません: ${resident.workingDirectory}`,
+        resultText: translate('runner.workingDirectoryMissing', {
+          directory: resident.workingDirectory,
+        }),
       });
       return true;
     }
@@ -243,7 +246,10 @@ export function createRunner({
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
-      onFinished({ outcome: 'error', resultText: `起動に失敗しました: ${error.message}` });
+      onFinished({
+        outcome: 'error',
+        resultText: translate('runner.spawnFailed', { message: error.message }),
+      });
       return true;
     }
     running.set(resident.name, child);
@@ -289,17 +295,19 @@ export function createRunner({
       }
     };
 
-    child.on('error', (error) => finish('error', `実行に失敗しました: ${error.message}`));
+    child.on('error', (error) =>
+      finish('error', translate('runner.runFailed', { message: error.message }))
+    );
     child.on('close', (code) => {
       const resultText = extractResultText(resident.cli, stdout);
       if (timedOut) {
-        finish('timeout', resultText || '実行がタイムアウトしました');
+        finish('timeout', resultText || translate('runner.timedOut'));
       } else if (stopRequests.has(resident.name)) {
-        finish('stopped', resultText || '緊急停止しました');
+        finish('stopped', resultText || translate('runner.stopped'));
       } else if (code === 0) {
-        finish('ok', resultText || '(出力なし)');
+        finish('ok', resultText || translate('runner.noOutput'));
       } else {
-        finish('error', resultText || stderr.trim() || `終了コード ${code}`);
+        finish('error', resultText || stderr.trim() || translate('runner.exitCode', { code }));
       }
     });
     return true;

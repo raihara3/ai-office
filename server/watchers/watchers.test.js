@@ -69,7 +69,7 @@ test('claude', async (t) => {
     assert.equal(calls[0].observation.waitingForUser, true);
   });
 
-  await t.test('ExitPlanMode -> waitingForUser with プラン確認待ち', () => {
+  await t.test('ExitPlanMode -> waitingForUser with plan-approval label', () => {
     const { report, calls } = makeReport();
     claudeHandleLine(
       {
@@ -81,7 +81,7 @@ test('claude', async (t) => {
     );
     assert.equal(calls.length, 1);
     assert.equal(calls[0].observation.waitingForUser, true);
-    assert.equal(calls[0].observation.activity, 'プラン確認待ち');
+    assert.equal(calls[0].observation.activity, 'Waiting for plan approval');
   });
 
   await t.test('mcp__ tool_use -> mcpCall and work', () => {

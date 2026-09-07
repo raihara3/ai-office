@@ -58,11 +58,11 @@ erDiagram
         TEXT    title          "NOT NULL; whitespace collapsed to one line"
         TEXT    assignee_id FK "REFERENCES residents(id); NULL = the human user's column"
         TEXT    origin_id   FK "REFERENCES residents(id); NULL = filed by the human"
-        TEXT    body           "NOT NULL DEFAULT ''; card text, 追記 sections appended"
+        TEXT    body           "NOT NULL DEFAULT ''; card text, note (追記) sections appended"
         INTEGER position       "NOT NULL DEFAULT 0; display order within the column"
         INTEGER created_at     "NOT NULL"
         INTEGER updated_at     "NOT NULL"
-        INTEGER done_at        "NULL until completed; set moves the card to the 完了 column, kept until archived"
+        INTEGER done_at        "NULL until completed; set moves the card to the done column, kept until archived"
         INTEGER archived_at    "NULL while on the board"
     }
 
@@ -85,7 +85,7 @@ erDiagram
     }
 
     settings {
-        TEXT key   PK "user-editable preference key, e.g. 'officeName', 'boardColumnOrder'"
+        TEXT key   PK "user-editable preference key, e.g. 'officeName', 'boardColumnOrder', 'language'"
         TEXT value    "NOT NULL"
     }
 ```
@@ -109,7 +109,8 @@ erDiagram
 - **`settings` vs `meta`**: both are standalone key-value tables with no
   foreign keys. `settings` holds user-editable preferences set in-app (the
   office name on the entrance sign, `officeName`; the board's left-to-right
-  column order, `boardColumnOrder`, a JSON array of column keys); `meta` holds internal
+  column order, `boardColumnOrder`, a JSON array of column keys; the office
+  language, `language`, `'en'` or `'ja'`); `meta` holds internal
   flags: the one-time import markers and `resident_loop_owner`, the pid of
   the server instance currently owning the resident tick loop
   (`loop-ownership.js` — two instances over one office.db must not both fire
@@ -142,7 +143,7 @@ erDiagram
   exception**: `session_bindings` prunes past 200 rows with DELETE — bindings
   are an operational cache (transcripts expire after ~3 days), not user data.
 - **Done is not archived**: `cards.done_at` moves a finished card to the
-  board's 完了 column without removing it. It keeps naming its resident but
+  board's done column without removing it. It keeps naming its resident but
   drops out of counts and the top-card work queue; the human archives it
   explicitly. Moving a done card back onto a column clears `done_at`.
 - **Foreign keys are enforced** (`node:sqlite` has `PRAGMA foreign_keys = ON`
@@ -157,8 +158,9 @@ erDiagram
 - **Team management**: creating a team takes a name and seat count (both
   editable later); shrinking below an occupied seat, deleting a team that
   still has active residents, and deleting the last team are all refused.
-  The v3 migration renamed the seeded team 'office' → '常駐チーム' (only if
-  untouched) so the canvas label carried over seamlessly.
+  The v3 migration renames the seeded team 'office' → 'Residents' (only if
+  untouched) so the canvas label carries over seamlessly; databases migrated
+  before the office language setting existed got '常駐チーム' here and keep it.
 - **Migrations**: `database.js` applies each pending migration in its own
   transaction and bumps `user_version`; a database whose `user_version` is
   newer than the app understands is refused at startup. One-time data

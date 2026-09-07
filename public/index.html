@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -65,31 +65,31 @@
         <span id="brand-word">AI OFFICE</span>
       </div>
       <nav id="view-tabs" role="tablist">
-        <button type="button" class="view-tab active" data-view="office" role="tab" aria-selected="true">オフィス</button>
-        <button type="button" class="view-tab" data-view="board" role="tab" aria-selected="false">ボード</button>
-        <button type="button" class="view-tab" data-view="inbox" role="tab" aria-selected="false">インボックス<span id="inbox-tab-badge" class="tab-badge" hidden></span></button>
+        <button type="button" class="view-tab active" data-view="office" role="tab" aria-selected="true" data-i18n="tabs.office">Office</button>
+        <button type="button" class="view-tab" data-view="board" role="tab" aria-selected="false" data-i18n="tabs.board">Board</button>
+        <button type="button" class="view-tab" data-view="inbox" role="tab" aria-selected="false" data-i18n="tabs.inbox">Inbox<span id="inbox-tab-badge" class="tab-badge" hidden></span></button>
       </nav>
       <div id="appbar-actions">
-        <button type="button" id="settings-open" title="オフィス名などの設定を変更します"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg>設定</button>
-        <button type="button" id="team-add" title="新しいチームを追加します"><svg class="icon" aria-hidden="true"><use href="#icon-group-add"/></svg>チーム</button>
-        <button type="button" id="card-add" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-add"/></svg>タスク</button>
+        <button type="button" id="settings-open" title="Change office settings such as the office name" data-i18n-title="appbar.settingsTitle"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span data-i18n="appbar.settings">Settings</span></button>
+        <button type="button" id="team-add" title="Add a new team" data-i18n-title="appbar.teamTitle"><svg class="icon" aria-hidden="true"><use href="#icon-group-add"/></svg><span data-i18n="appbar.team">Team</span></button>
+        <button type="button" id="card-add" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-add"/></svg><span data-i18n="appbar.task">Task</span></button>
       </div>
     </header>
     <div id="workspace-toolbar">
-      <h1>タスク</h1>
+      <h1 data-i18n="board.heading">Tasks</h1>
       <span id="board-summary" aria-live="polite"></span>
-      <button type="button" id="board-expand">ボードを開く<svg class="icon" aria-hidden="true"><use href="#icon-arrow-forward"/></svg></button>
+      <button type="button" id="board-expand"><span data-i18n="board.open">Open board</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow-forward"/></svg></button>
     </div>
-    <div id="kanban-strip" aria-label="チーム別のタスク"></div>
+    <div id="kanban-strip" aria-label="Tasks by team" data-i18n-aria-label="board.stripLabel"></div>
     <div id="content">
       <section id="office-wrap">
         <div id="office-scroll">
           <canvas id="office" width="960" height="600"></canvas>
         </div>
-        <div id="office-zoom" role="group" aria-label="ズーム">
-          <button type="button" id="office-zoom-out" title="縮小" aria-label="縮小"><svg class="icon" aria-hidden="true"><use href="#icon-remove"/></svg></button>
-          <button type="button" id="office-zoom-fit" title="全体表示に戻す" aria-label="全体表示に戻す"><svg class="icon" aria-hidden="true"><use href="#icon-fit"/></svg></button>
-          <button type="button" id="office-zoom-in" title="拡大" aria-label="拡大"><svg class="icon" aria-hidden="true"><use href="#icon-add"/></svg></button>
+        <div id="office-zoom" role="group" aria-label="Zoom" data-i18n-aria-label="zoom.label">
+          <button type="button" id="office-zoom-out" title="Zoom out" aria-label="Zoom out" data-i18n-title="zoom.out" data-i18n-aria-label="zoom.out"><svg class="icon" aria-hidden="true"><use href="#icon-remove"/></svg></button>
+          <button type="button" id="office-zoom-fit" title="Fit to view" aria-label="Fit to view" data-i18n-title="zoom.fit" data-i18n-aria-label="zoom.fit"><svg class="icon" aria-hidden="true"><use href="#icon-fit"/></svg></button>
+          <button type="button" id="office-zoom-in" title="Zoom in" aria-label="Zoom in" data-i18n-title="zoom.in" data-i18n-aria-label="zoom.in"><svg class="icon" aria-hidden="true"><use href="#icon-add"/></svg></button>
         </div>
       </section>
       <section id="board-view" hidden>
@@ -101,69 +101,69 @@
             <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
             <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
           </svg>
-          <h1>インボックス</h1>
+          <h1 data-i18n="inbox.title">Inbox</h1>
           <span id="inbox-summary"></span>
         </header>
         <div id="inbox-tools">
-          <input type="search" id="inbox-search" placeholder="報告を検索…" aria-label="報告の件名・担当者・本文を検索">
-          <div id="inbox-filters" role="group" aria-label="報告の絞り込み">
-            <button type="button" data-inbox-filter="all" aria-pressed="true">すべて <span>0</span></button>
-            <button type="button" data-inbox-filter="unread" aria-pressed="false">未読 <span>0</span></button>
-            <button type="button" data-inbox-filter="favorite" aria-pressed="false">お気に入り <span>0</span></button>
+          <input type="search" id="inbox-search" placeholder="Search reports…" aria-label="Search report subjects, assignees, and bodies" data-i18n-placeholder="inbox.searchPlaceholder" data-i18n-aria-label="inbox.searchLabel">
+          <div id="inbox-filters" role="group" aria-label="Filter reports" data-i18n-aria-label="inbox.filtersLabel">
+            <button type="button" data-inbox-filter="all" aria-pressed="true" data-i18n="inbox.filterAll">All <span>0</span></button>
+            <button type="button" data-inbox-filter="unread" aria-pressed="false" data-i18n="inbox.filterUnread">Unread <span>0</span></button>
+            <button type="button" data-inbox-filter="favorite" aria-pressed="false" data-i18n="inbox.filterFavorite">Favorites <span>0</span></button>
           </div>
         </div>
-        <div id="inbox-list"><div class="report-empty">読み込み中…</div></div>
+        <div id="inbox-list"><div class="report-empty" data-i18n="inbox.loading">Loading…</div></div>
       </aside>
     </div>
   </main>
   <dialog id="report-dialog" aria-labelledby="report-dialog-title">
     <header class="report-dialog-head">
       <div><p id="report-dialog-meta"></p><h1 id="report-dialog-title"></h1></div>
-      <button type="button" id="report-dialog-close" aria-label="報告を閉じる" autofocus><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
+      <button type="button" id="report-dialog-close" aria-label="Close report" data-i18n-aria-label="reportDialog.close" autofocus><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
     </header>
-    <div id="report-dialog-body" class="markdown" tabindex="0" role="region" aria-label="報告本文"></div>
+    <div id="report-dialog-body" class="markdown" tabindex="0" role="region" aria-label="Report body" data-i18n-aria-label="reportDialog.bodyLabel"></div>
     <p id="report-dialog-notice" role="status" hidden></p>
     <footer class="report-dialog-footer">
-      <button type="button" id="report-dialog-favorite" data-report-action="favorite" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-star-outline"/></svg>お気に入り</button>
-      <button type="button" data-report-action="copy"><svg class="icon" aria-hidden="true"><use href="#icon-copy"/></svg>全文をコピー</button>
-      <button type="button" id="report-dialog-unread" data-report-action="unread"><svg class="icon" aria-hidden="true"><use href="#icon-undo"/></svg>未読に戻す</button>
-      <button type="button" id="report-dialog-task" hidden><svg class="icon" aria-hidden="true"><use href="#icon-task"/></svg>関連タスク</button>
-      <button type="button" id="report-dialog-next">次の未読<svg class="icon" aria-hidden="true"><use href="#icon-arrow-forward"/></svg></button>
+      <button type="button" id="report-dialog-favorite" data-report-action="favorite" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-star-outline"/></svg><span data-i18n="inbox.favorite">Favorite</span></button>
+      <button type="button" data-report-action="copy"><svg class="icon" aria-hidden="true"><use href="#icon-copy"/></svg><span data-i18n="reportDialog.copyAll">Copy full text</span></button>
+      <button type="button" id="report-dialog-unread" data-report-action="unread"><svg class="icon" aria-hidden="true"><use href="#icon-undo"/></svg><span data-i18n="reportDialog.markUnread">Mark unread</span></button>
+      <button type="button" id="report-dialog-task" hidden><svg class="icon" aria-hidden="true"><use href="#icon-task"/></svg><span data-i18n="reportDialog.relatedTask">Related task</span></button>
+      <button type="button" id="report-dialog-next"><span data-i18n="reportDialog.nextUnread">Next unread</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow-forward"/></svg></button>
     </footer>
   </dialog>
   <dialog id="card-dialog" aria-labelledby="card-dialog-title">
     <header class="card-dialog-head">
       <h1 id="card-dialog-title"></h1>
-      <button type="button" id="card-dialog-close" aria-label="閉じる" autofocus><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
+      <button type="button" id="card-dialog-close" aria-label="Close" data-i18n-aria-label="common.close" autofocus><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
     </header>
-    <div id="card-detail" tabindex="0" role="region" aria-label="タスク詳細"></div>
+    <div id="card-detail" tabindex="0" role="region" aria-label="Task details" data-i18n-aria-label="cardDetail.title"></div>
   </dialog>
   <div id="ui-notice" role="status" hidden></div>
   <aside id="drawer" hidden>
     <header id="drawer-head">
       <h2 id="drawer-title"></h2>
-      <button type="button" id="drawer-close" title="閉じる" aria-label="閉じる"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
+      <button type="button" id="drawer-close" title="Close" aria-label="Close" data-i18n-title="common.close" data-i18n-aria-label="common.close"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
     </header>
     <div id="drawer-body">
       <form id="card-form" class="drawer-section" hidden>
-        <label>件名
-          <input id="card-title" placeholder="タスクの件名" required>
+        <label data-i18n="cardForm.subject">Subject
+          <input id="card-title" placeholder="Task subject" data-i18n-placeholder="cardForm.subjectPlaceholder" required>
         </label>
-        <label>内容・手順(担当のプロンプトにそのまま入ります)
+        <label data-i18n="cardForm.body">Details and steps (passed verbatim into the assignee's prompt)
           <textarea id="card-body" rows="6"></textarea>
         </label>
-        <label>担当
+        <label data-i18n="cardForm.assignee">Assignee
           <select id="card-assignee"></select>
         </label>
         <div class="form-actions">
-          <button type="submit" id="card-file" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg>起票する</button>
+          <button type="submit" id="card-file" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg><span data-i18n="cardForm.file">File task</span></button>
         </div>
       </form>
       <div id="activity-wrap" class="drawer-section" hidden>
         <div id="activity-view"></div>
       </div>
       <form id="resident-form" class="drawer-section" hidden>
-        <label>表示名
+        <label data-i18n="residentForm.displayName">Display name
           <input id="resident-display-name" required>
         </label>
         <div class="form-row">
@@ -174,96 +174,103 @@
               <option value="gemini">Gemini</option>
             </select>
           </label>
-          <label>権限
+          <label data-i18n="residentForm.mode">Permissions
             <select id="resident-mode">
-              <option value="read-only">読み取りのみ</option>
-              <option value="edit">編集あり</option>
+              <option value="read-only" data-i18n="residentForm.modeReadOnly">Read-only</option>
+              <option value="edit" data-i18n="residentForm.modeEdit">Edit</option>
             </select>
           </label>
         </div>
-        <label>モデル(候補から選択、またはフルモデルIDを入力)
-          <input id="resident-model" list="resident-model-options" placeholder="空欄でCLIの既定モデル">
+        <p id="resident-mode-warning" class="form-warning" hidden data-i18n="residentForm.modeWarning">Edit-mode runs proceed without approval prompts (headless runs cannot answer them). The agent changes files and runs commands without confirmation — and except for the Codex sandbox, it is not confined to the working directory. Enable this only for instructions and directories you trust.</p>
+        <label data-i18n="residentForm.model">Model (pick a suggestion or enter a full model ID)
+          <input id="resident-model" list="resident-model-options" placeholder="Leave empty for the CLI default model" data-i18n-placeholder="residentForm.modelPlaceholder">
           <datalist id="resident-model-options"></datalist>
         </label>
-        <label>作業ディレクトリ
+        <label data-i18n="residentForm.workingDirectory">Working directory
           <input id="resident-working-directory" placeholder="~/dev/repo" required>
         </label>
-        <label>役割
+        <label data-i18n="residentForm.role">Role
           <select id="resident-role">
-            <option value="board">カンバン(担当カードを実行)</option>
-            <option value="scheduled">定期実行(指示書を実行)</option>
+            <option value="board" data-i18n="residentForm.roleBoard">Kanban (runs assigned cards)</option>
+            <option value="scheduled" data-i18n="residentForm.roleScheduled">Scheduled (runs its instructions)</option>
           </select>
         </label>
         <div id="role-scheduled-fields" hidden>
-          <label>トリガー
+          <label data-i18n="residentForm.trigger">Trigger
             <select id="resident-trigger-type">
-              <option value="schedule">曜日と時刻を指定</option>
-              <option value="interval">一定間隔</option>
+              <option value="schedule" data-i18n="residentForm.triggerSchedule">Weekdays and times</option>
+              <option value="interval" data-i18n="residentForm.triggerInterval">Fixed interval</option>
             </select>
           </label>
           <div id="trigger-schedule">
             <div class="weekday-row" id="schedule-days"></div>
-            <label>時刻(カンマ区切り)
+            <label data-i18n="residentForm.times">Times (comma-separated)
               <input id="schedule-times" placeholder="09:00">
             </label>
           </div>
           <div id="trigger-interval" hidden>
-            <label>間隔(分)
+            <label data-i18n="residentForm.intervalMinutes">Interval (minutes)
               <input id="interval-minutes" type="number" min="1" value="30">
             </label>
             <div class="weekday-row" id="interval-days"></div>
             <div class="form-row">
-              <label>稼働開始
+              <label data-i18n="residentForm.activeStart">Active from
                 <input id="interval-start" type="time">
               </label>
-              <label>稼働終了
+              <label data-i18n="residentForm.activeEnd">Active until
                 <input id="interval-end" type="time">
               </label>
             </div>
           </div>
-          <label>事前チェックコマンド(出力が空なら実行をスキップ。空欄なら毎回実行)
+          <label data-i18n="residentForm.precheck">Precheck command (empty output skips the run; leave blank to always run)
             <input id="resident-precheck" placeholder="gh issue list --label needs-ai">
           </label>
         </div>
-        <label>指示書(INSTRUCTIONS.md)
-          <textarea id="resident-instructions" rows="8" placeholder="この常駐員の役割・手順を書いてください"></textarea>
+        <label data-i18n="residentForm.instructions">Instructions (INSTRUCTIONS.md)
+          <textarea id="resident-instructions" rows="8" placeholder="Describe this resident's role and workflow" data-i18n-placeholder="residentForm.instructionsPlaceholder"></textarea>
         </label>
         <label class="checkbox-label">
-          <input id="resident-enabled" type="checkbox" checked> 稼働する(オフで一時停止)
+          <input id="resident-enabled" type="checkbox" checked> <span data-i18n="residentForm.enabled">Active (off pauses this resident)</span>
         </label>
         <p id="resident-error" class="form-error" hidden></p>
         <div class="form-actions">
-          <button type="submit" id="resident-save" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg>保存</button>
-          <button type="button" id="resident-run"><svg class="icon" aria-hidden="true"><use href="#icon-play"/></svg>今すぐ実行</button>
-          <button type="button" id="resident-unassign" class="danger-button"><svg class="icon" aria-hidden="true"><use href="#icon-person-remove"/></svg>割り当て解除</button>
+          <button type="submit" id="resident-save" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-i18n="common.save">Save</span></button>
+          <button type="button" id="resident-run"><svg class="icon" aria-hidden="true"><use href="#icon-play"/></svg><span data-i18n="residentForm.runNow">Run now</span></button>
+          <button type="button" id="resident-unassign" class="danger-button"><svg class="icon" aria-hidden="true"><use href="#icon-person-remove"/></svg><span data-i18n="residentForm.unassign">Unassign</span></button>
         </div>
       </form>
       <form id="team-form" class="drawer-section" hidden>
-        <label>チーム名
-          <input id="team-name" required maxlength="40" placeholder="開発チーム">
+        <label data-i18n="teamForm.name">Team name
+          <input id="team-name" required maxlength="40" placeholder="Dev team" data-i18n-placeholder="teamForm.namePlaceholder">
         </label>
-        <label>席数(1〜12)
+        <label data-i18n="teamForm.seatCount">Seats (1–12)
           <input id="team-seat-count" type="number" min="1" max="12" value="6" required>
         </label>
         <p id="team-error" class="form-error" hidden></p>
         <div class="form-actions">
-          <button type="submit" id="team-save" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg>保存</button>
-          <button type="button" id="team-delete" class="danger-button"><svg class="icon" aria-hidden="true"><use href="#icon-delete"/></svg>チームを削除</button>
+          <button type="submit" id="team-save" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-i18n="common.save">Save</span></button>
+          <button type="button" id="team-delete" class="danger-button"><svg class="icon" aria-hidden="true"><use href="#icon-delete"/></svg><span data-i18n="teamForm.delete">Delete team</span></button>
         </div>
       </form>
       <form id="settings-form" class="drawer-section" hidden>
-        <label>オフィス名(10文字以内)
+        <label data-i18n="settings.officeName">Office name (up to 10 characters)
           <input id="office-name" required maxlength="10" placeholder="AI OFFICE">
         </label>
-        <label>テーマ
+        <label data-i18n="settings.theme">Theme
           <select id="theme-select">
-            <option value="light">ライトモード</option>
-            <option value="dark">ダークモード</option>
+            <option value="light" data-i18n="settings.themeLight">Light</option>
+            <option value="dark" data-i18n="settings.themeDark">Dark</option>
+          </select>
+        </label>
+        <label data-i18n="settings.language">Language
+          <select id="language-select">
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
           </select>
         </label>
         <p id="settings-error" class="form-error" hidden></p>
         <div class="form-actions">
-          <button type="submit" id="settings-save" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg>保存</button>
+          <button type="submit" id="settings-save" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-i18n="common.save">Save</span></button>
         </div>
       </form>
     </div>

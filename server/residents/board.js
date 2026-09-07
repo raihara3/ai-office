@@ -9,6 +9,7 @@
 // of deleting — never a delete — mirroring the whiteboard's conventions.
 
 import { randomUUID } from 'node:crypto';
+import { translate } from '../i18n.js';
 
 const MAX_CARDS = 100;
 
@@ -214,7 +215,8 @@ export function createBoard({ database, now = () => Date.now() }) {
     if (row === undefined) return false;
     const noteText = String(note ?? '').trim();
     if (noteText === '') return false;
-    const body = `${row.body}\n\n## 追記 (${formatNoteDate(now())})\n\n${noteText}`.trim();
+    const body =
+      `${row.body}\n\n## ${translate('board.noteHeading')} (${formatNoteDate(now())})\n\n${noteText}`.trim();
     statements.setBody.run(body, now(), id);
     return true;
   }

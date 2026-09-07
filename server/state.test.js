@@ -226,7 +226,7 @@ test('toolCompleted after turnComplete clears pendingTool -> break, not stranded
   assert.equal(employeeFor(ctx.state, key).status, 'break');
 });
 
-test('waitingForUser posts a single @社長 attention message; task/turn stay silent', () => {
+test('waitingForUser posts a single @boss attention message; task/turn stay silent', () => {
   const ctx = withClock();
 
   // A new task and its activity/turn-completion drive the office view but post
@@ -249,7 +249,7 @@ test('waitingForUser posts a single @社長 attention message; task/turn stay si
   });
   assert.equal(ctx.state.snapshot().messages.length, 0);
 
-  // waitingForUser -> the only message: a @社長 mention that rings the chime.
+  // waitingForUser -> the only message: a @boss mention that rings the chime.
   ctx.advance(1000);
   ctx.state.reportEvent('claude', '/log/c.jsonl', {
     waitingForUser: true,
@@ -259,7 +259,7 @@ test('waitingForUser posts a single @社長 attention message; task/turn stay si
   assert.equal(messages.length, 1);
   assert.equal(messages[0].authorKind, 'agent');
   assert.equal(messages[0].authorName, 'Claude (demo)');
-  assert.equal(messages[0].text, '@社長 確認をお願いします');
+  assert.equal(messages[0].text, '@boss Please take a look');
 });
 
 test('subagent sessions post no #general messages', () => {

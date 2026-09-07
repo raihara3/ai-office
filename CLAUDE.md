@@ -23,9 +23,10 @@ Electron's Node 24 needs no flag).
 - `public/office/` — layout geometry (team rooms + entrance lobby), avatar specs, miniature material/furniture/robot rendering (`miniature.js`), desk-avoiding pathfinding
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `public/markdown.js` — shared report/task Markdown subset; escapes raw HTML and allows only HTTP(S)/mailto links
+- `server/i18n.js`, `public/i18n.js` — office language (`en`/`ja`, default `en`, a saved setting): server-side `translate()` for generated text (reports, mentions, prompts, run errors — written in the language current at generation time, never rewritten), client-side dictionaries filling `data-i18n` markup (localStorage-cached for first paint)
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `settings-store.js` (user-editable office settings, e.g. office name), `registry.js` (session bindings), `loop-ownership.js` (cross-instance tick-loop guard), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `settings-store.js` (user-editable office settings, e.g. office name, language), `registry.js` (session bindings), `loop-ownership.js` (cross-instance tick-loop guard), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
 - `docs/architecture.md` — full architecture notes
 - `docs/database.md` — office.db schema (ER diagram, indexes, conventions)
 
@@ -92,10 +93,10 @@ Electron's Node 24 needs no flag).
 - Task queue: the kanban board (`board.js`; rows in the `cards` table, each
   card assigned to one resident or the user). The UI groups columns by team —
   user first, one per team (each card tagged with its assignee's avatar), then
-  a 完了 column sorted newest first by `doneAt`; unfinished execution order
+  a done column sorted newest first by `doneAt`; unfinished execution order
   is preserved. An idle `board`-role resident works the **top
   card** of its column (precheck is skipped — the card is the trigger). An ok
-  run marks the card done (it moves to 完了 and stays there until the human
+  run marks the card done (it moves to the done column and stays there until the human
   archives it explicitly — completion never deletes); a review-needed or
   failed run moves it to the user column. A `scheduled` run ending
   review-needed auto-files a card in the user column (a run ended by the

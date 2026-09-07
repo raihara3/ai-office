@@ -8,6 +8,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
+import { translate } from '../i18n.js';
 import { watchJsonl } from '../tail.js';
 
 const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent']);
@@ -106,7 +107,10 @@ export function handleLine(entry, filePath, report) {
 
     if (block.name === 'AskUserQuestion' || block.name === 'ExitPlanMode') {
       emit({
-        activity: block.name === 'ExitPlanMode' ? 'プラン確認待ち' : '質問への回答待ち',
+        activity:
+          block.name === 'ExitPlanMode'
+            ? translate('watcher.waitingForPlanApproval')
+            : translate('watcher.waitingForAnswer'),
         waitingForUser: true,
       });
     } else if (SUBAGENT_TOOL_NAMES.has(block.name)) {

@@ -23,6 +23,7 @@ import {
 } from "./runner.js";
 import { createWhiteboard } from "./whiteboard.js";
 import { isDue, nextRunAt } from "./scheduler.js";
+import { DEFAULT_LANGUAGE, setCurrentLanguage, translate } from "../i18n.js";
 
 const TICK_INTERVAL_MS = 30_000;
 const PRECHECK_TIMEOUT_MS = 30_000;
@@ -51,28 +52,24 @@ function buildPrompt(
   reports = [],
 ) {
   const sections = [
-    `あなたは AI Office の常駐チームの一員「${configuration.displayName}」です。以下のルールと役割指示に従って作業してください。`,
-    [
-      "共通ルール:",
-      "- 最後のメッセージが人間向けの報告として利用されます。日本語で簡潔にまとめてください。",
-      "- 人間による確認・レビュー・判断が必要な場合は、最終メッセージの1行目に「LEVEL: review-needed」とだけ書き、2行目以降に本文を続けてください。本文の途中や末尾には書かないでください。",
-    ].join("\n"),
-    `## 役割指示\n\n${instructions.trim()}`,
+    translate("prompt.preamble", { displayName: configuration.displayName }),
+    translate("prompt.rules"),
+    `${translate("prompt.roleInstructions")}\n\n${instructions.trim()}`,
   ];
   if (task) {
     sections.push(
-      `## 今回のタスク(カンバンボードより)\n\n### ${task.title}\n\n${task.body}`.trim(),
+      `${translate("prompt.currentTask")}\n\n### ${task.title}\n\n${task.body}`.trim(),
     );
   }
   if (reports.length > 0) {
     const history = reports
       .map((report) => `### ${report.title}\n\n${report.body}`.trim())
       .join("\n\n");
-    sections.push(`## このタスクのこれまでの報告(古い順)\n\n${history}`);
+    sections.push(`${translate("prompt.pastReports")}\n\n${history}`);
   }
   if (precheckOutput) {
     sections.push(
-      `## 事前チェックの出力\n\n\`\`\`\n${precheckOutput.trim()}\n\`\`\``,
+      `${translate("prompt.precheckOutput")}\n\n\`\`\`\n${precheckOutput.trim()}\n\`\`\``,
     );
   }
   return sections.join("\n\n");
@@ -138,6 +135,12 @@ export function createResidents({
     whiteboard ??= createWhiteboard({ database, now });
     board ??= createBoard({ database, now });
   }
+  // Seed the process-wide language before any run or watcher produces text.
+  // Test-injected settings stubs may omit getLanguage; the built-in default
+  // then stands.
+  if (typeof settingsStore.getLanguage === "function") {
+    setCurrentLanguage(settingsStore.getLanguage());
+  }
   runner ??= createRunner({ registry, now });
   // Stub-injected stores leave `database` null; those (test) setups have no
   // second instance to guard against, so ownership is always granted.
@@ -167,13 +170,13 @@ export function createResidents({
       outcome === "ok"
         ? body
         : outcome === "stopped"
-          ? `緊急停止されました。\n\n${body}`.trim()
-          : `実行が正常に終了しませんでした(${outcome})。\n\n${body}`;
+          ? `${translate("report.stoppedPrefix")}\n\n${body}`.trim()
+          : `${translate("report.abnormalEndPrefix", { outcome })}\n\n${body}`;
     // Keep the task, team and avatar visible at a glance in every inbox title.
     const teamName =
       residentStore.listTeams().find((team) => team.id === entry.teamId)?.name ??
       entry.teamId;
-    const title = `${task?.title ?? "定期実行"}@${teamName}/${configuration.displayName}`;
+    const title = `${task?.title ?? translate("report.scheduledRunTitle")}@${teamName}/${configuration.displayName}`;
     // A trigger-driven run that needs a human joins the board as a card in
     // the user column, so follow-up is tracked like any other task. Filed
     // before the report so the report can carry the card id.
@@ -183,7 +186,7 @@ export function createResidents({
     if (taskId === null && reportLevel === "review-needed" && outcome !== "stopped") {
       taskId = board.createCard({
         title,
-        body: "定期実行が要確認で終了しました。リンクされた報告を確認してください。",
+        body: translate("report.reviewCardBody"),
         assignee: USER_COLUMN,
         origin: entry.name,
         createdAt: finishedAt,
@@ -213,10 +216,12 @@ export function createResidents({
       cli: configuration.cli,
       text:
         outcome === "stopped"
-          ? "@社長 緊急停止により作業を中断しました(ホワイトボードに報告を掲示しました)"
+          ? translate("mention.stopped")
           : reportLevel === "review-needed"
-            ? "@社長 確認をお願いします(ホワイトボードに報告を掲示しました)"
-            : `@社長 ${task !== null ? `タスク「${task.title}」` : "作業"}が完了しました(ホワイトボードに報告を掲示しました)`,
+            ? translate("mention.reviewNeeded")
+            : task !== null
+              ? translate("mention.taskDone", { title: task.title })
+              : translate("mention.workDone"),
       at: finishedAt,
     });
     state.refresh();
@@ -605,6 +610,22 @@ export function createResidents({
     return saved;
   }
 
+  // Re-syncing the process-wide language on every read keeps a second server
+  // instance sharing the same office.db fresh within one snapshot poll.
+  // Test-injected settings stubs may omit getLanguage.
+  function getLanguage() {
+    const language = settingsStore.getLanguage?.() ?? DEFAULT_LANGUAGE;
+    setCurrentLanguage(language);
+    return language;
+  }
+
+  function saveLanguage(language) {
+    const saved = settingsStore.setLanguage(language);
+    setCurrentLanguage(saved);
+    state.refresh();
+    return saved;
+  }
+
   function saveBoardColumnOrder(order) {
     const saved = settingsStore.setBoardColumnOrder(order);
     state.refresh();
@@ -643,5 +664,7 @@ export function createResidents({
     saveOfficeName,
     getBoardColumnOrder: settingsStore.getBoardColumnOrder,
     saveBoardColumnOrder,
+    getLanguage,
+    saveLanguage,
   };
 }

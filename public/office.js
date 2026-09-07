@@ -19,6 +19,7 @@ import {
 } from './office/layout.js';
 import { findPath } from './office/pathfinding.js';
 import { createMiniatureRenderer } from './office/miniature.js';
+import { translate } from './i18n.js';
 
 (() => {
   const canvas = document.getElementById('office');
@@ -34,7 +35,11 @@ import { createMiniatureRenderer } from './office/miniature.js';
   // Cap the per-frame step so a long pause (e.g. a backgrounded tab, where
   // requestAnimationFrame stops firing) does not teleport avatars on return.
   const MAX_FRAME_STEP = 3;
-  const MOOD_LABELS = { inspect: '確認中', think: '考え中', work: '作業中' };
+  // Translation keys resolved at draw time so bubbles follow a language switch.
+  const MOOD_LABEL_KEYS = { inspect: 'activity.kindInspect', think: 'activity.kindThink', work: 'activity.kindWork' };
+  function moodLabel(activityKind) {
+    return translate(MOOD_LABEL_KEYS[activityKind] ?? 'activity.kindWork');
+  }
 
   let state = { employees: [] };
   // The scene geometry of the most recently drawn frame; hit-testing and
@@ -211,7 +216,7 @@ import { createMiniatureRenderer } from './office/miniature.js';
       if (employee.status === 'blocked') {
         drawBubble(desk.x, desk.y - 40, '・・・');
       } else {
-        drawBubble(desk.x, desk.y - 40, MOOD_LABELS[employee.activityKind] ?? '作業中');
+        drawBubble(desk.x, desk.y - 40, moodLabel(employee.activityKind));
       }
     }
   }
@@ -585,7 +590,7 @@ import { createMiniatureRenderer } from './office/miniature.js';
         }
         drawAvatar(spec, actor.x, actor.y, { time, walking: true });
         if (employee.isSubagent) drawWakabaMark(actor.x + 12, actor.y - 50, 11);
-        drawBubble(actor.x, actor.y - 58, '失礼します');
+        drawBubble(actor.x, actor.y - 58, translate('office.greetingLeave'));
         continue;
       }
 
@@ -601,7 +606,7 @@ import { createMiniatureRenderer } from './office/miniature.js';
       ctx.fillText(String(employee.project ?? employee.name).slice(0, 12), actor.x, actor.y + 14);
 
       if (time < actor.greetUntil) {
-        drawBubble(actor.x, actor.y - 58, 'お邪魔します');
+        drawBubble(actor.x, actor.y - 58, translate('office.greetingEnter'));
       } else if (arrived) {
         drawSubagents(employee, spec, actor, actor.x, actor.y - 18, time);
         // "blocked" (a tool call still in flight — e.g. awaiting the boss's
@@ -613,7 +618,7 @@ import { createMiniatureRenderer } from './office/miniature.js';
         } else if (employee.status === 'waiting') {
           drawBubble(actor.x, actor.y - 58, '🖐️');
         } else {
-          drawBubble(actor.x, actor.y - 58, MOOD_LABELS[employee.activityKind] ?? '作業中');
+          drawBubble(actor.x, actor.y - 58, moodLabel(employee.activityKind));
         }
       }
     }

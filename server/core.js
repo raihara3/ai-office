@@ -78,6 +78,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
       board: residents.boardCounts(),
       officeName: residents.getOfficeName(),
       boardColumnOrder: residents.getBoardColumnOrder(),
+      language: residents.getLanguage(),
       sky: skyPhaseFor(clock()),
     };
   }
@@ -131,5 +132,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     saveOfficeName: residents.saveOfficeName,
     getBoardColumnOrder: residents.getBoardColumnOrder,
     saveBoardColumnOrder: residents.saveBoardColumnOrder,
+    getLanguage: residents.getLanguage,
+    saveLanguage: residents.saveLanguage,
   };
 }

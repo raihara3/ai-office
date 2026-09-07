@@ -16,6 +16,7 @@ import { importResidents } from "./resident-import.js";
 import { createResidentStore } from "./resident-store.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createSessionRegistry } from "./registry.js";
+import { createUsageStore } from "./usage-store.js";
 import {
   createRunner,
   expandHomeDirectory,
@@ -108,6 +109,7 @@ export function createResidents({
   board = null,
   runner = null,
   loopOwnership = null,
+  usageStore = null,
 } = {}) {
   // The database only opens when a store actually needs it, so tests that
   // inject stubs never touch the disk. The one-time imports run right after
@@ -134,6 +136,7 @@ export function createResidents({
     registry ??= createSessionRegistry({ database, now });
     whiteboard ??= createWhiteboard({ database, now });
     board ??= createBoard({ database, now });
+    usageStore ??= createUsageStore({ database, now });
   }
   // Seed the process-wide language before any run or watcher produces text.
   // Test-injected settings stubs may omit getLanguage; the built-in default
@@ -160,10 +163,27 @@ export function createResidents({
   // precheck from letting the same tick pick up a board card concurrently.
   const launching = new Set();
 
-  function handleFinished(entry, { outcome, resultText }, task = null) {
+  function handleFinished(entry, { outcome, resultText, sessionFragment }, task = null) {
     const { configuration } = entry;
     activeCards.delete(entry.name);
     const finishedAt = now();
+    // The run's transcript flowed through the watchers into the state store;
+    // record its accumulated token usage for the labor-cost panel. A run whose
+    // transcript never surfaced (spawn failure, missed discovery) has nothing
+    // to record.
+    const usage = state.usageForSession?.(configuration.cli, sessionFragment ?? null);
+    if (usageStore !== null && usage !== null && usage !== undefined) {
+      try {
+        usageStore.recordRun(entry.name, {
+          startedAt: entry.state.lastRunAt ?? finishedAt,
+          finishedAt,
+          inputTokens: usage.input,
+          outputTokens: usage.output,
+        });
+      } catch (error) {
+        console.error(`resident run ${entry.name}: usage record failed: ${error.message}`);
+      }
+    }
     const { level, body } = splitReportLevel(resultText);
     const reportLevel = outcome === "ok" ? level : "review-needed";
     const reportBody =
@@ -632,12 +652,19 @@ export function createResidents({
     return saved;
   }
 
+  // Token totals per active resident for the labor-cost panel; empty when the
+  // stores are stub-injected without a usage store (tests).
+  function listUsage() {
+    return usageStore === null ? [] : usageStore.totals();
+  }
+
   return {
     start,
     stop,
     tick,
     snapshotData,
     list,
+    listUsage,
     listTeams: residentStore.listTeams,
     saveTeam,
     deleteTeam,

@@ -1,10 +1,11 @@
 # Database schema (office.db)
 
-Teams, residents, session bindings, whiteboard reports, kanban cards and
+Teams, residents, session bindings, per-run token usage, whiteboard reports,
+kanban cards and
 user-editable office settings are persisted in a single SQLite database at
 `~/Library/Application Support/ai-office/office.db`, opened by
 `server/residents/database.js` (built-in `node:sqlite`, WAL mode, schema
-versioned with `PRAGMA user_version` — currently **6**).
+versioned with `PRAGMA user_version` — currently **8**).
 
 ## ER diagram
 
@@ -12,6 +13,7 @@ versioned with `PRAGMA user_version` — currently **6**).
 erDiagram
     teams ||--o{ residents : "residents.team_id (1 team : N residents)"
     residents ||--o{ session_bindings : "session_bindings.resident_id"
+    residents ||--o{ run_usage : "run_usage.resident_id"
     residents |o..o{ cards : "cards.assignee_id / origin_id (NULL = the human)"
     residents ||--o{ reports : "reports.resident_id"
     cards |o..o{ reports : "reports.task → cards.id (soft link, no FK)"
@@ -51,6 +53,15 @@ erDiagram
         TEXT    fragment    PK "Claude session uuid, or a discovered transcript path"
         TEXT    resident_id FK "NOT NULL REFERENCES residents(id)"
         INTEGER at             "NOT NULL; newest binding wins on lookup"
+    }
+
+    run_usage {
+        TEXT    id            PK "crypto.randomUUID()"
+        TEXT    resident_id   FK "NOT NULL REFERENCES residents(id)"
+        INTEGER started_at    "NOT NULL; epoch ms"
+        INTEGER finished_at   "NOT NULL"
+        INTEGER input_tokens  "NOT NULL; includes cached prompt tokens on every CLI"
+        INTEGER output_tokens "NOT NULL"
     }
 
     cards {
@@ -133,6 +144,7 @@ erDiagram
 | `residents_active_name` | `UNIQUE (name) WHERE archived_at IS NULL` | name-based API identity |
 | `residents_active_team` | `(team_id) WHERE archived_at IS NULL` | team joins |
 | `session_bindings_at` | `(at DESC)` | newest-first binding lookup |
+| `run_usage_resident` | `(resident_id, finished_at DESC)` | per-resident usage totals, recent-window sums |
 | `cards_column` | `(assignee_id, position) WHERE archived_at IS NULL` | per-column listing, top-card lookup |
 | `reports_active` | `(created_at DESC) WHERE archived_at IS NULL` | newest-first report listing |
 
@@ -142,6 +154,10 @@ erDiagram
   listings and counts filter to active rows and cap at 100. **One sanctioned
   exception**: `session_bindings` prunes past 200 rows with DELETE — bindings
   are an operational cache (transcripts expire after ~3 days), not user data.
+  `run_usage` sits outside the convention from the other side: an append-only
+  log with no `archived_at` — rows are inserted once and never updated,
+  archived or deleted; its totals scope to **active** residents instead (an
+  archived resident's rows just wait for it to return).
 - **Done is not archived**: `cards.done_at` moves a finished card to the
   board's done column without removing it. It keeps naming its resident but
   drops out of counts and the top-card work queue; the human archives it

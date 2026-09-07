@@ -182,6 +182,21 @@ export const MIGRATIONS = [
   ALTER TABLE residents ADD COLUMN role TEXT NOT NULL DEFAULT 'board'
     CHECK (role IN ('board', 'scheduled'));
   `,
+  // Version 8: token usage per resident run, one append-only row per finished
+  // run, feeding the labor-cost panel. An append-only log (never updated,
+  // never archived) so per-period aggregates stay possible later; input
+  // counts include cached prompt tokens on every CLI.
+  `
+  CREATE TABLE run_usage (
+    id            TEXT PRIMARY KEY,
+    resident_id   TEXT NOT NULL REFERENCES residents(id),
+    started_at    INTEGER NOT NULL,
+    finished_at   INTEGER NOT NULL,
+    input_tokens  INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL
+  );
+  CREATE INDEX run_usage_resident ON run_usage (resident_id, finished_at DESC);
+  `,
 ];
 
 export function openDatabase({ location }) {

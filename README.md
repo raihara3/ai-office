@@ -29,8 +29,10 @@ your inbox.
   anything that needs your judgment is flagged for review.
 - **Keeps you in the loop with a kanban board and an inbox.** You file task
   cards, residents pick them up, finished cards move to Done, and reports
-  link back to their cards. Everything is stored locally in a single SQLite
-  file.
+  link back to their cards. macOS notifications (with a menu-bar badge in the
+  desktop app) ping you when a session is waiting on you or a report needs
+  review, and a Payroll panel tracks each resident's token usage. Everything
+  is stored locally in a single SQLite file.
 
 ## Requirements
 
@@ -78,7 +80,7 @@ time, right-click the app and choose "Open" to pass Gatekeeper.
 ### Tests
 
 ```sh
-npm test          # node --test, ~150 tests, no build step
+npm test          # node --test, ~160 tests, no build step
 ```
 
 ## Setting up your resident team

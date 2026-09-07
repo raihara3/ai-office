@@ -2,10 +2,12 @@
 // and starts listening. `startServer` is also the embedding contract used by
 // the Electron main process (see electron/main.js).
 
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCore } from './core.js';
 import { createHttpServer } from './http.js';
+import { createNotificationWatcher } from './notifications.js';
 
 const DEFAULT_PORT = Number(process.env.PORT ?? 4680);
 const PUBLIC_DIRECTORY = path.join(
@@ -61,13 +63,47 @@ export function startServer({ port = DEFAULT_PORT, publicDirectory = PUBLIC_DIRE
   return handle;
 }
 
+// macOS Notification Center delivery for the standalone server. The Electron
+// app wires its own native notifications instead (electron/main.js), and it
+// imports this module rather than running it directly, so the default-port
+// setups never double-fire. Known limitation: a standalone server forced onto
+// another port (PORT=...) next to the app runs a second core, and both then
+// notify — the loop-ownership guard covers the resident tick loop only.
+function notifyViaNotificationCenter({ title, body }) {
+  // Backslashes before quotes, so an escape cannot be un-escaped. Control
+  // characters (a directory name may legally contain a newline) would break
+  // AppleScript compilation and silently drop the notification, so they are
+  // flattened to spaces.
+  const escapeForAppleScript = (text) =>
+    String(text)
+      .replace(/[\p{Cc}]/gu, ' ')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
+  execFile(
+    'osascript',
+    ['-e', `display notification "${escapeForAppleScript(body)}" with title "${escapeForAppleScript(title)}"`],
+    () => {
+      // Best-effort: a missing osascript (non-macOS) simply drops the
+      // notification.
+    }
+  );
+}
+
 // Run directly (`node server/index.js`): start, then log the URL or the error.
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   const embedded = startServer();
   embedded.ready
-    .then(() => console.log(`ai-office running at ${embedded.url}`))
+    .then(() => {
+      console.log(`ai-office running at ${embedded.url}`);
+      if (process.platform === 'darwin') {
+        createNotificationWatcher({
+          subscribe: embedded.core.subscribe,
+          notify: notifyViaNotificationCenter,
+        });
+      }
+    })
     .catch((error) => {
       console.error(`ai-office failed to start: ${error.message}`);
       process.exit(1);

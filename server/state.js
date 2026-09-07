@@ -103,6 +103,8 @@ function createSession(key, cli, filePath, eventAt) {
     pendingTool: false,
     isSubagent: false,
     clientKind: null,
+    tokenUsage: { input: 0, output: 0 },
+    seenTokenKeys: new Set(),
   };
 }
 
@@ -184,6 +186,30 @@ function applySubagents(session, observation, eventAt) {
       (s) => s.key !== observation.subagentEnded.key
     );
   }
+}
+
+// Token usage comes in two shapes: running totals for the whole session
+// (Codex — replace) and per-message deltas (Claude/Gemini — accumulate).
+// Transcript lines repeat the same message (multi-block writes, whole-array
+// re-sends), so deltas carry a key and each key counts only once. The seen-key
+// set is bounded; evicting old keys is safe because repeats of a message
+// arrive close together, never hundreds of messages later.
+const MAX_SEEN_TOKEN_KEYS = 500;
+
+function applyTokens(session, observation) {
+  const tokens = observation.tokens;
+  if (!tokens) return;
+  if (tokens.total === true) {
+    session.tokenUsage = { input: tokens.input, output: tokens.output };
+    return;
+  }
+  if (session.seenTokenKeys.has(tokens.key)) return;
+  session.seenTokenKeys.add(tokens.key);
+  if (session.seenTokenKeys.size > MAX_SEEN_TOKEN_KEYS) {
+    session.seenTokenKeys.delete(session.seenTokenKeys.values().next().value);
+  }
+  session.tokenUsage.input += tokens.input;
+  session.tokenUsage.output += tokens.output;
 }
 
 function applyMcpCall(session, observation, eventAt) {
@@ -281,6 +307,7 @@ export function createState({
     applyTurnState(session, observation, eventAt);
     applySubagents(session, observation, eventAt);
     applyMcpCall(session, observation, eventAt);
+    applyTokens(session, observation);
 
     if (!session.isSubagent && !isResidentFile(session.filePath)) {
       updateGeneralChannel(session, observation, eventAt, before);
@@ -323,11 +350,35 @@ export function createState({
     return { at: currentTime, employees: list, messages };
   }
 
+  // Accumulated token usage of the session(s) a resident run left behind, or
+  // null before its transcript produced any event. The fragment matches like
+  // the session registry: a discovered transcript path (Codex/Gemini) must
+  // match exactly, a Claude session id matches as a path substring. A Claude
+  // session id also appears in the paths of the run's background-subagent
+  // transcripts (<session-id>/subagents/agent-*.jsonl); their usage is part of
+  // the run, so every match is summed rather than picking one in Map order.
+  function usageForSession(cli, fragment) {
+    if (!fragment) return null;
+    let usage = null;
+    for (const session of sessions.values()) {
+      if (session.cli !== cli) continue;
+      const matches = fragment.includes('/')
+        ? session.filePath === fragment
+        : session.filePath.includes(fragment);
+      if (!matches) continue;
+      usage ??= { input: 0, output: 0 };
+      usage.input += session.tokenUsage.input;
+      usage.output += session.tokenUsage.output;
+    }
+    return usage;
+  }
+
   return {
     reportEvent,
     postMessage,
     snapshot,
     onChange,
+    usageForSession,
     // Force a fresh snapshot broadcast; the core calls this on a timer so a
     // working→break flip (driven purely by elapsed time) still reaches clients.
     refresh: emit,

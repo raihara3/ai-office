@@ -190,13 +190,16 @@ export function createRunner({
 
   // Poll for the transcript the spawned CLI opened and bind it. Stops once
   // found, when attempts run out, or when the run already finished.
-  function bindDiscoveredSession(resident, startedAt) {
+  // `onFound` also hands the path to the run so its final report can look the
+  // session's token usage up.
+  function bindDiscoveredSession(resident, startedAt, onFound) {
     let attempts = 0;
     const poll = setInterval(() => {
       attempts += 1;
       const sessionFile = findNewSessionFile(resident.cli, startedAt - SESSION_FILE_POLL_INTERVAL_MS);
       if (sessionFile !== null) {
         registry.bind(resident.name, sessionFile);
+        onFound(sessionFile);
         clearInterval(poll);
       } else if (attempts >= SESSION_FILE_POLL_ATTEMPTS || !running.has(resident.name)) {
         clearInterval(poll);
@@ -206,8 +209,10 @@ export function createRunner({
   }
 
   // Starts a headless run; returns false when this resident is already
-  // running. `onFinished({outcome, resultText})` fires exactly once with
-  // outcome 'ok' | 'error' | 'timeout' | 'stopped'.
+  // running. `onFinished({outcome, resultText, sessionFragment})` fires
+  // exactly once with outcome 'ok' | 'error' | 'timeout' | 'stopped';
+  // sessionFragment identifies the run's transcript for the state store's
+  // token-usage lookup (null when discovery never found one).
   function run(resident, { prompt, onFinished }) {
     if (running.has(resident.name)) return false;
     const startedAt = now();
@@ -254,8 +259,15 @@ export function createRunner({
     }
     running.set(resident.name, child);
 
-    if (resident.cli === 'claude') registry.bind(resident.name, sessionId);
-    else bindDiscoveredSession(resident, startedAt);
+    let sessionFragment = null;
+    if (resident.cli === 'claude') {
+      registry.bind(resident.name, sessionId);
+      sessionFragment = sessionId;
+    } else {
+      bindDiscoveredSession(resident, startedAt, (sessionFile) => {
+        sessionFragment = sessionFile;
+      });
+    }
 
     let stdout = '';
     let stderr = '';
@@ -289,7 +301,7 @@ export function createRunner({
       // finish() fires from child-process event handlers, where an exception
       // would escalate to an uncaughtException and take the server down.
       try {
-        onFinished({ outcome, resultText });
+        onFinished({ outcome, resultText, sessionFragment });
       } catch (error) {
         console.error(`resident run ${resident.name}: finish handler failed: ${error.message}`);
       }

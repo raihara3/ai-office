@@ -1,13 +1,70 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, nativeImage, Notification, Tray } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { startServer } from '../server/index.js'
+import { createNotificationWatcher } from '../server/notifications.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Reference to the embedded Node server ({ server, port, url, core, close }).
 let embeddedServer = null
 let mainWindow = null
+let tray = null
+
+// The brand's pixel building as a menu-bar template image (black + alpha, so
+// macOS recolors it for light/dark menu bars), pre-rendered at 1x and 2x.
+// Regenerate with a scaled copy of public/index.html's #brand-logo grid if the
+// logo ever changes.
+const TRAY_ICON_1X =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAKUlEQVR42mNgoCH4j4Zpb8B/EjHtDEDm42LT1oBRLww2LxAjRz0DyAIA6wRvkSQi68cAAAAASUVORK5CYII='
+const TRAY_ICON_2X =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAARElEQVR42mNgGAWkg/8E8KgDhr4D/tMYjzpg6DkAlzyp4qMOGLoOGM0Fo2lg1AGjuWA0DYw6gNjERPdcMOoAmjlgZAEAkhW+UA2E3aIAAAAASUVORK5CYII='
+
+function createTrayIcon() {
+  const icon = nativeImage.createEmpty()
+  icon.addRepresentation({ scaleFactor: 1, dataURL: TRAY_ICON_1X })
+  icon.addRepresentation({ scaleFactor: 2, dataURL: TRAY_ICON_2X })
+  icon.setTemplateImage(true)
+  return icon
+}
+
+function focusMainWindow() {
+  if (mainWindow === null) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+// Menu-bar presence and native notifications for the moments the office needs
+// the human (a session waiting for an answer or stuck on a tool call, a
+// review-needed report). Only wired when this process owns a core — when the
+// app merely attached to an already-running standalone server, that server's
+// own osascript delivery covers notifications and a second set here would
+// duplicate them. Known limitation: a standalone server forced onto another
+// port (PORT=...) next to this app runs a second core, and both then notify —
+// the loop-ownership guard covers the resident tick loop only.
+function startNotifications(core) {
+  tray = new Tray(createTrayIcon())
+  tray.setToolTip('AI Office')
+  tray.on('click', focusMainWindow)
+  createNotificationWatcher({
+    subscribe: core.subscribe,
+    notify: ({ title, body }) => {
+      if (!Notification.isSupported()) return
+      const notification = new Notification({ title, body })
+      notification.on('click', focusMainWindow)
+      notification.show()
+    },
+    updateBadge: (count) => {
+      const label = count > 0 ? String(count) : ''
+      tray.setTitle(label)
+      if (app.dock) app.dock.setBadge(label)
+    }
+  })
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -77,6 +134,7 @@ if (!app.requestSingleInstanceLock()) {
       return
     }
     createWindow()
+    if (embeddedServer.core) startNotifications(embeddedServer.core)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

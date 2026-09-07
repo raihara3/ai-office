@@ -88,6 +88,11 @@
         });
       },
 
+      // Token usage per resident for the labor-cost panel.
+      async listUsage() {
+        return (await fetch('/api/usage')).json();
+      },
+
       // The whiteboard: full reports (bodies included) and read receipts.
       async listReports() {
         return (await fetch('/api/whiteboard')).json();

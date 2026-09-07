@@ -44,6 +44,7 @@
       <symbol id="icon-undo" viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></symbol>
       <symbol id="icon-fit" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></symbol>
       <symbol id="icon-task" viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></symbol>
+      <symbol id="icon-wallet" viewBox="0 0 24 24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></symbol>
     </defs>
   </svg>
   <main>
@@ -70,6 +71,7 @@
         <button type="button" class="view-tab" data-view="inbox" role="tab" aria-selected="false" data-i18n="tabs.inbox">Inbox<span id="inbox-tab-badge" class="tab-badge" hidden></span></button>
       </nav>
       <div id="appbar-actions">
+        <button type="button" id="usage-open" title="Token usage per resident" data-i18n-title="appbar.usageTitle"><svg class="icon" aria-hidden="true"><use href="#icon-wallet"/></svg><span data-i18n="appbar.usage">Payroll</span></button>
         <button type="button" id="settings-open" title="Change office settings such as the office name" data-i18n-title="appbar.settingsTitle"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span data-i18n="appbar.settings">Settings</span></button>
         <button type="button" id="team-add" title="Add a new team" data-i18n-title="appbar.teamTitle"><svg class="icon" aria-hidden="true"><use href="#icon-group-add"/></svg><span data-i18n="appbar.team">Team</span></button>
         <button type="button" id="card-add" class="primary-button"><svg class="icon" aria-hidden="true"><use href="#icon-add"/></svg><span data-i18n="appbar.task">Task</span></button>
@@ -252,6 +254,10 @@
           <button type="button" id="team-delete" class="danger-button"><svg class="icon" aria-hidden="true"><use href="#icon-delete"/></svg><span data-i18n="teamForm.delete">Delete team</span></button>
         </div>
       </form>
+      <div id="usage-panel" class="drawer-section" hidden>
+        <p id="usage-caption" data-i18n="usage.caption">Token usage per resident (input / output). Cached prompt tokens count as input.</p>
+        <div id="usage-list"></div>
+      </div>
       <form id="settings-form" class="drawer-section" hidden>
         <label data-i18n="settings.officeName">Office name (up to 10 characters)
           <input id="office-name" required maxlength="10" placeholder="AI OFFICE">

@@ -185,7 +185,7 @@ import { renderMarkdown } from './markdown.js';
 
   const drawerElement = document.getElementById('drawer');
   const drawerTitleElement = document.getElementById('drawer-title');
-  const DRAWER_SECTION_IDS = ['card-form', 'activity-wrap', 'resident-form', 'team-form', 'settings-form'];
+  const DRAWER_SECTION_IDS = ['card-form', 'activity-wrap', 'resident-form', 'team-form', 'settings-form', 'usage-panel'];
   // Every opener (board card, canvas seat/desk/label, header add button) runs
   // inside a click that then bubbles to the outside-click closer below. This
   // flag lets that opening click through so it does not immediately re-close
@@ -1597,6 +1597,60 @@ import { renderMarkdown } from './markdown.js';
       showTeamError(error.message);
     }
   });
+
+  // --- labor-cost panel (drawer) ------------------------------------------
+  // Token usage per resident, fetched on open: unlike the activity view this
+  // reads history (past runs), so a snapshot re-render is not needed.
+
+  function formatTokenCount(count) {
+    if (count >= 1e9) return `${(count / 1e9).toFixed(1)}B`;
+    if (count >= 1e6) return `${(count / 1e6).toFixed(1)}M`;
+    if (count >= 1e3) return `${(count / 1e3).toFixed(1)}k`;
+    return String(count);
+  }
+
+  async function openUsagePanel() {
+    const listElement = document.getElementById('usage-list');
+    listElement.innerHTML = `<div class="report-empty">${escapeHtml(translate('inbox.loading'))}</div>`;
+    openDrawer('usage-panel', translate('usage.title'));
+    let usage = [];
+    try {
+      usage = (await client.listUsage()).usage ?? [];
+    } catch {
+      listElement.innerHTML = `<div class="report-empty">${escapeHtml(translate('usage.loadFailed'))}</div>`;
+      return;
+    }
+    if (usage.length === 0) {
+      listElement.innerHTML = `<div class="report-empty">${escapeHtml(translate('usage.empty'))}</div>`;
+      return;
+    }
+    const index = residentIndex();
+    const rows = usage
+      .map((entry) => {
+        const meta = index.get(entry.resident);
+        const label = meta?.label ?? entry.resident;
+        const color = meta?.color ?? USER_COLOR;
+        const pair = (input, output) =>
+          `${formatTokenCount(input)} / ${formatTokenCount(output)}`;
+        return `<tr>
+          <th scope="row"><span class="usage-avatar" style="background: ${escapeHtml(color)}"></span>${escapeHtml(label)}</th>
+          <td>${escapeHtml(pair(entry.recentInputTokens, entry.recentOutputTokens))}</td>
+          <td>${escapeHtml(pair(entry.inputTokens, entry.outputTokens))}</td>
+          <td>${escapeHtml(String(entry.runCount))}</td>
+        </tr>`;
+      })
+      .join('');
+    listElement.innerHTML = `<table class="usage-table">
+      <thead><tr>
+        <th scope="col">${escapeHtml(translate('usage.resident'))}</th>
+        <th scope="col">${escapeHtml(translate('usage.recent'))}</th>
+        <th scope="col">${escapeHtml(translate('usage.total'))}</th>
+        <th scope="col">${escapeHtml(translate('usage.runs'))}</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+  document.getElementById('usage-open').addEventListener('click', openUsagePanel);
 
   // --- office settings (drawer) -------------------------------------------
 

@@ -144,6 +144,18 @@ export function handleLine(entry, filePath, report) {
         // avatar as a blocked entrance-lobby visitor.
         observation.toolCompleted = true;
         break;
+      case 'token_count': {
+        // Running totals for the whole session (input already includes cached
+        // tokens), so the state store replaces rather than accumulates.
+        const totals = payload.info?.total_token_usage;
+        if (!totals) return;
+        observation.tokens = {
+          total: true,
+          input: totals.input_tokens ?? 0,
+          output: totals.output_tokens ?? 0,
+        };
+        break;
+      }
       default:
         // Approval prompts and input requests block on the user.
         if (/approval_request|user_input|elicitation/.test(payload.type ?? '')) {

@@ -264,6 +264,12 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
+    // Token usage per resident for the labor-cost panel.
+    if (urlPath === '/api/usage') {
+      sendJson(response, 200, { usage: core.listUsage() });
+      return;
+    }
+
     // The whiteboard: reports from residents to the human, plus read state.
     if (urlPath === '/api/whiteboard') {
       sendJson(response, 200, { reports: core.listReports() });

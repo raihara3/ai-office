@@ -371,3 +371,56 @@ test('activityLog stocks the flow of a turn, resets on a new task, empties on br
   assert.equal(employee.status, 'break');
   assert.deepEqual(employee.activityLog, []);
 });
+
+test('token usage: deltas accumulate once per key, totals replace, usageForSession matches', () => {
+  const ctx = withClock();
+  const filePath = '/home/user/.claude/projects/foo/abc-123-def.jsonl';
+
+  // Per-message deltas (Claude/Gemini): the same key counts only once even
+  // when the transcript repeats the message line per content block.
+  ctx.state.reportEvent('claude', filePath, {
+    tokens: { key: 'msg-1', input: 100, output: 10 },
+    timestamp: ctx.value,
+  });
+  ctx.state.reportEvent('claude', filePath, {
+    tokens: { key: 'msg-1', input: 100, output: 10 },
+    timestamp: ctx.value,
+  });
+  ctx.state.reportEvent('claude', filePath, {
+    tokens: { key: 'msg-2', input: 50, output: 5 },
+    timestamp: ctx.value,
+  });
+  // A Claude session id fragment matches as a path substring, and the run's
+  // background-subagent transcripts (whose paths contain the same session id)
+  // are summed into the run's usage.
+  assert.deepEqual(ctx.state.usageForSession('claude', 'abc-123-def'), {
+    input: 150,
+    output: 15,
+  });
+  ctx.state.reportEvent(
+    'claude',
+    '/home/user/.claude/projects/foo/abc-123-def/subagents/agent-1.jsonl',
+    { tokens: { key: 'msg-1', input: 30, output: 3 }, timestamp: ctx.value }
+  );
+  assert.deepEqual(ctx.state.usageForSession('claude', 'abc-123-def'), {
+    input: 180,
+    output: 18,
+  });
+
+  // Running totals (Codex) replace instead of accumulating.
+  const codexPath = '/home/user/.codex/sessions/2026/01/01/rollout-x.jsonl';
+  ctx.state.reportEvent('codex', codexPath, {
+    tokens: { total: true, input: 1_000, output: 20 },
+    timestamp: ctx.value,
+  });
+  ctx.state.reportEvent('codex', codexPath, {
+    tokens: { total: true, input: 2_000, output: 45 },
+    timestamp: ctx.value,
+  });
+  // A discovered transcript path must match exactly, and the lookup is
+  // per-CLI.
+  assert.deepEqual(ctx.state.usageForSession('codex', codexPath), { input: 2_000, output: 45 });
+  assert.equal(ctx.state.usageForSession('claude', codexPath), null);
+  assert.equal(ctx.state.usageForSession('codex', '/other/rollout-x.jsonl'), null);
+  assert.equal(ctx.state.usageForSession('codex', null), null);
+});

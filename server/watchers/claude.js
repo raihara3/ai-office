@@ -93,6 +93,22 @@ export function handleLine(entry, filePath, report) {
   // assistant line
   const content = entry.message?.content;
   if (!Array.isArray(content)) return;
+  // API usage rides on every assistant line. A multi-block message repeats the
+  // same usage on each of its lines, so the message id keys deduplication in
+  // the state store. Cache reads/writes are prompt tokens the API processed,
+  // so they count as input — matching Codex/Gemini, whose input totals also
+  // include cached tokens.
+  const usage = entry.message?.usage;
+  if (usage && entry.message?.id) {
+    observation.tokens = {
+      key: entry.message.id,
+      input:
+        (usage.input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0) +
+        (usage.cache_read_input_tokens ?? 0),
+      output: usage.output_tokens ?? 0,
+    };
+  }
   const stopReason = entry.message?.stop_reason;
   let sawToolUse = false;
 
@@ -141,6 +157,10 @@ export function handleLine(entry, filePath, report) {
   if (!sawToolUse && !sidechain && stopReason !== 'tool_use') {
     // A plain text answer usually ends the turn.
     emit({ turnComplete: true });
+  } else if (!sawToolUse && observation.tokens) {
+    // No block produced an emit (e.g. a sidechain text line), but the line
+    // still carries usage that must reach the state store.
+    emit();
   }
 }
 

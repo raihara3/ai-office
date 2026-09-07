@@ -115,6 +115,19 @@ export function handleLine(entry, filePath, report) {
     }
 
     // message.type === 'gemini'
+    // Per-message usage. Older CLI versions re-send the whole messages array
+    // in {"$set"} patches, so the message id keys deduplication in the state
+    // store. thoughts/tool tokens are model output alongside the answer text.
+    if (message.tokens && typeof message.tokens === 'object') {
+      observation.tokens = {
+        key: String(message.id ?? timestamp),
+        input: message.tokens.input ?? 0,
+        output:
+          (message.tokens.output ?? 0) +
+          (message.tokens.thoughts ?? 0) +
+          (message.tokens.tool ?? 0),
+      };
+    }
     const functionCalls = [];
     collectFunctionCalls(message.content, functionCalls);
     // Since CLI 0.54 tool calls no longer appear inside `content` (then an

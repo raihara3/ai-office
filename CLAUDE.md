@@ -14,7 +14,7 @@ Electron's Node 24 needs no flag).
 ## Commands
 
 - `npm start` — run the server at http://localhost:4680
-- `npm test` — run the full test suite (node:test, ~140 tests, no build step)
+- `npm test` — run the full test suite (node:test, ~160 tests, no build step)
 - `npm run electron` — desktop app embedding the same server
 
 ## Repository map
@@ -23,10 +23,11 @@ Electron's Node 24 needs no flag).
 - `public/office/` — layout geometry (team rooms + entrance lobby), avatar specs, miniature material/furniture/robot rendering (`miniature.js`), desk-avoiding pathfinding
 - `public/app.js`, `public/office-client.js` — UI shell and server polling
 - `public/markdown.js` — shared report/task Markdown subset; escapes raw HTML and allows only HTTP(S)/mailto links
-- `server/i18n.js`, `public/i18n.js` — office language (`en`/`ja`, default `en`, a saved setting): server-side `translate()` for generated text (reports, mentions, prompts, run errors — written in the language current at generation time, never rewritten), client-side dictionaries filling `data-i18n` markup (localStorage-cached for first paint)
+- `server/i18n.js`, `public/i18n.js` — office language (`en`/`ja`, default `en`, a saved setting): server-side `translate()` for generated text (reports, mentions, prompts, run errors, OS notifications — written in the language current at generation time, never rewritten), client-side dictionaries filling `data-i18n` markup (localStorage-cached for first paint)
 - `server/core.js`, `server/state.js` — session state assembled from CLI transcripts
+- `server/notifications.js` — OS-notification watcher over core snapshots: notifies when an interactive (non-resident, non-subagent) session newly enters `waiting`/`blocked` (edge-triggered per episode) or the unread review-needed count rises, and reports an attention badge count; delivery is the embedder's (`npm start` on macOS → osascript, Electron → native notifications + menu-bar tray/dock badge; an Electron merely attached to a running standalone server wires nothing, so they never double-fire)
 - `server/watchers/` — transcript parsers per CLI (claude / codex / gemini)
-- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `settings-store.js` (user-editable office settings, e.g. office name, language), `registry.js` (session bindings), `loop-ownership.js` (cross-instance tick-loop guard), `whiteboard.js` (reports), `board.js` (kanban task cards), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
+- `server/residents/` — resident team: `scheduler.js` (trigger timing), `runner.js` (headless CLI spawn), `residents.js` (tick loop and prompt), `database.js` (office.db opener/migrations), `resident-store.js` (residents/teams tables), `settings-store.js` (user-editable office settings, e.g. office name, language), `registry.js` (session bindings), `loop-ownership.js` (cross-instance tick-loop guard), `whiteboard.js` (reports), `board.js` (kanban task cards), `usage-store.js` (per-run token usage, `run_usage` table), `resident-import.js` / `legacy-import.js` (one-time file-store imports)
 - `docs/architecture.md` — full architecture notes
 - `docs/database.md` — office.db schema (ER diagram, indexes, conventions)
 
@@ -79,6 +80,12 @@ Electron's Node 24 needs no flag).
   on its first line flags it for a human. A report stays on the board until
   the human archives it or the card it links to is archived — archiving a
   card archives its un-pinned reports too (pinned reports stay).
+- Every finished run also records its token usage (parsed from the run's
+  transcript by the watchers; input includes cached prompt tokens) as one
+  append-only `run_usage` row — never updated, archived or deleted. The
+  appbar **Payroll** panel (`GET /api/usage`) shows per-active-resident
+  input/output totals, last-30-days sums and run counts in roster order —
+  tokens only, no cost conversion.
 - Everything the resident team persists lives in `<dataDir>/office.db`
   (opened by `database.js`): resident configuration + instructions + run
   state (`residents` table, edited in-app), teams (`teams`, 1:N — every

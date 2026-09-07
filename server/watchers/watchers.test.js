@@ -414,3 +414,94 @@ test('gemini', async (t) => {
     assert.equal(calls[0].observation.activityKind, 'think');
   });
 });
+
+test('token usage', async (t) => {
+  await t.test('claude: assistant usage rides every emit, keyed by message id', () => {
+    const { report, calls } = makeReport();
+    claudeHandleLine(
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg-1',
+          usage: {
+            input_tokens: 2,
+            cache_creation_input_tokens: 30,
+            cache_read_input_tokens: 100,
+            output_tokens: 7,
+          },
+          content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }],
+        },
+      },
+      '/home/user/.claude/projects/foo/session.jsonl',
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].observation.tokens, { key: 'msg-1', input: 132, output: 7 });
+  });
+
+  await t.test('claude: a sidechain text line still emits its usage', () => {
+    const { report, calls } = makeReport();
+    claudeHandleLine(
+      {
+        type: 'assistant',
+        isSidechain: true,
+        message: {
+          id: 'msg-2',
+          usage: { input_tokens: 5, output_tokens: 3 },
+          content: [{ type: 'text', text: 'subagent answer' }],
+        },
+      },
+      '/home/user/.claude/projects/foo/session.jsonl',
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].observation.tokens, { key: 'msg-2', input: 5, output: 3 });
+    assert.equal(calls[0].observation.turnComplete, undefined);
+  });
+
+  await t.test('codex: token_count carries running totals', () => {
+    const { report, calls } = makeReport();
+    codexHandleLine(
+      {
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 61_284, cached_input_tokens: 45_312, output_tokens: 433 },
+          },
+        },
+      },
+      '/home/user/.codex/sessions/2026/01/01/rollout-x.jsonl',
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].observation.tokens, { total: true, input: 61_284, output: 433 });
+    // A token_count without totals is not an observation at all.
+    const empty = makeReport();
+    codexHandleLine(
+      { type: 'event_msg', payload: { type: 'token_count' } },
+      '/home/user/.codex/sessions/2026/01/01/rollout-x.jsonl',
+      empty.report,
+    );
+    assert.equal(empty.calls.length, 0);
+  });
+
+  await t.test('gemini: per-message tokens keyed by message id, thoughts count as output', () => {
+    const geminiPath = ['/home/user/.gemini/tmp/myproject', 'chats', 'session-1.jsonl'].join(
+      path.sep,
+    );
+    const { report, calls } = makeReport();
+    geminiHandleLine(
+      {
+        type: 'gemini',
+        id: 'gem-1',
+        content: 'answer',
+        tokens: { input: 12_064, output: 306, cached: 0, thoughts: 996, tool: 0, total: 13_366 },
+      },
+      geminiPath,
+      report,
+    );
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].observation.tokens, { key: 'gem-1', input: 12_064, output: 1_302 });
+  });
+});

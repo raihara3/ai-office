@@ -49,7 +49,9 @@ server/                バックエンド(npm 依存なし。永続化は node:s
   state.js             createState() ストア, deriveStatus()(純粋), #general ログ
   state.test.js        ストア + ステータス導出のテスト
   tail.js              汎用 JSONL 追従(fs.watch + 定期再スキャンのフォールバック)
-  i18n.js              サーバ生成テキスト(報告・メンション・プロンプト・実行エラー)の辞書 + translate()(オフィス言語設定、既定 en)
+  i18n.js              サーバ生成テキスト(報告・メンション・プロンプト・実行エラー・OS 通知)の辞書 + translate()(オフィス言語設定、既定 en)
+  notifications.js     OS 通知アダプタ: core スナップショットを監視し、注入された配信先へ通知とバッジ数を渡す
+  notifications.test.js 通知のエッジ検出・バッジ数・初回スナップショットのテスト
   residents/           常駐チーム(スケジュール実行される常駐エージェント)
     residents.js       オーケストレータ: tick ループ + precheck + 報告生成
     resident-store.js  residents / teams テーブルの読み書きと検証
@@ -62,6 +64,8 @@ server/                バックエンド(npm 依存なし。永続化は node:s
     registry.test.js   フラグメント照合・上限・アーカイブ済み解決のテスト
     runner.js          ヘッドレス CLI 実行(コマンド構築 + タイムアウト)
     runner.test.js     コマンド構築・出力パースのテスト
+    usage-store.js     実行ごとのトークン使用量(run_usage テーブル)の記録と集計
+    usage-store.test.js 記録・集計・名簿順・アーカイブ済み常駐の扱いのテスト
     database.js        office.db のオープンとスキーマ移行(node:sqlite / WAL)
     database.test.js   スキーマ移行・再オープン・新版 DB 拒否のテスト
     whiteboard.js      ホワイトボード(reports テーブルの報告 + 既読・ピン管理)
@@ -112,13 +116,14 @@ Electron ビルドでは `package.json` の `!**/*.test.js` によって配布�
 エントリポイント。`public/` ディレクトリを解決し、core と HTTP/SSE サーバを
 生成して待ち受けを開始します(デフォルトポート `4680`、`PORT` で上書き可能)。
 `startServer` を export し、これは Electron メインプロセスが呼び出す埋め込み契約
-でもあります。
+でもあります。macOS で直接起動された場合(`npm start`)は `notifications.js` の
+ウォッチャを配線し、通知を osascript(通知センター)で配信します。
 
 ### `core.js`
 
 state ストア・3 つの CLI watcher・常駐チームを、トランスポート
 非依存の 1 つのハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、
-常駐員 CRUD / 実行、
+常駐員 CRUD / 実行、トークン使用量集計(`listUsage`)、
 ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
 オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
 その席をチームルームの机に配置)、常駐員名簿とホワイトボードの未読数と
@@ -132,7 +137,7 @@ HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態ス�
 Server-Sent Events(`/events`)でストリームし、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
 `POST /api/residents/:name/run`/`stop`)、チーム管理(`GET`/`POST /api/teams`、
-`PUT`/`DELETE /api/teams/:id`)、ホワイトボード(`GET /api/whiteboard`、
+`PUT`/`DELETE /api/teams/:id`)、トークン使用量(`GET /api/usage`)、ホワイトボード(`GET /api/whiteboard`、
 `POST /api/whiteboard/read`、`POST /api/whiteboard/unread`、`POST /api/whiteboard/archive`)、カンバンボード
 (`GET /api/board`、`POST /api/board/create`/`move`/`done`/`archive`/`edit`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
@@ -146,7 +151,8 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 
 - `createSession` — 新規セッションの雛形。
 - `applyTiming` / `applyFields` / `applyActivityLog` / `applyTurnState` /
-  `applySubagents` / `applyMcpCall` — observation の 1 側面を変異(mutation)で
+  `applySubagents` / `applyMcpCall` / `applyTokens` — observation の 1 側面を
+  変異(mutation)で
   適用。クロックや I/O を持たないため、ストアは決定的に保たれます。
   `applyActivityLog` は 1 ターン分の活動を配列に蓄積し(新しい指示でリセット)、
   作業状況ビューが最新の 1 件ではなく作業の流れを表示できるようにします。
@@ -157,6 +163,12 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
   自体は描画しません)、サブエージェントと、注入された `isResidentFile` が
   真のセッション(常駐チームの実行)では抑止します(常駐員の報告通知は
   residents モジュールが自前で投稿するため)。
+
+`applyTokens` はトランスクリプトが運ぶトークン使用量をセッションごとに蓄積
+します(Codex はセッション累計で置換、Claude / Gemini はメッセージ id で重複
+排除しつつ加算)。`usageForSession(cli, fragment)` は常駐実行が残したセッション
+の累積使用量を返します(照合は session registry と同様: 発見されたパスは完全
+一致、Claude のセッション id は部分一致)。
 
 `deriveStatus(session, now)` は独立した純粋関数として export され、セッションと
 現在時刻を `working` / `break` / `blocked` / `waiting` にマップします。
@@ -177,6 +189,20 @@ Origin ベースの CSRF ガードを掛けます。ドメインロジックは
 `fs.watch` に加え、定期再スキャンをフォールバックとして併用します(`fs.watch` は
 macOS でイベントを取りこぼすことがあるため)。3 つの watcher が共有します。
 
+### `notifications.js`
+
+core スナップショット上の OS 通知アダプタ。オフィスが人間を必要とする瞬間 —
+対話セッション(常駐・サブエージェント以外)が `waiting` / `blocked` へ遷移した
+とき(エピソードごとのエッジ検出。waiting↔blocked の相互遷移では再通知しません)、
+およびホワイトボードの未読・要確認報告数が増えたとき — を検出し、注入された
+`notify({title, body})` へ渡します。あわせて注意バッジ数(詰まった対話
+セッション + 未読の要確認報告)の変化を `updateBadge(count)` へ報告します。
+最初のスナップショットは基準値の初期化のみで、再起動時に既に待機中の
+セッションを再通知しません。文言は `server/i18n.js` の `notification.*` キー
+です。配信はエンベッダの責務です: `index.js`(macOS の `npm start`)は
+osascript で通知センターへ、`electron/main.js` はネイティブ Notification と
+メニューバー Tray で配信します。
+
 ### `watchers/`
 
 各 watcher は、注入された `report` コールバック(スタブでテスト可能)を通じて
@@ -185,16 +211,18 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
 
 - **`claude.js`** — Claude Code トランスクリプト(`~/.claude/projects/**/*.jsonl`):
   `cwd`、`isSidechain`(サブエージェント)、`tool_use` ブロックを含む user/assistant
-  行。`handleSubagentEnd` も export します。
+  行、assistant 行の `message.usage` からのトークン使用量(キャッシュ読み書き
+  分は入力に合算、メッセージ id で重複排除)。`handleSubagentEnd` も export します。
 - **`codex.js`** — Codex rollout ログ
   (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`): `session_meta`、タスクの
   開始/完了イベント、ユーザーメッセージ、`function_call` のツールアクション
-  (MCP ツールを含む)。
+  (MCP ツールを含む)、`token_count` イベントのセッション累計トークン使用量。
 - **`gemini.js`** — Gemini チャットログ
   (`~/.gemini/tmp/<project>/chats/session-*.jsonl`、サブエージェントは 1 階層
   深い `chats/<id>/<uuid>.jsonl`): メタデータと `$set` 状態パッチ、CLI 0.54
   以降はメッセージ直接追記(ツール呼び出しは `content` ではなくメッセージ
-  直下の `toolCalls` 配列)。メッセージ形状はバージョン間で変わるため、JSON
+  直下の `toolCalls` 配列)、メッセージごとの `tokens`(thoughts / tool 分は
+  出力に合算)。メッセージ形状はバージョン間で変わるため、JSON
   を汎用的に走査するベストエフォート実装です。
 
 ### `residents/`
@@ -219,7 +247,9 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   されている場合はその標準出力が空でないときだけ実行します(空なら実行
   スキップ)。この役割分けにより、毎週の定期作業がカード未割り当てを理由に
   実行されない、という取りこぼしを防ぎます。実行完了時にはホワイトボード
-  報告と `#general` への報告通知を生成します。報告の定型文・通知・プロンプト
+  報告と `#general` への報告通知を生成し、実行が残したトランスクリプトの
+  トークン使用量を state ストア(`usageForSession`)から引いて
+  `usage-store.js` 経由で `run_usage` テーブルに記録します。報告の定型文・通知・プロンプト
   の枠組みはオフィス言語設定(`server/i18n.js`、既定 en)の生成時点の言語で
   書かれ、後から言語を切り替えても書き換えません。実行は自身の記憶を持たない
   ため、そのカードに紐づく過去の報告本文を古い順に「これまでの報告」節と
@@ -258,6 +288,13 @@ observation を発行する準純粋(pure-ish)な `handleLine(entry, filePath, r
   mode to CLI permission flags, passes a configured resident model through
   `--model`, enforces a 30-minute timeout and one concurrent run per resident,
   and exports command construction and output parsing as pure functions.
+  `onFinished` には実行のトランスクリプトを指す `sessionFragment`(Claude は
+  セッション id、Codex / Gemini は発見したログパス)を渡し、トークン使用量の
+  照合に使われます。
+- **`usage-store.js`** — 実行ごとのトークン使用量。1 実行 = `run_usage`
+  テーブルの追記専用 1 行(更新もアーカイブもしません)。`totals()` は
+  アクティブな常駐ごとに累計と直近 30 日の入力 / 出力トークン合計・実行
+  回数を名簿順(チーム → 席)で返し、人件費パネルに表示されます。
 - **`database.js`** — `<dataDirectory>/office.db` を `node:sqlite` の
   `DatabaseSync` で同期的に開き、WAL と `PRAGMA user_version` ベースの
   スキーマ移行を適用します。アプリより新しいバージョンの DB は推測せず
@@ -285,12 +322,13 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 ### `index.html`
 
 マークアップ:アプリバー(`#appbar`。AI OFFICE ブランド、ビュータブ
-「オフィス / ボード / インボックス」、設定・チーム・タスク ボタン。
+「オフィス / ボード / インボックス」、人件費・設定・チーム・タスク ボタン。
 テーマ切替と言語(English / 日本語)は設定フォーム内のセレクト)、担当者別のカンバンストリップ
 (`#kanban-strip`)、`<canvas>` とタブで切り替わるインプレースのフルボード
 (`#board-view`)、インボックスサイドバー(トレイアイコンと未読・要確認
 カウント付きヘッダと報告一覧)、および右スライドインドロワー(`#drawer`。
-カード詳細・タスク起票フォーム・常駐員の作業状況・割り当てフォームを
+カード詳細・タスク起票フォーム・常駐員の作業状況・割り当てフォーム・
+人件費パネル(`#usage-panel`)を
 1 セクションずつ表示)。`<head>` のインラインスクリプトが初回描画前に
 `localStorage`(キー `ai-office-theme`、未設定なら OS の
 `prefers-color-scheme`)からテーマを読んで `data-theme` を設定するため、
@@ -399,7 +437,8 @@ UI のトランスポート層。`connect({ onSnapshot, onStatus })` は SSE ス
 (自動再接続)をラップします。常駐チーム管理(`listResidents` / `saveResident` /
 `deleteResident` / `runResident`)、ホワイトボード(`listReports` /
 `markReportRead` / `markReportUnread` / `archiveReport`)、カンバンボード(`listBoard` /
-`createCard` / `moveCard` / `archiveCard` / `appendCardNote`)の API 呼び出しもここに集約します。将来 SSE を Electron
+`createCard` / `moveCard` / `archiveCard` / `appendCardNote`)、トークン使用量
+(`listUsage`)の API 呼び出しもここに集約します。将来 SSE を Electron
 IPC に差し替える際は、このファイルだけを変更すれば済みます。
 
 ### `app.js`
@@ -436,7 +475,9 @@ right-hand drawer (`#drawer`):
 常駐員の作業状況ビュー(実行中は緊急停止ボタン。実行中の run を kill し、
 人間が再度オンにするまで常駐員を無効化)、常駐員の割り当てフォーム(作成 / 編集 /
 割り当て解除 / 今すぐ実行。「編集あり」権限の選択時は承認プロンプトなしで
-実行される旨の警告を表示)。
+実行される旨の警告を表示)、人件費パネル(`GET /api/usage` を開くたびに取得し、
+常駐ごとの入力 / 出力トークンを直近 30 日と累計・実行回数の表で表示。
+1.2M のような略記)。
 
 ## デスクトップ(`electron/`)
 
@@ -444,7 +485,12 @@ right-hand drawer (`#drawer`):
 
 Electron メインプロセス。`startServer` により同一サーバをプロセス内に埋め込み、
 `BrowserWindow` をそこへ向けます。これによりブラウザ経路とデスクトップ経路が
-すべてのロジックを共有します。
+すべてのロジックを共有します。core を自プロセスで所有する場合は
+`notifications.js` をネイティブ Notification とメニューバー Tray(ピクセルビル
+のテンプレートアイコン。バッジ数は tray タイトルと Dock バッジ、クリックで
+ウィンドウをフォーカス)に配線します。既に起動中のスタンドアロンサーバへ
+接続しただけの場合は配線しません(core を持たないため。そのサーバ自身の
+osascript 配信がカバーし、二重発火しません)。
 
 ### `preload.js`
 

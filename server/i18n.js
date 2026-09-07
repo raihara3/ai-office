@@ -48,6 +48,9 @@ const dictionaries = {
     'board.noteHeading': 'Note',
     'watcher.waitingForPlanApproval': 'Waiting for plan approval',
     'watcher.waitingForAnswer': 'Waiting for an answer',
+    'notification.waiting': '{name} is waiting for your answer',
+    'notification.blocked': '{name} looks stuck (a tool call has been pending for a while)',
+    'notification.reviewNeeded': 'A report on the whiteboard needs your review',
   },
   ja: {
     'runner.workingDirectoryMissing': '作業ディレクトリが存在しません: {directory}',
@@ -82,6 +85,9 @@ const dictionaries = {
     'board.noteHeading': '追記',
     'watcher.waitingForPlanApproval': 'プラン確認待ち',
     'watcher.waitingForAnswer': '質問への回答待ち',
+    'notification.waiting': '{name} が回答待ちです',
+    'notification.blocked': '{name} が止まっているようです(ツール実行が保留のままです)',
+    'notification.reviewNeeded': 'ホワイトボードに要確認の報告があります',
   },
 };
 

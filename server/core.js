@@ -109,6 +109,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     subscribe: (listener) => state.onChange((snap) => listener(augmentSnapshot(snap))),
     getSnapshot: () => augmentSnapshot(state.snapshot()),
     listResidents: residents.list,
+    listUsage: residents.listUsage,
     listTeams: residents.listTeams,
     saveTeam: residents.saveTeam,
     deleteTeam: residents.deleteTeam,

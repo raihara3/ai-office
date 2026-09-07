@@ -1,235 +1,189 @@
 # AI Office
 
-A Gather-like virtual office that visualizes your local AI coding agents —
-Claude Code, Codex CLI and Gemini CLI — as miniature robot coworkers.
+[日本語版 README](README.ja.md)
 
-Each terminal session (one log file) gets its own visitor avatar in the
-entrance lobby pinned to the bottom of the scene: when the agent starts
-working, the avatar steps out of the elevator, waits at a lobby spot while
-a speech bubble shows what it is doing right now (current tool action or
-the user's request), and rides the elevator back out once the answer is
-delivered — it re-enters on the next prompt. Subagent runs appear as mini
-avatars next to the visitor. Team rooms in the top-left seat the resident
-team — permanently
-assigned agents that run on schedules and post reports to the inbox.
+![AI Office — your AIs become coworkers](docs/images/banner.png)
 
-![status](https://img.shields.io/badge/runtime-Node.js%20%E2%89%A520-brightgreen)
+A Gather-like virtual office for your local AI coding agents. Claude Code,
+Codex CLI and Gemini CLI sessions appear as miniature robot coworkers — and a
+resident team of scheduled agents works a kanban board and reports back to
+your inbox.
 
-## Usage
+![runtime](https://img.shields.io/badge/runtime-Node.js%20%E2%89%A522.5-brightgreen)
+![platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-blue)
 
-### Browser (server only)
+![The office view: robots at team desks, a kanban strip and the report inbox](docs/images/office-view.png)
+
+## What it does
+
+- **Visualizes your sessions, zero config.** The server tails the transcript
+  files each CLI already writes. Start Claude Code (or Codex / Gemini) in any
+  terminal and a visitor robot steps out of the elevator into the lobby, with
+  a speech bubble showing what it is doing right now. Subagents appear as mini
+  avatars; when the turn ends, the robot rides the elevator home.
+- **Runs a resident AI team.** Residents are permanently seated agents you
+  configure in-app: each one has a CLI, a working directory, instructions and
+  either a kanban column it works through or a weekly/interval schedule. Runs
+  happen headlessly; the final message lands as a report in your inbox, and
+  anything that needs your judgment is flagged for review.
+- **Keeps you in the loop with a kanban board and an inbox.** You file task
+  cards, residents pick them up, finished cards move to Done, and reports
+  link back to their cards. Everything is stored locally in a single SQLite
+  file.
+
+## Requirements
+
+- **macOS** (transcript discovery, process cleanup and the data directory are
+  macOS-specific)
+- **Node.js ≥ 22.5** (`node:sqlite`; the npm scripts pass
+  `--experimental-sqlite`, required below 23.4)
+- At least one of [Claude Code](https://docs.anthropic.com/en/docs/claude-code),
+  [Codex CLI](https://github.com/openai/codex) or
+  [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed — for
+  the resident team, the CLI must be logged in and on your `PATH`
+
+## Quick start
 
 ```sh
+git clone https://github.com/raihara3/ai-office.git
+cd ai-office
 npm start
-# open http://localhost:4680
+# open http://localhost:4680  (set PORT to change)
 ```
 
-The server has no npm runtime dependencies; persistence is SQLite via the
-built-in `node:sqlite` (Node ≥ 22.5 — the npm scripts pass
-`--experimental-sqlite` for Node below 23.4). Set `PORT` to change the
-listen port.
+Then use an agent as you normally would — run Claude Code in any repository
+and watch its avatar arrive in the lobby. No CLI configuration is needed;
+sessions are discovered from:
 
-### Desktop app (Electron)
+| CLI | Transcripts |
+| --- | --- |
+| Claude Code | `~/.claude/projects/**/*.jsonl` |
+| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
+| Gemini CLI | `~/.gemini/tmp/<project>/chats/session-*.jsonl` |
+
+### Desktop app
 
 ```sh
-npm install       # installs Electron (a dev dependency) the first time
-npm run electron  # launches the desktop window (embeds the server)
-npm run dist      # optional: build a macOS .dmg/.zip via electron-builder
+npm install       # installs Electron (dev dependency) the first time
+npm run electron  # desktop window embedding the same server
+npm run dist      # build an unsigned macOS .dmg/.zip via electron-builder
 ```
 
-The Electron main process embeds the same server in-process and points a
-window at it, so the browser and desktop paths share all logic. Exactly one
-server core runs per data directory: launching the desktop app while a
-standalone `npm start` owns the port attaches a window to that server
-instead of starting a second core (two cores would double-run board cards),
-and a second desktop launch just focuses the existing window.
+The desktop app and `npm start` share one data directory and never double-run
+work: a second instance attaches to the running server instead of starting
+its own. Builds are unsigned — when opening a downloaded build for the first
+time, right-click the app and choose "Open" to pass Gatekeeper.
 
 ### Tests
 
 ```sh
-npm test          # node --test, no external test framework
+npm test          # node --test, ~150 tests, no build step
 ```
+
+## Setting up your resident team
+
+Visitors only mirror what you do in a terminal. Residents work on their own.
+
+1. Press **Team** in the app bar to create a team (a room on the canvas), or
+   use the default one.
+2. Click an **empty desk** in a team room. The resident form opens:
+
+![The resident form with the edit-mode permission warning shown](docs/images/resident-form.png)
+
+3. Pick the CLI, a working directory, and a **role**:
+   - **Kanban** — whenever idle, the resident runs the top card of its board
+     column. File a card, and it gets picked up within ~30 seconds.
+   - **Scheduled** — the resident ignores the board and runs its
+     instructions on a trigger: fixed weekday/time slots, or every N minutes
+     inside an optional active window. An optional **precheck command** gates
+     each scheduled run: empty output means "nothing to do" and the run is
+     skipped.
+4. Write the **instructions** — the resident's standing role prompt.
+
+The model field accepts a suggestion or any full model ID; empty keeps the
+CLI's default.
+
+### Permissions
+
+- **Read-only** (default) restricts the run to inspection: Claude runs with a
+  read-only tool allowlist, Codex with `--sandbox read-only`, Gemini pinned to
+  plan mode. Note that Gemini runs skip the folder-trust prompt, which
+  re-enables workspace settings such as configured MCP servers — point Gemini
+  residents only at directories whose contents you trust.
+- **Edit** lets the resident change files and run commands **without approval
+  prompts** (headless runs cannot answer them — Claude uses
+  `--permission-mode bypassPermissions`, Codex `--sandbox workspace-write`).
+  Except for the Codex sandbox, the run is **not confined to its working
+  directory**, so enable edit mode only for instructions and directories you
+  trust; the form shows this warning whenever you select it.
+
+### Reports and the board
+
+A run's final message is posted to the inbox. A first line of
+`LEVEL: review-needed` flags it for you — the linked card moves to your
+column, and a scheduled run files a follow-up card automatically.
+
+![A review-needed report opened from the inbox](docs/images/report-dialog.png)
+
+An ok run moves its card to **Done** (cards and reports are archived only by
+you — completion never deletes anything). Follow-up notes you add to a card,
+and the card's past reports, are replayed into the next run's prompt, so
+rework keeps its history. Runs have a 30-minute timeout, one per resident at
+a time; an emergency-stop button lives in the resident's activity view.
+
+## Language
+
+The UI, server messages and resident prompts are in **English by default**;
+switch to **日本語** in Settings. Reports are written in the language active
+when they were generated.
+
+![The same office in Japanese](docs/images/office-view-ja.png)
+
+## Data & privacy
+
+Everything stays on your machine. The server binds to `127.0.0.1` only (with
+Host/Origin checks), and all resident-team state — configuration,
+instructions, cards, reports — lives in
+`~/Library/Application Support/ai-office/office.db`. Nothing is sent
+anywhere except the CLI runs you configure yourself.
 
 ## How it works
 
-The server tails the local session logs each CLI already writes, so no
-configuration changes to any CLI are required:
+Watchers parse each CLI's transcripts into observations (current tool call,
+prompt, subagent spawns, turn completion), merged into per-session state and
+pushed to the browser over Server-Sent Events. The frontend is a single
+high-DPI Canvas 2D scene; panels are plain DOM. The core is
+transport-agnostic: `index.js` → `core.js` → state/watchers/residents, with
+`http.js` as the only transport and Electron embedding the same server.
 
-| Employee | Source |
-| --- | --- |
-| Claude Code | `~/.claude/projects/**/*.jsonl` (transcripts) |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
-| Gemini CLI | `~/.gemini/tmp/<project>/chats/session-*.jsonl` |
-
-Parsed observations (current tool call, user prompt, subagent spawns, MCP
-tool calls, turn completion) are merged into a per-employee state and pushed
-to the browser over Server-Sent Events (`/events`). The frontend is a single
-high-DPI Canvas 2D scene with a smooth 2.5D miniature office, subdued oak
-desks and a brown wood reception counter, neutral gray and soft off-white
-(`#ededed`) walls and floors, charcoal metalwork, dark-brown wooden team
-and office name signs, flat matte surfaces with localized shading and
-procedurally drawn rounded robot avatars. A 24-hour digital clock sits on
-the wall. A cushioned sofa in the center of the entrance lobby is flanked
-by a floor lamp with a dark gray shade and a plant. Team names appear on raised signs
-centered above each room; long names display an ellipsis without changing
-the saved name.
+- [docs/architecture.md](docs/architecture.md) — file-by-file breakdown and
+  data flow
+- [docs/database.md](docs/database.md) — office.db schema (ER diagram,
+  conventions)
 
 ### Status rules
 
-- **Working**: an event was observed within the last 90 seconds and the turn
-  has not completed.
-- **Break**: the turn completed (5-second grace period) or no recent events
-  and no tool call is still in flight. A visitor on break rides the elevator
-  out of the office.
-- **Blocked**: a tool call was issued but its result has not arrived (most
-  notably a command awaiting the user's permission, or a long-running
-  command). No idle timeout applies; the avatar stays at its lobby spot.
-- **Waiting**: the agent asked the user a question or requested approval
-  (e.g. `AskUserQuestion`, plan approval, Codex approval requests). No idle
-  timeout applies; the avatar waits at its lobby spot with a 🖐️ bubble.
-- Sessions with no events for 3 days expire from the office (their log
-  files are no longer tailed).
-
-### Visualization
-
-- Speech bubble: 確認中 (inspecting) / 考え中 (thinking) / 作業中 (working)
-  while waiting in the lobby, ・・・ while blocked (a tool call in flight,
-  e.g. awaiting permission), 🖐️ when waiting for the user, plus お邪魔します
-  when stepping out of the elevator and 失礼します when riding it home
-- Visitor tag: the repository (project) name, under the avatar
-- Mini avatars beside the visitor: running subagents (label = agent type);
-  background subagent sessions get their own lobby spot. Both wear a green-
-  and-yellow beginner's mark (若葉マーク)
-- Elevator doors slide open whenever a visitor stands near them; a
-  decorative glass double door with a card reader near the right wall
-  separates the lobby from the work area (no avatar passes through it)
-- App bar: the AI OFFICE brand, view tabs (オフィス / ボード / インボックス)
-  that switch between the office canvas, the in-place full board and the
-  expanded inbox, and 設定 / チーム / タスク buttons that open the settings,
-  team and task-filing forms in the drawer. The light/dark theme selector
-  lives in the settings form (the choice is remembered in the browser and
-  defaults to light). Buttons render Material-style SVG icons from the
-  sprite in `index.html` instead of text glyphs.
-- Kanban strip and full board share status badges and support opening card
-  details with Enter or Space. Completed cards appear newest first by `doneAt`;
-  unfinished cards retain their execution order, and updates preserve scroll
-  positions. Each column has a plus-icon button for filing a task.
-- Sidebar: the report inbox searches titles, resident names and bodies, with
-  all, unread, review (unread `review-needed`) and favorite filters. Opening a
-  report marks it read and displays Markdown in a native dialog with original
-  text copying, a related-task link and next-unread navigation. Card details
-  and linked reports use the same Markdown rendering. Read reports can be
-  marked unread only from the dialog, which closes after success. Original
-  text copying is also available only in the dialog.
-  Reports can be archived.
-  The server still keeps the newest 50 `#general` messages and a WebAudio chime
-  fires when the boss (社長) is freshly mentioned, but chat is not rendered.
-- Panels use neutral off-white and gray with slate-blue status accents in
-  both light and dark themes.
-
-### HR cleanup
-
-A receptionist avatar (受付) staffs the counter in the entrance lobby. The
-アバター退勤 button in the app bar
-finds sessions whose CLI process is no longer running. Each running process
-grants one "seat" per (CLI, working directory) — checked via `ps` + `lsof` —
-and only the most recently active sessions keep a seat; the rest are
-considered exited. App/editor-owned sessions (ChatGPT app, VSCode extension)
-run inside a host process from an unrelated directory and cannot be seat-
-matched. A Codex Desktop conversation instead holds a per-thread writer lock
-(`~/.codex/thread-writer-locks/<session-id>.lock`) open for its whole life, so
-it is kept alive while that lock is held (idle between turns included) and only
-becomes retirable once the lock is released; other app hosts, lacking such a
-signal, become retirable once idle. Sessions currently shown as working are
-never retired, resident-team sessions are permanent staff and never retire,
-and ambiguous cases err on the side of alive. Retired avatars
-ride the elevator
-out; their log files are left untouched on disk and the clock-out is tracked
-in the state store, which ignores replayed log lines up to the member's last
-event so a retired session cannot resurrect from a rescan (genuinely newer
-activity brings them back). The clock-out is persisted to
-`~/Library/Application Support/ai-office/dismissed-sessions.json`, so it
-survives a server restart. Endpoints:
-`GET /api/cleanup/preview`, `POST /api/cleanup`.
-
-## Resident team
-
-The team rooms in the top-left seat the
-resident team: permanently assigned agents, one role each. A resident's
-configuration (display name, seat, CLI, optional model, read-only/edit mode,
-working directory, trigger, optional precheck, enabled), role prompt and run
-bookkeeping live as a row in
-`~/Library/Application Support/ai-office/office.db` (SQLite), edited through
-the in-app drawer opened by clicking a resident desk (create, edit,
-unassign, run now). Every resident belongs to one team (default team
-`office` for now). Reports and kanban cards live in the same database,
-foreign-keyed to their resident.
-
-Triggers are `{type: "schedule", days, times}` (fixed weekday/time slots;
-occurrences still fire up to one hour late, older ones are skipped) or
-`{type: "interval", minutes, activeDays?, activeHours?}`. An optional
-`precheck` shell command gates interval runs — empty stdout means "nothing
-to do" and the agent run is skipped.
-
-A due resident runs its CLI headlessly (`claude -p --session-id <uuid>`,
-`codex exec --sandbox …`, `gemini -p`); the read-only / edit mode maps to
-the CLI's permission flags. The model field offers a curated list for the
-selected CLI and also accepts a full model ID; a non-empty value is passed as
-`--model`, while an empty field preserves the CLI default. One run per
-resident at a time, with a 30-minute timeout. The CLI writes its normal
-transcript, so the existing tail → watcher → state pipeline visualizes the run; a session registry
-(`session-registry.json`) binds the session to its resident so it seats at
-its resident's team desk — never appearing as a lobby visitor — is protected
-from HR
-cleanup, and skips the `#general` request/reply exchange (the resident posts
-its own report notification instead).
-
-Resident seats render three states: unassigned (desk and chair only),
-assigned idle (vendor-colored, screen off, ⏸ when disabled) and
-running (facing the monitor, lit screen, status bubble). Residents never
-wait in the lobby or ride the elevator out. Their names appear in subdued
-tags below their feet.
-
-A kanban board hands tasks to residents: one row per card in the `cards`
-table of `office.db` (columns are assignees — the user or a resident; drag
-order is the `position` column). An idle resident whose trigger is not due
-picks up the top card of its column — the precheck is skipped, the card is
-the trigger — and receives the card body in its prompt. A run that ends ok
-archives the card (sets `archived_at`, never deletes the row); a
-review-needed or failed run moves the card to the user column, and a
-trigger-driven run that ends review-needed files a user-column card
-automatically (not when the human emergency-stopped the run). Reports carry a `task` column linking them to their card;
-cards cannot be moved or archived while their run is in flight.
-
-Run results are saved as rows in the `reports` table of `office.db`; the
-ボード tab opens the in-place board view (file cards, drag to reorder
-or reassign, open a card in the drawer for its body, linked reports, a
-follow-up note form and a done button); reports are listed in the inbox
-sidebar (read and pin state are plain columns). Each report row has an
-archive-icon button that takes it off the board — the row is flagged
-`archived_at`, never deleted.
-Endpoints: `GET /api/residents`, `PUT`/`DELETE /api/residents/:name`,
-`POST /api/residents/:name/run`/`stop`, `GET /api/whiteboard`,
-`POST /api/whiteboard/read`, `POST /api/whiteboard/unread` (`{id}`),
-`POST /api/whiteboard/archive`,
-`GET /api/board`, `POST /api/board/create`/`move`/`archive`/`note`.
-
-## Architecture
-
-The core (state + watchers + cleanup) is decoupled from any transport, so it
-can be driven by the HTTP/SSE adapter, embedded in Electron, or exercised by
-tests. Dependencies point inward: `index.js` → `core.js` → state/watchers/
-cleanup; `http.js` only talks to the core's public handle.
-
-For the full file-by-file breakdown, the data flow, and the testing approach,
-see [docs/architecture.md](docs/architecture.md).
+- **Working** — an event was observed in the last 90 seconds and the turn is
+  not complete.
+- **Blocked** — a tool call is in flight with no result yet (typically a
+  command awaiting permission); the bubble shows ・・・.
+- **Waiting** — the agent asked a question or requested approval; the avatar
+  raises 🖐️ and a chime rings.
+- **Break** — the turn completed or went quiet; the visitor rides the
+  elevator out and returns on the next prompt.
+- Sessions silent for 3 days expire from the office. A receptionist-driven
+  cleanup can also clock out sessions whose CLI process is gone
+  (`ps`/`lsof` based).
 
 ## Limitations
 
-- Visitor sessions are visualize-only: the office does not control
-  CLIs you start yourself (resident runs, spawned headlessly by the office,
-  are the exception).
-- Gemini log parsing is best-effort — the chat log format varies between
-  Gemini CLI versions.
-- Codex subagent detection is heuristic (`spawn_agent` style tool names).
-- HR cleanup relies on macOS specifics (`lsof`).
+- macOS only.
+- Visitor sessions are visualize-only: the office never controls CLIs you
+  started yourself (resident runs, spawned by the office, are the exception).
+- Gemini log parsing is best-effort — the format varies between CLI versions.
+- Codex subagent detection is heuristic.
+
+## License
+
+[MIT](LICENSE) © raihara3

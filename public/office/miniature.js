@@ -192,6 +192,9 @@ export function createMiniatureRenderer(context) {
     rounded(0, 86, width, 10, 0, '#a9a9a9');
     line(0, 87, width, 87, '#e3e3e3', 2);
     rounded(8, 96, width - 16, 16, 0, gradient(0, 96, 0, 16, 'rgba(79, 64, 46, 0.18)', 'rgba(79, 64, 46, 0)'));
+    // Daylight shafts are collected here but drawn after the team carpets so
+    // the light rests on the carpet rather than being hidden beneath it.
+    const daylightBeams = [];
     for (let x = 60; x + 104 <= width - 8; x += 250) {
       rounded(x - 6, 10, 108, 70, 0, '#a8a8a8');
       rounded(x - 3, 12, 102, 65, 0, '#3f3f3f');
@@ -214,9 +217,7 @@ export function createMiniatureRenderer(context) {
       polygon([[x + 5, 17], [x + 24, 17], [x + 6, 73], [x + 1, 73]], 'rgba(237,237,237,0.13)');
       rounded(x - 8, 76, 112, 5, 1, '#8a8a8a');
       rounded(x - 8, 74, 112, 4, 1, '#e7e7e7');
-      if (!night) {
-        polygon([[x, 98], [x + 96, 98], [x + 182, 272], [x + 61, 272]], 'rgba(255, 247, 218, 0.15)');
-      }
+      if (!night) daylightBeams.push([[x, 98], [x + 96, 98], [x + 182, 272], [x + 61, 272]]);
     }
     artwork(212, 21, 38, 48);
     artwork(711, 25, 34, 44);
@@ -236,6 +237,7 @@ export function createMiniatureRenderer(context) {
       context.restore();
       teamSign(room);
     }
+    for (const beam of daylightBeams) polygon(beam, 'rgba(255, 247, 218, 0.15)');
     const top = entranceTop;
     rounded(8, top + PARTITION_HEIGHT, width - 16, height - top - PARTITION_HEIGHT - 10, 0,
       '#dedede');

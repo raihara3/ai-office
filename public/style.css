@@ -1397,9 +1397,9 @@ textarea:focus-visible {
 .report-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 24px 28px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .report-dialog-head > div { min-width: 0; }
 #report-dialog-meta { font-size: 11px; color: var(--text-muted); line-height: 1.6; overflow-wrap: anywhere; }
-#report-dialog-title { margin-top: 8px; font-size: 20px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; max-height: 120px; overflow-y: auto; }
+#report-dialog-title { margin-top: 8px; font-size: 20px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; max-height: 120px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 #report-dialog-close { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
-#report-dialog-body { padding: 24px 32px 40px; overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; }
+#report-dialog-body { padding: 24px 32px 40px; overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .report-dialog-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .report-dialog-footer button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; }
 .report-dialog-footer .icon { width: 14px; height: 14px; }
@@ -1415,7 +1415,7 @@ textarea:focus-visible {
 #card-dialog-title { min-width: 0; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 800; white-space: nowrap; text-overflow: ellipsis; }
 #card-dialog-close { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--surface-muted); color: var(--text-muted); cursor: pointer; }
 #card-dialog-close:hover { color: var(--text); }
-#card-detail { flex: 1; min-height: 0; padding: 16px 20px 20px; overflow-y: auto; scrollbar-width: thin; }
+#card-detail { flex: 1; min-height: 0; padding: 16px 20px 20px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 #ui-notice { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; width: max-content; max-width: calc(100vw - 40px); padding: 12px 18px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--text); color: var(--surface); box-shadow: var(--shadow-raised); font-size: 12px; }
 
 .markdown { font-size: 13px; line-height: 1.85; color: var(--text); overflow-wrap: anywhere; white-space: normal; }

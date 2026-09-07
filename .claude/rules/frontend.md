@@ -20,8 +20,10 @@ paths:
 - Keep Kanban status badges and Enter/Space card activation consistent across
   office and full-board views. Preserve scroll positions and unfinished execution
   order; sort only completed cards newest first by `doneAt`.
-- Use neutral off-white/gray panels and slate-blue status accents with matching
-  dark-theme tokens. Report bodies open in the native dialog.
+- Use neutral off-white/gray panels and orange status accents with matching
+  dark-theme tokens. The accent is `#ff7b00`; on light surfaces `--primary`
+  deepens it to keep AA contrast, dark surfaces use `#ff7b00` directly. Report
+  bodies open in the native dialog.
 - Button icons are SVG `<symbol>` sprites defined once in `index.html` and
   referenced via `<use href="#icon-...">` — static markup inlines the
   reference, dynamic markup uses the `icon(name)` helper in `app.js`. Never

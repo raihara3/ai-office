@@ -16,9 +16,9 @@
   --text: #292827;
   --text-muted: #696660;
   --text-faint: #77716a;
-  --primary: #47699c;
-  --primary-strong: #3a5684;
-  --primary-soft: rgba(71, 105, 156, 0.1);
+  --primary: #bf5a00;
+  --primary-strong: #a34c00;
+  --primary-soft: rgba(255, 123, 0, 0.12);
   --success: #17995f;
   --success-soft: rgba(23, 153, 95, 0.12);
   --warning: #c77c0a;
@@ -42,9 +42,9 @@
   --text: #eeece9;
   --text-muted: #b7b3ad;
   --text-faint: #a19b93;
-  --primary: #6b96f5;
-  --primary-strong: #82a6f7;
-  --primary-soft: rgba(107, 150, 245, 0.16);
+  --primary: #ff7b00;
+  --primary-strong: #ff9333;
+  --primary-soft: rgba(255, 123, 0, 0.16);
   --success: #4cc38a;
   --success-soft: rgba(76, 195, 138, 0.15);
   --warning: #e5a355;
@@ -65,11 +65,11 @@
    fills they would leave white labels below AA contrast, so buttons keep the
    light-theme fills and hover darkens (never lightens) in both themes. */
 :root[data-theme="dark"] .primary-button {
-  background: #2f6fed;
+  background: #bf5a00;
 }
 
 :root[data-theme="dark"] .primary-button:hover {
-  background: #235cd8;
+  background: #a34c00;
 }
 
 :root[data-theme="dark"] .danger-button,

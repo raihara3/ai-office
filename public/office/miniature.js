@@ -235,9 +235,11 @@ export function createMiniatureRenderer(context) {
         line(room.x + 6, y, room.x + room.width - 6, y, 'rgba(237, 237, 237, 0.12)', 0.5);
       }
       context.restore();
-      teamSign(room);
     }
+    // Beams rest above the carpets but below the team signs, so the light
+    // never washes over a room's nameplate.
     for (const beam of daylightBeams) polygon(beam, 'rgba(255, 247, 218, 0.15)');
+    for (const room of layout.rooms) teamSign(room);
     const top = entranceTop;
     rounded(8, top + PARTITION_HEIGHT, width - 16, height - top - PARTITION_HEIGHT - 10, 0,
       '#dedede');

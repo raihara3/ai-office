@@ -93,6 +93,11 @@
         return (await fetch('/api/usage')).json();
       },
 
+      // Installed Claude Code skills for the skills tab.
+      async listSkills() {
+        return (await fetch('/api/skills')).json();
+      },
+
       // The whiteboard: full reports (bodies included) and read receipts.
       async listReports() {
         return (await fetch('/api/whiteboard')).json();

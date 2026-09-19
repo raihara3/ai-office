@@ -270,6 +270,12 @@ export function createHttpServer(core, { publicDirectory }) {
       return;
     }
 
+    // Installed Claude Code skills for the skills tab (read fresh per request).
+    if (urlPath === '/api/skills') {
+      sendJson(response, 200, { skills: core.listSkills() });
+      return;
+    }
+
     // The whiteboard: reports from residents to the human, plus read state.
     if (urlPath === '/api/whiteboard') {
       sendJson(response, 200, { reports: core.listReports() });

@@ -227,18 +227,21 @@ import { renderMarkdown } from './markdown.js';
 
   const officeWrapElement = document.getElementById('office-wrap');
   const boardViewElement = document.getElementById('board-view');
+  const skillsViewElement = document.getElementById('skills-view');
   const panelElement = document.getElementById('panel');
 
   // The office tab shows the strip above the canvas with the inbox alongside;
   // the board tab is the full-screen kanban; the inbox tab expands the inbox
-  // panel to fill the content area. The strip only rides above the canvas.
+  // panel to fill the content area; the skills tab swaps in the installed-skill
+  // catalog. The strip only rides above the canvas.
   function setView(view) {
     officeWrapElement.hidden = view !== 'office';
     boardViewElement.hidden = view !== 'board';
+    skillsViewElement.hidden = view !== 'skills';
     stripElement.hidden = view !== 'office';
-    field('workspace-toolbar').hidden = view === 'inbox';
+    field('workspace-toolbar').hidden = view === 'inbox' || view === 'skills';
     field('board-expand').hidden = view === 'board';
-    panelElement.hidden = view === 'board';
+    panelElement.hidden = view === 'board' || view === 'skills';
     panelElement.classList.toggle('expanded', view === 'inbox');
     for (const tab of document.querySelectorAll('.view-tab')) {
       const active = tab.dataset.view === view;
@@ -246,6 +249,7 @@ import { renderMarkdown } from './markdown.js';
       tab.setAttribute('aria-selected', active ? 'true' : 'false');
     }
     if (view === 'board') renderBoard();
+    if (view === 'skills') loadSkills();
     // The scroller has no size while hidden, so re-fit when the office returns.
     if (view === 'office') applyZoom();
   }
@@ -592,6 +596,61 @@ import { renderMarkdown } from './markdown.js';
       field('reports-retry')?.addEventListener('click', loadReports);
     }
   }
+
+  // --- skills tab ---------------------------------------------------------
+  // Installed Claude Code skills (~/.claude/skills), fetched from the server
+  // each time the tab opens so newly installed skills appear without a reload.
+
+  const skillsListElement = document.getElementById('skills-list');
+  const skillsSummaryElement = document.getElementById('skills-summary');
+  const skillDialog = field('skill-dialog');
+  let latestSkills = [];
+  let skillReturnFocus = null;
+
+  function renderSkills(skills) {
+    latestSkills = skills;
+    skillsSummaryElement.textContent =
+      skills.length > 0 ? translate('skills.count', { count: skills.length }) : '';
+    skillsListElement.innerHTML = skills.length ? skills.map((skill) =>
+      `<button type="button" class="skill-card" data-skill-id="${escapeHtml(skill.id)}" aria-haspopup="dialog">
+        <span class="skill-name">${escapeHtml(skill.name)}</span>
+        <span class="skill-description">${escapeHtml(skill.description)}</span>
+      </button>`
+    ).join('') : `<div class="report-empty">${translate('skills.empty')}<small>${translate('skills.emptyHint')}</small></div>`;
+  }
+
+  async function loadSkills() {
+    try {
+      renderSkills((await client.listSkills()).skills ?? []);
+    } catch {
+      skillsListElement.innerHTML = `<div class="report-empty">${translate('skills.loadFailed')}</div>`;
+    }
+  }
+
+  function openSkill(id) {
+    const skill = latestSkills.find((entry) => entry.id === id);
+    if (!skill) return;
+    skillReturnFocus = document.activeElement;
+    field('skill-dialog-title').textContent = skill.name;
+    field('skill-dialog-meta').textContent = skill.directory;
+    field('skill-dialog-body').innerHTML = renderMarkdown(skill.body);
+    field('skill-dialog-body').scrollTop = 0;
+    skillDialog.showModal();
+  }
+
+  skillsListElement.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-skill-id]');
+    if (card) openSkill(card.dataset.skillId);
+  });
+  field('skill-dialog-close').addEventListener('click', () => skillDialog.close());
+  skillDialog.addEventListener('click', (event) => {
+    const bounds = skillDialog.getBoundingClientRect();
+    if (event.target === skillDialog && (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom)) skillDialog.close();
+  });
+  skillDialog.addEventListener('close', () => {
+    if (skillReturnFocus?.isConnected) skillReturnFocus.focus({ preventScroll: true });
+  });
 
   // --- kanban board -------------------------------------------------------
   // Columns are the user first, then one per team (creation order), then a 完了
@@ -1890,6 +1949,7 @@ import { renderMarkdown } from './markdown.js';
       if (languageChanged) {
         refreshBoard();
         loadReports();
+        if (!skillsViewElement.hidden) loadSkills();
       }
       if (activityName !== null && !field('activity-wrap').hidden) renderActivity();
       maybeRefreshBoard(snapshot);

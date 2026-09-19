@@ -4,6 +4,7 @@
 // directly without a network layer.
 
 import { createState, presenceAwareStatus } from './state.js';
+import { listSkills } from './skills.js';
 import { createResidents, DEFAULT_DATA_DIRECTORY } from './residents/residents.js';
 import { startClaudeWatcher } from './watchers/claude.js';
 import { startCodexWatcher } from './watchers/codex.js';
@@ -110,6 +111,7 @@ export function createCore({ now, dataDirectory = DEFAULT_DATA_DIRECTORY } = {})
     getSnapshot: () => augmentSnapshot(state.snapshot()),
     listResidents: residents.list,
     listUsage: residents.listUsage,
+    listSkills: () => listSkills(),
     listTeams: residents.listTeams,
     saveTeam: residents.saveTeam,
     deleteTeam: residents.deleteTeam,

@@ -22,6 +22,11 @@ paths:
 - Store factories take injectable `{ database, now = () => Date.now() }` and
   tests open `':memory:'` databases via `openDatabase`; the one-time
   importers additionally take `{ fileSystem = fs }` with in-memory stubs.
+- Not every server module is an office.db store: read-only filesystem
+  catalogs (e.g. `server/skills.js`) take injectable
+  `{ fileSystem = fs, ...directory }` options, re-read the directory on every
+  call (no caching; a missing directory yields an empty list, not an error),
+  and are still exposed as `core` methods so `http.js` stays a thin route.
 - User-facing text produced at runtime (reports, mentions, prompts, run
   errors) goes through `translate()` from `server/i18n.js`, with new keys in
   both the `en` and `ja` dictionaries. Generated text is data written in the

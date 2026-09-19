@@ -52,6 +52,7 @@ server/                バックエンド(npm 依存なし。永続化は node:s
   i18n.js              サーバ生成テキスト(報告・メンション・プロンプト・実行エラー・OS 通知)の辞書 + translate()(オフィス言語設定、既定 en)
   notifications.js     OS 通知アダプタ: core スナップショットを監視し、注入された配信先へ通知とバッジ数を渡す
   notifications.test.js 通知のエッジ検出・バッジ数・初回スナップショットのテスト
+  skills.js            ~/.claude/skills のインストール済みスキルカタログ読み出し(スキルタブ用)
   residents/           常駐チーム(スケジュール実行される常駐エージェント)
     residents.js       オーケストレータ: tick ループ + precheck + 報告生成
     resident-store.js  residents / teams テーブルの読み書きと検証
@@ -123,8 +124,8 @@ Electron ビルドでは `package.json` の `!**/*.test.js` によって配布�
 
 state ストア・3 つの CLI watcher・常駐チームを、トランスポート
 非依存の 1 つのハンドル(`start`/`stop`、`subscribe`、`getSnapshot`、
-常駐員 CRUD / 実行、トークン使用量集計(`listUsage`)、
-ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
+常駐員 CRUD / 実行、トークン使用量集計(`listUsage`)、スキル一覧
+(`listSkills`)、ホワイトボード読み出し / アーカイブ、カンバンボード操作)に合成します。スナップショットには常駐チームの
 オーバーレイを施します: 各従業員に所属常駐員をタグ付けし(フロントエンドは
 その席をチームルームの机に配置)、常駐員名簿とホワイトボードの未読数と
 カンバンボードのカード数を添付
@@ -137,7 +138,8 @@ HTTP/SSE トランスポートアダプタ。静的 UI を配信し、状態ス�
 Server-Sent Events(`/events`)でストリームし、常駐チーム管理
 (`GET /api/residents`、`PUT`/`DELETE /api/residents/:name`、
 `POST /api/residents/:name/run`/`stop`)、チーム管理(`GET`/`POST /api/teams`、
-`PUT`/`DELETE /api/teams/:id`)、トークン使用量(`GET /api/usage`)、ホワイトボード(`GET /api/whiteboard`、
+`PUT`/`DELETE /api/teams/:id`)、トークン使用量(`GET /api/usage`)、スキル一覧
+(`GET /api/skills`)、ホワイトボード(`GET /api/whiteboard`、
 `POST /api/whiteboard/read`、`POST /api/whiteboard/unread`、`POST /api/whiteboard/archive`)、カンバンボード
 (`GET /api/board`、`POST /api/board/create`/`move`/`done`/`archive`/`edit`/`note`)を公開します。状態を変更するリクエストには
 Origin ベースの CSRF ガードを掛けます。ドメインロジックは
@@ -202,6 +204,16 @@ core スナップショット上の OS 通知アダプタ。オフィスが人�
 です。配信はエンベッダの責務です: `index.js`(macOS の `npm start`)は
 osascript で通知センターへ、`electron/main.js` はネイティブ Notification と
 メニューバー Tray で配信します。
+
+### `skills.js`
+
+インストール済みスキルカタログの読み取り専用ビュー。`listSkills()` は
+`~/.claude/skills` 直下の各ディレクトリの `SKILL.md` を読み、frontmatter
+(name / description。複数行スカラーは折り畳み)と本文 Markdown を名前順の
+一覧で返します。呼び出しごとにディレクトリを読み直すため、新しく
+インストールしたスキルは再起動なしで反映されます(ディレクトリ未作成は
+空一覧)。`fileSystem` とディレクトリは注入可能で、office.db には何も
+永続化しません。
 
 ### `watchers/`
 
@@ -322,10 +334,11 @@ ES モジュールとしてドキュメント順に読み込まれます:`office
 ### `index.html`
 
 マークアップ:アプリバー(`#appbar`。AI OFFICE ブランド、ビュータブ
-「オフィス / ボード / インボックス」、人件費・設定・チーム・タスク ボタン。
+「オフィス / ボード / インボックス / スキル」、人件費・設定・チーム・タスク ボタン。
 テーマ切替と言語(English / 日本語)は設定フォーム内のセレクト)、担当者別のカンバンストリップ
 (`#kanban-strip`)、`<canvas>` とタブで切り替わるインプレースのフルボード
-(`#board-view`)、インボックスサイドバー(トレイアイコンと未読・要確認
+(`#board-view`)とスキルカタログ(`#skills-view`。詳細はスキルダイアログ
+`#skill-dialog`)、インボックスサイドバー(トレイアイコンと未読・要確認
 カウント付きヘッダと報告一覧)、および右スライドインドロワー(`#drawer`。
 カード詳細・タスク起票フォーム・常駐員の作業状況・割り当てフォーム・
 人件費パネル(`#usage-panel`)を
@@ -438,7 +451,7 @@ UI のトランスポート層。`connect({ onSnapshot, onStatus })` は SSE ス
 `deleteResident` / `runResident`)、ホワイトボード(`listReports` /
 `markReportRead` / `markReportUnread` / `archiveReport`)、カンバンボード(`listBoard` /
 `createCard` / `moveCard` / `archiveCard` / `appendCardNote`)、トークン使用量
-(`listUsage`)の API 呼び出しもここに集約します。将来 SSE を Electron
+(`listUsage`)、スキル一覧(`listSkills`)の API 呼び出しもここに集約します。将来 SSE を Electron
 IPC に差し替える際は、このファイルだけを変更すれば済みます。
 
 ### `app.js`
@@ -446,11 +459,15 @@ IPC に差し替える際は、このファイルだけを変更すれば済み�
 The office Kanban strip and full board share status badges and keyboard
 activation (Enter or Space opens card details). Completed cards are sorted
 newest first by `doneAt`, while unfinished cards retain their execution order.
-Rendering preserves scroll positions. View tabs switch between the canvas
-and full board; cards support drag-and-drop and per-column task creation.
+Rendering preserves scroll positions. View tabs switch between the canvas,
+the full board and the skills catalog; cards support drag-and-drop and
+per-column task creation.
 Full-board columns (the user and 完了 columns included) reorder by dragging
 their headers; the left-to-right order persists as the `boardColumnOrder`
 setting and the strip mirrors it.
+The skills tab fetches `GET /api/skills` each time it opens (and on language
+change while visible), renders the installed skills as a card grid, and shows
+a skill's SKILL.md body in a native dialog via the shared `renderMarkdown`.
 The inbox searches report titles, resident names and bodies, with all, unread,
 review (unread `review-needed`) and favorite filters. Opening a report marks
 it read and displays Markdown in a native dialog with original-text copying,

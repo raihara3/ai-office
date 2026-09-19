@@ -23,6 +23,12 @@ paths:
   attribute (e.g. `#resident-form { display: flex }`) overrides the UA's
   `display: none`; pair it with an explicit `#id[hidden] { display: none; }`
   rule (see `#office-wrap[hidden]` etc. in `public/style.css`).
+- Modal detail views are native `<dialog>` elements opened with `showModal()`
+  (see the report/card/skill dialogs): style the open state with
+  `#id[open] { display: flex; flex-direction: column }` plus a scrollable
+  body, close on a backdrop click (event target is the dialog itself with
+  coordinates outside its bounding rect), and on `close` restore focus to the
+  element that opened the dialog.
 - Keep Kanban status badges and Enter/Space card activation consistent across
   office and full-board views. Preserve scroll positions and unfinished execution
   order; sort only completed cards newest first by `doneAt`.

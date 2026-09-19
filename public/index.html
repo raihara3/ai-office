@@ -69,6 +69,7 @@
         <button type="button" class="view-tab active" data-view="office" role="tab" aria-selected="true" data-i18n="tabs.office">Office</button>
         <button type="button" class="view-tab" data-view="board" role="tab" aria-selected="false" data-i18n="tabs.board">Board</button>
         <button type="button" class="view-tab" data-view="inbox" role="tab" aria-selected="false" data-i18n="tabs.inbox">Inbox<span id="inbox-tab-badge" class="tab-badge" hidden></span></button>
+        <button type="button" class="view-tab" data-view="skills" role="tab" aria-selected="false" data-i18n="tabs.skills">Skills</button>
       </nav>
       <div id="appbar-actions">
         <button type="button" id="usage-open" title="Token usage per resident" data-i18n-title="appbar.usageTitle"><svg class="icon" aria-hidden="true"><use href="#icon-wallet"/></svg><span data-i18n="appbar.usage">Payroll</span></button>
@@ -96,6 +97,14 @@
       </section>
       <section id="board-view" hidden>
         <div id="board-columns"></div>
+      </section>
+      <section id="skills-view" hidden>
+        <header id="skills-head">
+          <h1 data-i18n="skills.title">Skills</h1>
+          <span id="skills-summary"></span>
+        </header>
+        <p id="skills-caption" data-i18n="skills.caption">Claude Code skills installed in ~/.claude/skills. Select a card for details.</p>
+        <div id="skills-list"><div class="report-empty" data-i18n="skills.loading">Loading…</div></div>
       </section>
       <aside id="panel">
         <header id="panel-head">
@@ -139,6 +148,13 @@
       <button type="button" id="card-dialog-close" aria-label="Close" data-i18n-aria-label="common.close" autofocus><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
     </header>
     <div id="card-detail" tabindex="0" role="region" aria-label="Task details" data-i18n-aria-label="cardDetail.title"></div>
+  </dialog>
+  <dialog id="skill-dialog" aria-labelledby="skill-dialog-title">
+    <header class="skill-dialog-head">
+      <div><p id="skill-dialog-meta"></p><h1 id="skill-dialog-title"></h1></div>
+      <button type="button" id="skill-dialog-close" aria-label="Close" data-i18n-aria-label="common.close" autofocus><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
+    </header>
+    <div id="skill-dialog-body" class="markdown" tabindex="0" role="region" aria-label="Skill details" data-i18n-aria-label="skillDialog.bodyLabel"></div>
   </dialog>
   <div id="ui-notice" role="status" hidden></div>
   <aside id="drawer" hidden>
